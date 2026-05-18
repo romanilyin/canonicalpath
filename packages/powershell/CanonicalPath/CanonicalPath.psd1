@@ -1,6 +1,6 @@
 @{
     RootModule = 'CanonicalPath.psm1'
-    ModuleVersion = '0.1.0'
+    ModuleVersion = '2026.5.18'
     GUID = '1a710e8f-44b8-4b3e-a0dc-7fe1a3eaab75'
     Author = 'CanonicalPath contributors'
     CompanyName = 'CanonicalPath contributors'
@@ -37,6 +37,7 @@
     PrivateData = @{
         PSData = @{
             Tags = @('CanonicalPath', 'CanonicalFS', 'lexical', 'paths', 'daemon-client')
+            Prerelease = '1'
             ProjectUri = 'https://github.com/canonicalpath/canonicalpath'
         }
     }

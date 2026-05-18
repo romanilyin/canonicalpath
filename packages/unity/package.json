@@ -1,6 +1,6 @@
 {
   "name": "com.romanilyin.canonicalpath",
-  "version": "0.1.0",
+  "version": "2026.5.18-1",
   "displayName": "CanonicalPath",
   "description": "Early Unity managed CanonicalPath runtime, daemon transport, and bridge facade for payload validation.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",

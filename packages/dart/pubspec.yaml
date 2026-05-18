@@ -1,5 +1,5 @@
 name: canonicalpath_dart
 description: Experimental lexical CanonicalPath helpers for Dart and Flutter.
-version: 0.0.0
+version: 2026.5.18-1
 environment:
   sdk: '>=3.0.0 <4.0.0'

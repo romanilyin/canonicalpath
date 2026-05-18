@@ -96,7 +96,7 @@ function checkPackageScripts() {
 function checkPublicIdentity() {
   const tsPackage = json("packages/ts/package.json");
   assert(tsPackage.name === npmPackageName, `packages/ts/package.json: expected package name ${npmPackageName}`);
-  assert(tsPackage.version === "0.1.0", "packages/ts/package.json: expected version 0.1.0");
+  assert(tsPackage.version === "2026.5.18-1", "packages/ts/package.json: expected version 2026.5.18-1");
   assert(tsPackage.license === stingerLicense, `packages/ts/package.json: expected license ${stingerLicense}`);
   assert(tsPackage.private === true, "packages/ts/package.json: package remains private until the repository is opened for public release");
   assert(tsPackage.main === "./dist/canonicalpath/index.js", "packages/ts/package.json: root main must point at dist");
@@ -112,7 +112,7 @@ function checkPublicIdentity() {
 
   const standalonePackage = json("packages/javascript-standalone/package.json");
   assert(standalonePackage.name === standalonePackageName, "packages/javascript-standalone/package.json: unexpected package name");
-  assert(standalonePackage.version === "0.1.0", "packages/javascript-standalone/package.json: expected version 0.1.0");
+  assert(standalonePackage.version === "2026.5.18-1", "packages/javascript-standalone/package.json: expected version 2026.5.18-1");
   assert(standalonePackage.license === stingerLicense, `packages/javascript-standalone/package.json: expected license ${stingerLicense}`);
 
   assertIncludes("packages/go/go.mod", read("packages/go/go.mod"), `module ${goModulePath}`);

@@ -47,7 +47,7 @@ function cargoToml() {
   const packagePath = path.join(root, "packages", "rust").replaceAll("\\", "/");
   return `[package]
 name = "canonicalpath-rust-allocation-check"
-version = "0.1.0"
+version = "2026.5.18-1"
 edition = "2021"
 
 [dependencies]
