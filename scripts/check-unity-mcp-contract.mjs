@@ -12,6 +12,7 @@ const npmPackageName = "@romanilyin/canonicalpath";
 const standalonePackageName = "@romanilyin/canonicalpath-standalone";
 const unityPackageName = "com.romanilyin.canonicalpath";
 const goModulePath = "github.com/romanilyin/canonicalpath/packages/go";
+const releaseVersion = "2026.5.18-2";
 const unityMcpErrors = [
   "ERR_ABSOLUTE_PATH",
   "ERR_DRIVE_RELATIVE_PATH",
@@ -96,24 +97,31 @@ function checkPackageScripts() {
 function checkPublicIdentity() {
   const tsPackage = json("packages/ts/package.json");
   assert(tsPackage.name === npmPackageName, `packages/ts/package.json: expected package name ${npmPackageName}`);
-  assert(tsPackage.version === "2026.5.18-1", "packages/ts/package.json: expected version 2026.5.18-1");
+  assert(tsPackage.version === releaseVersion, `packages/ts/package.json: expected version ${releaseVersion}`);
   assert(tsPackage.license === stingerLicense, `packages/ts/package.json: expected license ${stingerLicense}`);
-  assert(tsPackage.private === true, "packages/ts/package.json: package remains private until the repository is opened for public release");
+  assert(!Object.hasOwn(tsPackage, "private"), "packages/ts/package.json: publishable package must not be private for release");
   assert(tsPackage.main === "./dist/canonicalpath/index.js", "packages/ts/package.json: root main must point at dist");
   assert(tsPackage.types === "./dist/canonicalpath/index.d.ts", "packages/ts/package.json: root types must point at dist");
-  assertExactArray("packages/ts/package.json files", tsPackage.files, ["dist", "README.md"]);
+  assertExactArray("packages/ts/package.json files", tsPackage.files, ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"]);
   assert(tsPackage.scripts?.build === "tsc -p tsconfig.build.json", "packages/ts/package.json: missing build script");
   assert(tsPackage.scripts?.["package:smoke"] === "node test/package-smoke.mjs", "packages/ts/package.json: missing package:smoke script");
+  assert(tsPackage.scripts?.prepack === "node ../../scripts/sync-npm-package-notices.mjs copy", "packages/ts/package.json: missing prepack notice sync");
+  assert(tsPackage.scripts?.postpack === "node ../../scripts/sync-npm-package-notices.mjs clean", "packages/ts/package.json: missing postpack notice cleanup");
   assert(tsPackage.scripts?.["pack:dry-run"] === "npm pack --dry-run", "packages/ts/package.json: missing pack:dry-run script");
 
   const unityPackage = json("packages/unity/package.json");
   assert(unityPackage.name === unityPackageName, `packages/unity/package.json: expected package name ${unityPackageName}`);
+  assert(unityPackage.version === releaseVersion, `packages/unity/package.json: expected version ${releaseVersion}`);
   assert(unityPackage.license === stingerLicense, `packages/unity/package.json: expected license ${stingerLicense}`);
 
   const standalonePackage = json("packages/javascript-standalone/package.json");
   assert(standalonePackage.name === standalonePackageName, "packages/javascript-standalone/package.json: unexpected package name");
-  assert(standalonePackage.version === "2026.5.18-1", "packages/javascript-standalone/package.json: expected version 2026.5.18-1");
+  assert(standalonePackage.version === releaseVersion, `packages/javascript-standalone/package.json: expected version ${releaseVersion}`);
   assert(standalonePackage.license === stingerLicense, `packages/javascript-standalone/package.json: expected license ${stingerLicense}`);
+  assert(!Object.hasOwn(standalonePackage, "private"), "packages/javascript-standalone/package.json: publishable package must not be private for release");
+  assertExactArray("packages/javascript-standalone/package.json files", standalonePackage.files, ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"]);
+  assert(standalonePackage.scripts?.prepack === "node ../../scripts/sync-npm-package-notices.mjs copy", "packages/javascript-standalone/package.json: missing prepack notice sync");
+  assert(standalonePackage.scripts?.postpack === "node ../../scripts/sync-npm-package-notices.mjs clean", "packages/javascript-standalone/package.json: missing postpack notice cleanup");
 
   assertIncludes("packages/go/go.mod", read("packages/go/go.mod"), `module ${goModulePath}`);
   for (const relativePath of ["README.md", "NOTICE.md", "NOTICE.ru.md"]) {

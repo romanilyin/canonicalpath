@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "canonicalpath-python"
-version = "2026.5.18-1"
+version = "2026.5.18-2"
 description = "Experimental lexical CanonicalPath package for Python"
 readme = "README.md"
 requires-python = ">=3.10"

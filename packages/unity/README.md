@@ -23,6 +23,13 @@ Local package use:
 - The package does not declare `com.unity.burst` as a default dependency; Burst probes create temporary projects that include `com.unity.burst` explicitly.
 - Treat this package as an early bridge/runtime package, not as the final full Unity package target.
 
+Release packaging:
+
+- Package version for the current release candidate is `2026.5.18-2`.
+- First public distribution is planned as a Git UPM dependency by repository tag and package path: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2`.
+- Registry/OpenUPM publication remains a separate decision.
+- Before registry publication or copying `packages/unity` outside the repository, add package-local `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` or another reviewed notice strategy. The repository-level release tag carries the authoritative root license and notices.
+
 Implemented early bridge scope:
 
 - Minimal `ICanonicalPathService` facade inside the Unity bridge, not a standalone large library project.

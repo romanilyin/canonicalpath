@@ -99,7 +99,7 @@
 - Unity UPM package: `com.romanilyin.canonicalpath`.
 - License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
-`pnpm check:unity-mcp-contract` guards these identity decisions together with the Unity MCP path contract. The TypeScript package remains `private: true` until the repository is intentionally opened and publish-ready package output is added.
+`pnpm check:unity-mcp-contract` guards these identity decisions together with the Unity MCP path contract. The current public release plan and package publish gates are tracked in `docs/release-process.md` and `docs/release-2026.5.18-2.md`.
 
 ## Источник статуса
 

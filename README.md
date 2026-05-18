@@ -6,6 +6,8 @@
 
 Monorepo for cross-platform path identity and root-bound filesystem access.
 
+Target public release: `2026.5.18-2`. The release plan is tracked in `docs/release-2026.5.18-2.md`; release notes are drafted in `docs/release-notes-2026.5.18-2.md`.
+
 This repository follows the plan in `Documentation/`:
 
 - `CanonicalPath` is deterministic lexical identity and serialization.
@@ -52,11 +54,15 @@ Go `canonicalfs.Rename` is intentionally unsupported on Go 1.24 because `os.Root
 
 - Canonical repository: `https://github.com/romanilyin/canonicalpath`.
 - TypeScript/npm package name: `@romanilyin/canonicalpath`.
+- JavaScript standalone npm package name: `@romanilyin/canonicalpath-standalone`.
 - Go module path: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package name: `com.romanilyin.canonicalpath`.
+- Release version: `2026.5.18-2`.
 - License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
-The repository remains private until the public release step. These identifiers are fixed now so downstream Unity MCP work can target the future public package instead of private or temporary coordinates.
+The repository remains private until the final public release switch. These identifiers are fixed now so downstream Unity MCP work can target the public package instead of private or temporary coordinates.
+
+The `2026.5.18-2` release includes the source repository, npm packages, Go source and daemon packages, Unity UPM Git package, and the current experimental lexical/client-only language targets. The Go module tag is `packages/go/v0.2026.5-18.2`, which preserves calendar-version freshness while staying valid for the current Go module path; see `docs/release-process.md` for the release tag policy.
 
 ## Initial Verification
 

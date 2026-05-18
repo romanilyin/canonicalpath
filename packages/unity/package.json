@@ -1,9 +1,15 @@
 {
   "name": "com.romanilyin.canonicalpath",
-  "version": "2026.5.18-1",
+  "version": "2026.5.18-2",
   "displayName": "CanonicalPath",
   "description": "Early Unity managed CanonicalPath runtime, daemon transport, and bridge facade for payload validation.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
+  "licensesUrl": "https://github.com/romanilyin/canonicalpath/blob/main/LICENSE.md",
+  "changelogUrl": "https://github.com/romanilyin/canonicalpath/blob/main/CHANGELOG.md",
+  "documentationUrl": "https://github.com/romanilyin/canonicalpath/blob/main/packages/unity/README.md",
   "unity": "2022.3",
-  "author": "CanonicalPath contributors"
+  "author": {
+    "name": "ROMAN ILYIN",
+    "url": "https://github.com/romanilyin"
+  }
 }

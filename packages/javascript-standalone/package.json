@@ -1,7 +1,6 @@
 {
   "name": "@romanilyin/canonicalpath-standalone",
-  "version": "2026.5.18-1",
-  "private": true,
+  "version": "2026.5.18-2",
   "description": "Browser-safe lexical CanonicalPath target.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
   "type": "module",

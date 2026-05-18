@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.canonicalpath"
-version = "2026.5.18-1"
+version = "2026.5.18-2"
 
 repositories {
     mavenCentral()

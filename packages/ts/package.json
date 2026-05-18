@@ -1,9 +1,8 @@
 {
   "name": "@romanilyin/canonicalpath",
-  "version": "2026.5.18-1",
+  "version": "2026.5.18-2",
   "description": "Deterministic lexical path identity with CanonicalFS daemon client helpers.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
-  "private": true,
   "type": "module",
   "sideEffects": false,
   "repository": {
