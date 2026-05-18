@@ -886,14 +886,14 @@ Suggested names:
 
 ## Agent implementation checklist
 
-Статус ниже отражает текущее состояние MVP. GitHub workflows сейчас intentionally manual-only (`workflow_dispatch`) из-за исчерпанных free GitHub Actions minutes; лимит ожидается к обновлению 1 июня. До этого не запускаем Actions и используем локальный gate — `pnpm verify`, `pnpm alloc`, `pnpm go:race`.
+Статус ниже отражает текущее состояние MVP. После публичного релиза GitHub workflows для CI, security baseline и CodeQL включены на `pull_request`, `push` в `main` и `workflow_dispatch`; `schedule` triggers не включены. Локальный gate остается `pnpm verify`, `pnpm alloc`, `pnpm go:race`.
 
 ### Phase 0 — Repository skeleton
 
 - [x] Create files listed in structure above.
 - [x] Add `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`.
 - [x] Add root `package.json`, `pnpm-workspace.yaml`, `go.work`.
-- [x] Add GitHub Actions workflows as manual-only checks.
+- [x] Add GitHub Actions workflows for CI/security/CodeQL with `pull_request`, `push` to `main`, and `workflow_dispatch` triggers after public release.
 - [x] Add `spec/testdata/*.json` and schema.
 
 ### Phase 1 — CanonicalPath MVP
@@ -909,7 +909,7 @@ Suggested names:
 - [x] Implement `sanitizeComponent`, `encodeComponent`, and Git ref encoding.
 - [x] Implement Go `IsEqual` and TS `isEqual`.
 - [x] Pass shared test vectors locally and compare Go/TS vector results.
-- [ ] Run the manual OS matrix on Linux/macOS/Windows when GitHub Actions minutes are available again.
+- [x] Run the public CI matrix on Linux/Windows through GitHub Actions after public release; keep local Unity/editor-heavy matrix documented separately.
 
 ### Phase 2 — CanonicalFS MVP
 
@@ -932,7 +932,7 @@ Suggested names:
 - [x] Restrict project root registration through allowlist/project registry or trusted bootstrap flow.
 - [x] Add daemon server-side read caps, response caps, and HTTP timeouts.
 - [x] Create or update the manual CI workflow so it runs the same gate as local release readiness: `pnpm install --frozen-lockfile`, `pnpm verify`, `pnpm go:race`.
-- [x] Keep GitHub workflows manual-only until Actions minutes are available again or the user explicitly asks for automatic triggers.
+- [x] Keep GitHub workflows manual-only until Actions minutes are available again or the user explicitly asks for automatic triggers; public release request enabled `pull_request`/`push` triggers.
 - [x] Add and fix vectors/tests for `canonicalfs` drive-relative paths like `C:foo`.
 - [x] If `canonicalfs` gets a separate `ERR_DRIVE_RELATIVE_PATH`, update validator/schema, Go/TS error constants, fixtures, and tests in the same change.
 - [x] Add and fix vectors/tests for Windows reserved component names with extensions: `CON.txt`, `NUL.txt`, `COM1.log`, `LPT9.tmp`.
@@ -980,6 +980,6 @@ A PR can be considered successful when:
 3. `relative(root, target)` does not use naive string prefix matching.
 4. Go `canonicalfs` blocks traversal, symlink escape, archive traversal, and race attempts in real fixtures.
 5. Local gate passes: `pnpm verify` and `pnpm go:race`.
-6. Manual CI matrix can be run on Linux, macOS, Windows once GitHub Actions minutes are available again.
+6. Public CI/security/CodeQL workflows run on GitHub-hosted runners after public release; local Unity/editor-heavy matrix remains a separate local gate unless stabilized for GitHub runners.
 7. Docs clearly say that `canonicalpath` is not a security boundary.
 8. opencode/openchamber examples show DB aliases, safe file tool usage, WSL/Git path mapping, and daemon transport clients.

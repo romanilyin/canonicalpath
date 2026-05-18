@@ -51,8 +51,8 @@ https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2
 - `CONTRIBUTING.md` and `CONTRIBUTING.ru.md` document PR and branch naming rules, including `l10n` for localization-only documentation changes.
 - npm package metadata is publish-ready and includes `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` in pack dry-runs.
 - GitHub repository settings are squash-only, delete merged branches, and keep Actions token permissions read-only.
-- GitHub Actions remain manual-only while the repository is private.
-- Manual-only CodeQL workflow is prepared in `.github/workflows/codeql.yml`; automatic triggers are intentionally not enabled before the public switch.
+- GitHub Actions were manual-only while the repository was private.
+- CI, security baseline, and CodeQL workflows are enabled on `pull_request`, `push` to `main`, and `workflow_dispatch` after the public switch.
 
 ## Pre-Public Checklist
 
@@ -91,13 +91,13 @@ After review, commit, local gates, and tag creation:
 
 - Open `romanilyin/canonicalpath` as public.
 - Enable secret scanning and push protection if GitHub exposes them for the public repository.
-- Keep or enable the prepared CodeQL workflow, then add `pull_request`/`push` triggers after confirming public Actions behavior.
+- Keep the prepared CodeQL workflow enabled for `pull_request`, `push`, and `workflow_dispatch` unless GitHub CodeQL default setup replaces it deliberately.
 - Enable private vulnerability reporting if available.
 - Enable fork PR workflow approval for outside collaborators.
 
 ## CI And Branch Protection
 
-After the repository is public, change `ci.yml` and `security.yml` from manual-only to:
+After the repository is public, `ci.yml`, `security.yml`, and `codeql.yml` should use:
 
 ```yaml
 on:

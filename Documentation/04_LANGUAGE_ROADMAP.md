@@ -38,7 +38,7 @@
 - [x] Ввести server-side лимиты чтения: безопасный default `max_bytes`, hard cap и запрет unbounded read через RPC.
 - [x] Добавить HTTP server timeouts: `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` и документированный лимит входящего JSON/ответа.
 - [x] Создать или обновить ручной GitHub workflow, чтобы он был эквивалентом локального gate без auto-trigger: `pnpm install --frozen-lockfile`, `pnpm verify`, `pnpm go:race`.
-- [x] Не запускать Actions и не включать `push`, `pull_request` или `schedule` triggers, пока лимит GitHub Actions minutes не восстановлен 1 июня или пользователь явно не попросит.
+- [x] Не запускать Actions и не включать `push`, `pull_request` или `schedule` triggers, пока лимит GitHub Actions minutes не восстановлен 1 июня или пользователь явно не попросит. Для публичного релиза пользователь попросил включить `pull_request` и `push` triggers для CI/security/CodeQL; `schedule` triggers не включены.
 
 ### P1 — contract parity и security vectors
 

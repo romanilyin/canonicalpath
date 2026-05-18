@@ -1,6 +1,6 @@
 # Release Process
 
-Release publishing automation is not implemented yet. The repository has manual release-readiness and CodeQL workflows that validate release gates without publishing packages or creating releases.
+Release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases.
 
 Current release plan: `docs/release-2026.5.18-2.md`.
 
@@ -45,13 +45,13 @@ The `2026.5.18-2` public release is a full repository release. It includes the s
 
 ## Gates
 
-- Keep GitHub Actions manual-only until the repository is public or the private Actions quota policy changes.
+- CI, security baseline, and CodeQL workflows run on `pull_request`, `push` to `main`, and `workflow_dispatch` after the repository is public.
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - Run `pnpm ts:pack:dry-run` and `pnpm js:standalone:pack:dry-run` before npm publication.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, `npm pack --dry-run`, and `scripts/run-scoped-daemon-smoke.mjs`.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
-- The manual `codeql` workflow is prepared for CodeQL analysis and must stay manual-only until the repository is public.
+- The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 
@@ -61,9 +61,9 @@ After the release commit and local gates pass, open the repository as public. St
 
 After the repository is public:
 
-- Enable `pull_request` and `push` triggers for `ci.yml` and `security.yml`; keep `workflow_dispatch`.
+- Keep `pull_request`, `push`, and `workflow_dispatch` triggers enabled for `ci.yml`, `security.yml`, and `codeql.yml`.
 - Enable secret scanning and push protection if GitHub makes them available.
-- Enable CodeQL default setup or add a CodeQL workflow.
+- Keep the repository CodeQL workflow enabled unless GitHub CodeQL default setup replaces it deliberately.
 - Enable private vulnerability reporting if available.
 - Create a minimal test PR, wait for green checks, then configure required checks and the `protect-main` ruleset.
 
