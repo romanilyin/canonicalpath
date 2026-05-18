@@ -110,6 +110,8 @@ on:
 
 Create a minimal PR after enabling PR-triggered CI. Use it to confirm check names and stability.
 
+This release uses a small documentation-only PR as the public CI smoke test before enabling `protect-main`.
+
 Required checks to consider after the first green PR run:
 
 - `ci / local release readiness gate`.
