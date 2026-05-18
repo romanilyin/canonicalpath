@@ -1,6 +1,6 @@
 # Release Process
 
-Release automation is not implemented yet. Follow SemVer and keep shared spec changes explicit.
+Release publishing automation is not implemented yet. The repository has a manual release-readiness workflow that validates release gates without publishing packages or creating releases.
 
 ## Public Coordinates
 
@@ -14,8 +14,10 @@ Release automation is not implemented yet. Follow SemVer and keep shared spec ch
 ## Gates
 
 - Keep packages private until the repository is explicitly opened for public release.
-- Run `pnpm verify`, `pnpm go:race`, and `git diff --check` before release commits.
+- Keep GitHub Actions manual-only until the repository is public or the private Actions quota policy changes.
+- Run `pnpm verify`, `pnpm go:race`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, `npm pack --dry-run`, and `scripts/run-scoped-daemon-smoke.mjs`.
+- The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 

@@ -7,9 +7,23 @@ permissions:
   contents: read
 
 jobs:
-  release-plan:
-    name: release plan placeholder
+  release-readiness:
+    name: manual release readiness check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - run: echo "Release automation is not implemented yet."
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: packages/go/go.mod
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:changelog
+      - run: pnpm verify
+      - run: pnpm go:race
+      - run: pnpm ts:pack:dry-run
+      - run: pnpm js:standalone:pack:dry-run

@@ -1,1 +1,11 @@
-# Add repository owners when the project moves out of the seed phase.
+* @romanilyin
+
+.github/workflows/* @romanilyin
+.github/dependabot.yml @romanilyin
+packages/go/canonicalfs/** @romanilyin
+packages/go/canonicalfsrpc/** @romanilyin
+packages/ts/src/canonicalfs/** @romanilyin
+spec/** @romanilyin
+LICENSE* @romanilyin
+NOTICE* @romanilyin
+SECURITY.md @romanilyin

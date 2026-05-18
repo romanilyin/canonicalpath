@@ -6,6 +6,10 @@
 
 -
 
+## Branch
+
+- [ ] Branch name follows `CONTRIBUTING.md`.
+
 ## Path Safety Checklist
 
 - [ ] `canonicalpath` changes do not claim filesystem security.

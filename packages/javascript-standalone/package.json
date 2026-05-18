@@ -6,6 +6,19 @@
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
   "type": "module",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romanilyin/canonicalpath.git",
+    "directory": "packages/javascript-standalone"
+  },
+  "homepage": "https://github.com/romanilyin/canonicalpath#readme",
+  "bugs": {
+    "url": "https://github.com/romanilyin/canonicalpath/issues"
+  },
+  "keywords": ["canonicalpath", "path", "browser", "lexical", "path-identity"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/canonicalpath.js",
   "types": "./dist/canonicalpath.d.ts",
   "exports": {
@@ -15,10 +28,13 @@
       "default": "./dist/canonicalpath.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:smoke": "node test/build-smoke.mjs",
+    "prepack": "node ../../scripts/sync-npm-package-notices.mjs copy",
+    "postpack": "node ../../scripts/sync-npm-package-notices.mjs clean",
+    "pack:dry-run": "npm pack --dry-run",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "alloc": "vitest run test/allocation.test.ts",
