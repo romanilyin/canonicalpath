@@ -1,5 +1,7 @@
 # Contributing
 
+Russian localization: `CONTRIBUTING.ru.md`.
+
 Read `AGENTS.md` and `Documentation/README_FOR_AGENTS.md` before changing package behavior.
 
 ## Pull Requests
