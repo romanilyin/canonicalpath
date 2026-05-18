@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "branch-dir-slash-name",
+      "operation": "encode-git-ref",
+      "raw": "feature/auth",
+      "expected": "feature-auth--fc659bd73585",
+      "notes": "Git ref directory encoding uses slug plus first 12 hex chars of SHA-256(raw)."
+    },
+    {
+      "id": "branch-dir-slash-collision",
+      "operation": "encode-git-ref",
+      "raw": "feature-auth",
+      "expected": "feature-auth--473f3d0e8078",
+      "notes": "This must not collide with feature/auth."
+    },
+    {
+      "id": "branch-dir-space-name",
+      "operation": "encode-git-ref",
+      "raw": "bugfix/JIRA-123 fix",
+      "expected": "bugfix-JIRA-123-fix--d4e224c55ec0"
+    },
+    {
+      "id": "branch-dir-release-name",
+      "operation": "encode-git-ref",
+      "raw": "release/v1.0.0",
+      "expected": "release-v1.0.0--19d11b42323b"
+    },
+    {
+      "id": "prefix-bypass-fixture",
+      "operation": "normalize",
+      "raw": "c:/project-evil/file.txt",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/project-evil/file.txt",
+      "notes": "Used by relative(root,target) tests to ensure c:/project is not a prefix match for c:/project-evil."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+.DS_Store
+*.log
+coverage/
+dist/
+node_modules/
+__pycache__/
+*.pyc
+target/
+tmp/
+vendor/
+packages/csharp/bin/
+packages/csharp/obj/

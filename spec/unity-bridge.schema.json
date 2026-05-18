@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonicalpath.dev/spec/unity-bridge.schema.json",
+  "title": "Unity bridge path vectors",
+  "type": "object",
+  "required": ["version", "cases"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "operation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "operation": {
+          "enum": ["normalize-unity-path", "from-unity-asset-path", "to-unity-asset-path", "make-safe-file-name"]
+        },
+        "raw": { "type": "string" },
+        "root": { "type": "string" },
+        "target": { "type": "string" },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected": { "type": "string" },
+        "error": { "$ref": "#/$defs/errorCode" },
+        "notes": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": { "enum": ["linux", "macos", "windows", "wsl"] },
+          "uniqueItems": true
+        }
+      },
+      "oneOf": [
+        { "required": ["expected"], "not": { "required": ["error"] } },
+        { "required": ["error"], "not": { "required": ["expected"] } }
+      ],
+      "additionalProperties": false
+    },
+    "errorCode": {
+      "enum": [
+        "ERR_ABSOLUTE_PATH",
+        "ERR_EMPTY_PATH",
+        "ERR_INVALID_COMPONENT",
+        "ERR_INVALID_PATH",
+        "ERR_NUL_BYTE",
+        "ERR_OUTSIDE_ROOT"
+      ]
+    }
+  }
+}

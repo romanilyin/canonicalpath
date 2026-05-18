@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "sanitize-component-slashes",
+      "operation": "sanitize-component",
+      "raw": "feature/auth",
+      "profile": "portable",
+      "expected": "feature-auth"
+    },
+    {
+      "id": "sanitize-component-win-device",
+      "operation": "sanitize-component",
+      "raw": "CON",
+      "profile": "win32",
+      "expected": "CON-"
+    },
+    {
+      "id": "sanitize-component-win-device-extension",
+      "operation": "sanitize-component",
+      "raw": "CON.txt",
+      "profile": "win32",
+      "expected": "CON-.txt"
+    },
+    {
+      "id": "sanitize-component-win-com-extension",
+      "operation": "sanitize-component",
+      "raw": "COM1.log",
+      "profile": "win32",
+      "expected": "COM1-.log"
+    },
+    {
+      "id": "sanitize-component-win-trailing-dot",
+      "operation": "sanitize-component",
+      "raw": "report.",
+      "profile": "win32",
+      "expected": "report"
+    },
+    {
+      "id": "sanitize-component-win-trailing-space",
+      "operation": "sanitize-component",
+      "raw": "report ",
+      "profile": "win32",
+      "expected": "report"
+    },
+    {
+      "id": "sanitize-component-win-device-trailing-dot",
+      "operation": "sanitize-component",
+      "raw": "CON.",
+      "profile": "win32",
+      "expected": "CON-"
+    },
+    {
+      "id": "encode-component-trims-punctuation",
+      "operation": "encode-component",
+      "raw": " bug:fix ",
+      "profile": "portable",
+      "expected": "bug-fix"
+    },
+    {
+      "id": "encode-component-win-nul-extension",
+      "operation": "encode-component",
+      "raw": "NUL.txt",
+      "profile": "win32",
+      "expected": "NUL-.txt"
+    },
+    {
+      "id": "encode-component-win-lpt-extension",
+      "operation": "encode-component",
+      "raw": "LPT9.tmp",
+      "profile": "win32",
+      "expected": "LPT9-.tmp"
+    },
+    {
+      "id": "sanitize-component-nul-rejected",
+      "operation": "sanitize-component",
+      "raw": "bad\u0000name",
+      "profile": "portable",
+      "error": "ERR_NUL_BYTE"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    name: local release readiness gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: packages/go/go.mod
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - run: pnpm go:race
+
+  windows-powershell:
+    name: Windows PowerShell module smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: packages/go/go.mod
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ps:test -- --all-available
+      - run: pnpm ps:alloc -- --all-available
+      - run: pnpm ps:transport:alloc -- --all-available

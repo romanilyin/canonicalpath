@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonicalpath.dev/spec/canonical-fs.schema.json",
+  "title": "CanonicalFS fixture manifest",
+  "type": "object",
+  "required": ["version", "fixtures"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fixtures": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fixture": {
+      "type": "object",
+      "required": ["id", "operation", "path", "expect"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "operation": { "enum": ["read", "write", "stat", "mkdir", "remove", "rename", "extract"] },
+        "path": { "type": "string" },
+        "target": { "type": "string" },
+        "expect": { "enum": ["allow", "reject"] },
+        "error": { "$ref": "#/$defs/errorCode" },
+        "errorMode": { "enum": ["exact", "reject-only"] },
+        "notes": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": { "enum": ["linux", "macos", "windows", "wsl"] },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "enum": ["rename", "extract"] } } },
+          "then": { "required": ["target"] }
+        },
+        {
+          "if": { "properties": { "expect": { "const": "reject" } } },
+          "then": { "required": ["error"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "errorCode": {
+      "enum": [
+        "ERR_ABSOLUTE_PATH",
+        "ERR_ARCHIVE_TRAVERSAL",
+        "ERR_DRIVE_RELATIVE_PATH",
+        "ERR_NUL_BYTE",
+        "ERR_OUTSIDE_ROOT",
+        "ERR_RACE_DETECTED",
+        "ERR_READ_LIMIT_EXCEEDED",
+        "ERR_SYMLINK_ESCAPE"
+      ]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "equal-posix-normalized",
+      "operation": "is-equal",
+      "root": "/home//alice/./repo",
+      "target": "/home/alice/repo",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "true"
+    },
+    {
+      "id": "unequal-posix-prefix-sibling",
+      "operation": "is-equal",
+      "root": "/tmp/project",
+      "target": "/tmp/project-evil",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "false"
+    },
+    {
+      "id": "equal-win-drive-separators",
+      "operation": "is-equal",
+      "root": "C:\\Users\\Alice\\Repo",
+      "target": "c:/Users/Alice/Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "true"
+    },
+    {
+      "id": "unequal-win-case-preserved",
+      "operation": "is-equal",
+      "root": "C:\\Users\\Alice\\Repo",
+      "target": "c:/users/Alice/Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "false"
+    },
+    {
+      "id": "equal-wsl-to-win-drive",
+      "operation": "is-equal",
+      "root": "/mnt/c/Users/Alice/Repo",
+      "target": "c:/Users/Alice/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "true"
+    },
+    {
+      "id": "is-equal-empty-left-rejected",
+      "operation": "is-equal",
+      "root": "",
+      "target": "/tmp/repo",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "error": "ERR_EMPTY_PATH"
+    }
+  ]
+}

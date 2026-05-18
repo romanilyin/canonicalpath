@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonicalpath.dev/spec/unity-mcp-path-scopes.schema.json",
+  "title": "Unity MCP path scope vectors",
+  "type": "object",
+  "required": ["version", "scopes", "cases"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "scopes": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/scopeName" },
+      "additionalProperties": { "$ref": "#/$defs/scope" }
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "scopeName": {
+      "enum": ["unity_asset", "knowledge", "package_manifest", "artifact", "gateway_cache", "temp_session"]
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "allowedRoots",
+        "allowedOperations",
+        "relativeInputFormat",
+        "maxPathLength",
+        "maxComponentLength",
+        "separatorPolicy",
+        "symlinkReparsePolicy",
+        "caseSensitivityExpectation",
+        "unicodeNormalizationPolicy",
+        "absoluteInputAllowed",
+        "llmToolArgsAllowed",
+        "persistedRefsAllowed",
+        "auditRefsAllowed",
+        "artifactRefsAllowed"
+      ],
+      "properties": {
+        "allowedRoots": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+        "allowedOperations": {
+          "type": "array",
+          "items": { "enum": ["validate", "read", "write", "list", "delete", "import", "refresh", "generated-key"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "relativeInputFormat": { "type": "string" },
+        "maxPathLength": { "type": "integer", "minimum": 1 },
+        "maxComponentLength": { "type": "integer", "minimum": 1 },
+        "separatorPolicy": { "const": "forward-slash-only" },
+        "symlinkReparsePolicy": { "type": "string" },
+        "caseSensitivityExpectation": { "type": "string" },
+        "unicodeNormalizationPolicy": { "type": "string" },
+        "absoluteInputAllowed": { "type": "boolean" },
+        "llmToolArgsAllowed": { "type": "boolean" },
+        "persistedRefsAllowed": { "type": "boolean" },
+        "auditRefsAllowed": { "type": "boolean" },
+        "artifactRefsAllowed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "type": "object",
+      "required": ["id", "scope", "operation", "raw"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "scope": { "$ref": "#/$defs/scopeName" },
+        "operation": { "enum": ["validate", "read", "write", "list", "delete", "import", "refresh", "generated-key"] },
+        "raw": { "type": "string" },
+        "expectedProjectRelative": { "type": "string" },
+        "expectedCacheRelative": { "type": "string" },
+        "error": { "$ref": "#/$defs/errorCode" },
+        "notes": { "type": "string" },
+        "platforms": { "type": "array", "items": { "enum": ["linux", "macos", "windows", "wsl"] }, "uniqueItems": true }
+      },
+      "oneOf": [
+        { "required": ["expectedProjectRelative"], "not": { "anyOf": [{ "required": ["expectedCacheRelative"] }, { "required": ["error"] }] } },
+        { "required": ["expectedCacheRelative"], "not": { "anyOf": [{ "required": ["expectedProjectRelative"] }, { "required": ["error"] }] } },
+        { "required": ["error"], "not": { "anyOf": [{ "required": ["expectedProjectRelative"] }, { "required": ["expectedCacheRelative"] }] } }
+      ],
+      "additionalProperties": false
+    },
+    "errorCode": {
+      "enum": [
+        "ERR_ABSOLUTE_PATH",
+        "ERR_DRIVE_RELATIVE_PATH",
+        "ERR_EMPTY_PATH",
+        "ERR_ENCODED_SEPARATOR",
+        "ERR_INVALID_PATH",
+        "ERR_NUL_BYTE",
+        "ERR_OUTSIDE_ROOT",
+        "ERR_UNSUPPORTED_URI_SCHEME"
+      ]
+    }
+  }
+}

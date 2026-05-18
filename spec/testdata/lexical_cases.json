@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "posix-absolute-basic",
+      "operation": "normalize",
+      "raw": "/home/alice/repo",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "posix-duplicate-separators-and-dot",
+      "operation": "normalize",
+      "raw": "/home//alice/./repo/",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "posix-dotdot",
+      "operation": "normalize",
+      "raw": "/home/alice/repo/src/../README.md",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/home/alice/repo/README.md"
+    },
+    {
+      "id": "relative-portable-clean",
+      "operation": "normalize",
+      "raw": "src/./lib/../index.ts",
+      "options": { "sourceHost": "posix", "targetProfile": "portable" },
+      "expected": "src/index.ts"
+    },
+    {
+      "id": "win-drive-basic",
+      "operation": "normalize",
+      "raw": "C:\\Users\\Alice\\Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "target-profile-posix-rejects-drive-root",
+      "operation": "normalize",
+      "raw": "C:/Users/Alice/Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "posix" },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "target-profile-win32-drive-rejects-posix-root",
+      "operation": "normalize",
+      "raw": "/home/alice/repo",
+      "options": { "sourceHost": "posix", "targetProfile": "win32-drive" },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "lexical-dotdot",
+      "operation": "normalize",
+      "raw": "c:/Users/Alice/Repo/src/../README.md",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/Users/Alice/Repo/README.md"
+    },
+    {
+      "id": "posix-root-trailing-slash-kept",
+      "operation": "normalize",
+      "raw": "/",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/"
+    },
+    {
+      "id": "win-drive-root-trailing-slash-kept",
+      "operation": "normalize",
+      "raw": "C:\\",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/"
+    },
+    {
+      "id": "outer-whitespace-preserved-by-default",
+      "operation": "normalize",
+      "raw": "/tmp/repo ",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/tmp/repo ",
+      "notes": "Outer whitespace is user data unless trimOuterWhitespace is explicitly enabled."
+    },
+    {
+      "id": "outer-whitespace-trim-explicit",
+      "operation": "normalize",
+      "raw": " /tmp/repo ",
+      "options": { "sourceHost": "posix", "targetProfile": "posix", "trimOuterWhitespace": true },
+      "expected": "/tmp/repo"
+    },
+    {
+      "id": "to-posix-posix-path",
+      "operation": "to-posix",
+      "raw": "/home/alice/repo",
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "to-posix-relative-path",
+      "operation": "to-posix",
+      "raw": "src/index.ts",
+      "expected": "src/index.ts"
+    },
+    {
+      "id": "to-posix-win-drive-rejected",
+      "operation": "to-posix",
+      "raw": "c:/Users/Alice/Repo",
+      "error": "ERR_INVALID_PATH"
+    }
+  ]
+}

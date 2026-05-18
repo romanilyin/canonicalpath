@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "nul-rejected",
+      "operation": "normalize",
+      "raw": "safe\u0000name",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "empty-path-rejected",
+      "operation": "normalize",
+      "raw": "",
+      "error": "ERR_EMPTY_PATH"
+    },
+    {
+      "id": "relative-posix-inside-root",
+      "operation": "relative",
+      "root": "/tmp/project",
+      "target": "/tmp/project/src/file.txt",
+      "expected": "src/file.txt"
+    },
+    {
+      "id": "relative-posix-root-self",
+      "operation": "relative",
+      "root": "/tmp/project",
+      "target": "/tmp/project",
+      "expected": "."
+    },
+    {
+      "id": "relative-posix-prefix-sibling-target",
+      "operation": "relative",
+      "root": "/tmp/project",
+      "target": "/tmp/project-evil/file.txt",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "relative-posix-parent-target",
+      "operation": "relative",
+      "root": "/tmp/project",
+      "target": "/tmp/outside/secret.txt",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "relative-win-inside-root",
+      "operation": "relative",
+      "root": "c:/repo",
+      "target": "c:/repo/src/file.txt",
+      "expected": "src/file.txt"
+    },
+    {
+      "id": "relative-win-root-self",
+      "operation": "relative",
+      "root": "c:/repo",
+      "target": "c:/repo",
+      "expected": "."
+    },
+    {
+      "id": "relative-win-prefix-sibling-target",
+      "operation": "relative",
+      "root": "c:/repo",
+      "target": "c:/repo-evil/file.txt",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "relative-cross-drive-rejected",
+      "operation": "relative",
+      "root": "c:/repo",
+      "target": "d:/repo/file.txt",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "join-relative-inside-root",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": "src/file.txt",
+      "expected": "c:/repo/src/file.txt"
+    },
+    {
+      "id": "join-relative-self-win-root",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": ".",
+      "expected": "c:/repo"
+    },
+    {
+      "id": "join-relative-self-posix-root",
+      "operation": "join",
+      "root": "/tmp/project",
+      "relative": ".",
+      "expected": "/tmp/project"
+    },
+    {
+      "id": "join-absolute-rejected",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": "d:/escape.txt",
+      "error": "ERR_ABSOLUTE_PATH"
+    }
+  ]
+}

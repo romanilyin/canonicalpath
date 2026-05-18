@@ -1,0 +1,4 @@
+packages:
+  - "packages/ts"
+  - "packages/javascript-standalone"
+  - "examples/*"

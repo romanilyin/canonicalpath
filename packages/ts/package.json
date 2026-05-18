@@ -1,0 +1,42 @@
+{
+  "name": "@romanilyin/canonicalpath",
+  "version": "0.1.0",
+  "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/canonicalpath/index.js",
+  "types": "./dist/canonicalpath/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/canonicalpath/index.d.ts",
+      "import": "./dist/canonicalpath/index.js",
+      "default": "./dist/canonicalpath/index.js"
+    },
+    "./canonicalpath": {
+      "types": "./dist/canonicalpath/index.d.ts",
+      "import": "./dist/canonicalpath/index.js",
+      "default": "./dist/canonicalpath/index.js"
+    },
+    "./canonicalfs": {
+      "types": "./dist/canonicalfs/index.d.ts",
+      "import": "./dist/canonicalfs/index.js",
+      "default": "./dist/canonicalfs/index.js"
+    },
+    "./unity-gateway": {
+      "types": "./dist/unity-gateway/index.d.ts",
+      "import": "./dist/unity-gateway/index.js",
+      "default": "./dist/unity-gateway/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "package:smoke": "node test/package-smoke.mjs",
+    "pack:dry-run": "npm pack --dry-run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "format": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonicalpath.dev/spec/canonical-path.schema.json",
+  "title": "CanonicalPath test vectors",
+  "type": "object",
+  "required": ["version", "cases"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "operation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "operation": {
+          "enum": ["normalize", "relative", "join", "is-equal", "to-win32", "to-wsl", "to-posix", "sanitize-component", "encode-component", "encode-git-ref"]
+        },
+        "raw": { "type": "string" },
+        "root": { "type": "string" },
+        "target": { "type": "string" },
+        "relative": { "type": "string" },
+        "profile": { "enum": ["portable", "win32", "posix"] },
+        "options": { "$ref": "#/$defs/options" },
+        "expected": { "type": "string" },
+        "error": { "$ref": "#/$defs/errorCode" },
+        "notes": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": { "enum": ["linux", "macos", "windows", "wsl"] },
+          "uniqueItems": true
+        }
+      },
+      "oneOf": [
+        { "required": ["expected"], "not": { "required": ["error"] } },
+        { "required": ["error"], "not": { "required": ["expected"] } }
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "normalize" } } },
+          "then": { "required": ["raw"] }
+        },
+        {
+          "if": { "properties": { "operation": { "enum": ["to-win32", "to-wsl", "to-posix", "sanitize-component", "encode-component", "encode-git-ref"] } } },
+          "then": { "required": ["raw"] }
+        },
+        {
+          "if": { "properties": { "operation": { "enum": ["relative", "is-equal"] } } },
+          "then": { "required": ["root", "target"] }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "join" } } },
+          "then": { "required": ["root", "relative"] }
+        },
+        {
+          "if": { "properties": { "operation": { "enum": ["sanitize-component", "encode-component"] } } },
+          "then": { "required": ["profile"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "sourceHost": { "$ref": "#/$defs/hostKind" },
+        "targetProfile": { "enum": ["portable", "win32-drive", "posix"] },
+        "wsl": { "$ref": "#/$defs/wslOptions" },
+        "uri": { "$ref": "#/$defs/uriOptions" },
+        "windows": { "$ref": "#/$defs/windowsOptions" },
+        "trimOuterWhitespace": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "hostKind": {
+      "enum": ["posix", "win32", "wsl", "vscode-file-uri", "dev-container", "ssh-remote"]
+    },
+    "wslOptions": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mountRoot": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "uriOptions": {
+      "type": "object",
+      "properties": {
+        "allowFileUri": { "type": "boolean" },
+        "allowVSCodeFileUri": { "type": "boolean" },
+        "rejectEncodedSlash": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "windowsOptions": {
+      "type": "object",
+      "properties": {
+        "preserveExtendedLength": { "type": "boolean" },
+        "rejectDeviceNames": { "type": "boolean" },
+        "rejectADS": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "errorCode": {
+      "enum": [
+        "ERR_ABSOLUTE_PATH",
+        "ERR_ALTERNATE_DATA_STREAM",
+        "ERR_DRIVE_RELATIVE_PATH",
+        "ERR_EMPTY_PATH",
+        "ERR_ENCODED_SEPARATOR",
+        "ERR_INVALID_COMPONENT",
+        "ERR_INVALID_PATH",
+        "ERR_INVALID_PERCENT_ENCODING",
+        "ERR_INVALID_URI",
+        "ERR_NUL_BYTE",
+        "ERR_OUTSIDE_ROOT",
+        "ERR_RESERVED_DEVICE_NAME",
+        "ERR_UNSUPPORTED_URI_SCHEME"
+      ]
+    }
+  }
+}

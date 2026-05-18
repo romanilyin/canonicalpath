@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "wsl-mnt-c",
+      "operation": "normalize",
+      "raw": "/mnt/c/Users/Alice/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "wsl-uppercase-drive-letter",
+      "operation": "normalize",
+      "raw": "/mnt/C/Users/Alice/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "wsl-custom-mount-root",
+      "operation": "normalize",
+      "raw": "/drives/d/Work/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/drives" } },
+      "expected": "d:/Work/Repo"
+    },
+    {
+      "id": "wsl-mapping-disabled",
+      "operation": "normalize",
+      "raw": "/mnt/c/Users/Alice/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": false } },
+      "expected": "/mnt/c/Users/Alice/Repo"
+    },
+    {
+      "id": "wsl-target-posix-keeps-drive-mount",
+      "operation": "normalize",
+      "raw": "/mnt/c/Users/Alice/Repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "/mnt/c/Users/Alice/Repo"
+    },
+    {
+      "id": "wsl-non-drive-mount-stays-posix",
+      "operation": "normalize",
+      "raw": "/mnt/project/repo",
+      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "/mnt/project/repo"
+    },
+    {
+      "id": "wsl-dotdot-after-drive-mapping",
+      "operation": "normalize",
+      "raw": "/mnt/c/Users/Alice/Repo/src/../README.md",
+      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "expected": "c:/Users/Alice/Repo/README.md"
+    },
+    {
+      "id": "to-wsl-default-mount",
+      "operation": "to-wsl",
+      "raw": "c:/Users/Alice/Repo",
+      "options": { "wsl": { "mountRoot": "/mnt" } },
+      "expected": "/mnt/c/Users/Alice/Repo"
+    },
+    {
+      "id": "to-wsl-custom-mount",
+      "operation": "to-wsl",
+      "raw": "d:/Work/Repo",
+      "options": { "wsl": { "mountRoot": "/drives" } },
+      "expected": "/drives/d/Work/Repo"
+    },
+    {
+      "id": "to-wsl-posix-unchanged",
+      "operation": "to-wsl",
+      "raw": "/home/alice/repo",
+      "expected": "/home/alice/repo"
+    }
+  ]
+}

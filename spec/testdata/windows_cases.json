@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "drive-letter-lowercase-only",
+      "operation": "normalize",
+      "raw": "C:/Users/Alice/Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "path-case-preserved",
+      "operation": "normalize",
+      "raw": "C:/USERS/Alice/Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/USERS/Alice/Repo"
+    },
+    {
+      "id": "backslash-separators-normalized",
+      "operation": "normalize",
+      "raw": "C:\\Users\\Alice\\Repo\\src",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "expected": "c:/Users/Alice/Repo/src"
+    },
+    {
+      "id": "drive-relative-rejected",
+      "operation": "normalize",
+      "raw": "C:foo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "extended-length-drive-unwrapped",
+      "operation": "normalize",
+      "raw": "\\\\?\\C:\\Users\\Alice\\Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive", "windows": { "preserveExtendedLength": false } },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "unc-path-normalized",
+      "operation": "normalize",
+      "raw": "\\\\server\\share\\Repo\\file.txt",
+      "options": { "sourceHost": "win32", "targetProfile": "portable" },
+      "expected": "//server/share/Repo/file.txt"
+    },
+    {
+      "id": "extended-length-unc-unwrapped",
+      "operation": "normalize",
+      "raw": "\\\\?\\UNC\\server\\share\\Repo",
+      "options": { "sourceHost": "win32", "targetProfile": "portable", "windows": { "preserveExtendedLength": false } },
+      "expected": "//server/share/Repo"
+    },
+    {
+      "id": "alternate-data-stream-rejected",
+      "operation": "normalize",
+      "raw": "C:\\Repo\\file.txt:Zone.Identifier",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive", "windows": { "rejectADS": true } },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "reserved-device-name-rejected",
+      "operation": "normalize",
+      "raw": "C:\\Repo\\CON",
+      "options": { "sourceHost": "win32", "targetProfile": "win32-drive", "windows": { "rejectDeviceNames": true } },
+      "error": "ERR_RESERVED_DEVICE_NAME"
+    },
+    {
+      "id": "to-win32-drive-path",
+      "operation": "to-win32",
+      "raw": "c:/Users/Alice/Repo",
+      "expected": "C:\\Users\\Alice\\Repo"
+    },
+    {
+      "id": "to-win32-unc-path",
+      "operation": "to-win32",
+      "raw": "//server/share/Repo/file.txt",
+      "expected": "\\\\server\\share\\Repo\\file.txt"
+    }
+  ]
+}

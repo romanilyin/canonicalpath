@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "file-uri-posix",
+      "operation": "normalize",
+      "raw": "file:///home/alice/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "file-uri-disabled-rejected",
+      "operation": "normalize",
+      "raw": "file:///home/alice/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix" },
+      "error": "ERR_UNSUPPORTED_URI_SCHEME"
+    },
+    {
+      "id": "file-uri-win-drive",
+      "operation": "normalize",
+      "raw": "file:///c%3A/Users/Alice/Repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "win32-drive", "uri": { "allowFileUri": true } },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "file-uri-win-drive-literal-colon",
+      "operation": "normalize",
+      "raw": "file:///C:/Users/Alice/Repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "win32-drive", "uri": { "allowFileUri": true } },
+      "expected": "c:/Users/Alice/Repo"
+    },
+    {
+      "id": "file-uri-unc-authority",
+      "operation": "normalize",
+      "raw": "file://server/share/Repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "portable", "uri": { "allowFileUri": true } },
+      "expected": "//server/share/Repo"
+    },
+    {
+      "id": "file-uri-localhost-posix",
+      "operation": "normalize",
+      "raw": "file://localhost/home/alice/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "vscode-file-uri-posix",
+      "operation": "normalize",
+      "raw": "vscode-file://vscode-app/home/alice/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowVSCodeFileUri": true } },
+      "expected": "/home/alice/repo"
+    },
+    {
+      "id": "vscode-file-uri-disabled-rejected",
+      "operation": "normalize",
+      "raw": "vscode-file://vscode-app/home/alice/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix" },
+      "error": "ERR_UNSUPPORTED_URI_SCHEME"
+    },
+    {
+      "id": "uri-percent-decodes-once",
+      "operation": "normalize",
+      "raw": "file:///tmp/a%252Fb",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true, "rejectEncodedSlash": true } },
+      "expected": "/tmp/a%2Fb",
+      "notes": "Percent decoding happens exactly once; %252F becomes literal %2F, not a path separator."
+    },
+    {
+      "id": "encoded-slash-rejected",
+      "operation": "normalize",
+      "raw": "file:///tmp/project/a%2Fb",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
+      "error": "ERR_ENCODED_SEPARATOR"
+    },
+    {
+      "id": "encoded-slash-allowed-explicit",
+      "operation": "normalize",
+      "raw": "file:///tmp/project/a%2Fb",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true, "rejectEncodedSlash": false } },
+      "expected": "/tmp/project/a/b",
+      "notes": "Encoded separators are rejected by default; this explicit opt-out is not suitable for sandbox boundaries."
+    },
+    {
+      "id": "encoded-backslash-rejected",
+      "operation": "normalize",
+      "raw": "file:///tmp/project/a%5Cb",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true, "rejectEncodedSlash": true } },
+      "error": "ERR_ENCODED_SEPARATOR"
+    },
+    {
+      "id": "invalid-percent-rejected",
+      "operation": "normalize",
+      "raw": "file:///tmp/project/%ZZ",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
+      "error": "ERR_INVALID_PERCENT_ENCODING"
+    },
+    {
+      "id": "unsupported-uri-scheme-rejected",
+      "operation": "normalize",
+      "raw": "https://example.com/repo",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix" },
+      "error": "ERR_UNSUPPORTED_URI_SCHEME"
+    }
+  ]
+}

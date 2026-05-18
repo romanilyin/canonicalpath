@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "unity-normalize-assets-slashes",
+      "operation": "normalize-unity-path",
+      "raw": "Assets\\Scripts//Player.cs",
+      "expected": "Assets/Scripts/Player.cs"
+    },
+    {
+      "id": "unity-normalize-packages-root",
+      "operation": "normalize-unity-path",
+      "raw": "Packages",
+      "expected": "Packages"
+    },
+    {
+      "id": "unity-normalize-assets-root",
+      "operation": "normalize-unity-path",
+      "raw": "Assets",
+      "expected": "Assets"
+    },
+    {
+      "id": "unity-normalize-package-slashes",
+      "operation": "normalize-unity-path",
+      "raw": "Packages\\com.example//package.json",
+      "expected": "Packages/com.example/package.json"
+    },
+    {
+      "id": "unity-normalize-dot-segments",
+      "operation": "normalize-unity-path",
+      "raw": "Assets/./Scripts///Player.cs",
+      "expected": "Assets/Scripts/Player.cs"
+    },
+    {
+      "id": "unity-reject-empty-path",
+      "operation": "normalize-unity-path",
+      "raw": "",
+      "error": "ERR_EMPTY_PATH"
+    },
+    {
+      "id": "unity-reject-project-settings",
+      "operation": "normalize-unity-path",
+      "raw": "ProjectSettings/TagManager.asset",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-traversal",
+      "operation": "normalize-unity-path",
+      "raw": "Assets/../ProjectSettings/TagManager.asset",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unity-reject-absolute-posix",
+      "operation": "normalize-unity-path",
+      "raw": "/tmp/Escape.cs",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "unity-reject-absolute-drive",
+      "operation": "normalize-unity-path",
+      "raw": "C:/Game/Assets/Escape.cs",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "unity-reject-drive-relative",
+      "operation": "normalize-unity-path",
+      "raw": "C:Assets/Escape.cs",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "unity-reject-absolute-unc",
+      "operation": "normalize-unity-path",
+      "raw": "\\\\server\\share\\Assets\\Escape.cs",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "unity-reject-lowercase-assets-root",
+      "operation": "normalize-unity-path",
+      "raw": "assets/Scripts/App.cs",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-assets-prefix-sibling",
+      "operation": "normalize-unity-path",
+      "raw": "AssetsEvil/Scripts/App.cs",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-packages-prefix-sibling",
+      "operation": "normalize-unity-path",
+      "raw": "PackagesEvil/com.example/package.json",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-packages-traversal",
+      "operation": "normalize-unity-path",
+      "raw": "Packages/com.example/../../ProjectSettings/TagManager.asset",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unity-from-asset-path-posix",
+      "operation": "from-unity-asset-path",
+      "root": "/repo/Game",
+      "raw": "Assets/Scripts/App.cs",
+      "expected": "/repo/Game/Assets/Scripts/App.cs"
+    },
+    {
+      "id": "unity-from-package-path-win",
+      "operation": "from-unity-asset-path",
+      "root": "c:/Work/Game",
+      "raw": "Packages\\com.example//package.json",
+      "expected": "c:/Work/Game/Packages/com.example/package.json"
+    },
+    {
+      "id": "unity-to-asset-path-win-package",
+      "operation": "to-unity-asset-path",
+      "root": "c:/Work/Game",
+      "target": "c:/Work/Game/Packages/com.example/package.json",
+      "expected": "Packages/com.example/package.json"
+    },
+    {
+      "id": "unity-to-asset-path-assets-root",
+      "operation": "to-unity-asset-path",
+      "root": "/repo/Game",
+      "target": "/repo/Game/Assets",
+      "expected": "Assets"
+    },
+    {
+      "id": "unity-to-asset-path-reject-outside",
+      "operation": "to-unity-asset-path",
+      "root": "/repo/Game",
+      "target": "/repo/Game-evil/Assets/App.cs",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unity-safe-filename-device",
+      "operation": "make-safe-file-name",
+      "raw": "CON.txt",
+      "expected": "CON-.txt"
+    },
+    {
+      "id": "unity-safe-filename-lpt-device",
+      "operation": "make-safe-file-name",
+      "raw": "LPT9.asset",
+      "expected": "LPT9-.asset"
+    },
+    {
+      "id": "unity-safe-filename-aux-device",
+      "operation": "make-safe-file-name",
+      "raw": "AUX",
+      "expected": "AUX-"
+    },
+    {
+      "id": "unity-safe-filename-com-device",
+      "operation": "make-safe-file-name",
+      "raw": "COM1",
+      "expected": "COM1-"
+    },
+    {
+      "id": "unity-safe-filename-nul-device-with-extension",
+      "operation": "make-safe-file-name",
+      "raw": "NUL.meta",
+      "expected": "NUL-.meta"
+    },
+    {
+      "id": "unity-safe-filename-unsafe-runs",
+      "operation": "make-safe-file-name",
+      "raw": " bad//name\\asset:main.cs ",
+      "expected": "bad-name-asset-main.cs"
+    },
+    {
+      "id": "unity-safe-filename-control-runs",
+      "operation": "make-safe-file-name",
+      "raw": "bad\nname:asset\tmain.cs",
+      "expected": "bad-name-asset-main.cs"
+    },
+    {
+      "id": "unity-safe-filename-long-hash",
+      "operation": "make-safe-file-name",
+      "raw": "very-long-generated-asset-name.prefab",
+      "maxLength": 24,
+      "expected": "very-long-gene--e7f7f771"
+    },
+    {
+      "id": "unity-safe-filename-empty-after-trim",
+      "operation": "make-safe-file-name",
+      "raw": "...",
+      "expected": "file"
+    },
+    {
+      "id": "unity-safe-filename-short-trims",
+      "operation": "make-safe-file-name",
+      "raw": "report.final.asset",
+      "maxLength": 6,
+      "expected": "report"
+    },
+    {
+      "id": "unity-safe-filename-short-file-fallback-trims",
+      "operation": "make-safe-file-name",
+      "raw": "......",
+      "maxLength": 3,
+      "expected": "fil"
+    },
+    {
+      "id": "unity-safe-filename-nul-rejected",
+      "operation": "make-safe-file-name",
+      "raw": "bad\u0000name",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "unity-safe-filename-empty-rejected",
+      "operation": "make-safe-file-name",
+      "raw": "",
+      "error": "ERR_INVALID_COMPONENT"
+    }
+  ]
+}

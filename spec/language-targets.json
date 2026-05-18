@@ -1,0 +1,535 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "id": "go",
+      "language": "Go",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "canonicalfs", "daemon"],
+      "securityBoundary": "Go canonicalfs remains the authoritative root-bound filesystem security layer.",
+      "allocationChecks": [
+        {
+          "id": "canonicalpath-allocation-budget",
+          "status": "active",
+          "command": "pnpm go:alloc",
+          "metric": "bounded allocations/run for normalize, relative, join, equality, and serialization helpers",
+          "notes": "CanonicalFS and daemon allocation checks remain planned separately."
+        }
+      ]
+    },
+    {
+      "id": "typescript",
+      "language": "TypeScript",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "canonicalfs", "rpc-client", "http-client"],
+      "securityBoundary": "TypeScript canonicalfs remains best-effort/RPC-helper only and must delegate adversarial filesystem I/O to Go canonicalfs.",
+      "allocationChecks": [
+        {
+          "id": "node-allocation-smoke",
+          "status": "active",
+          "command": "pnpm ts:alloc",
+          "metric": "bounded heap growth over repeated normalize, relative, join, equality, and serialization helper loops",
+          "notes": "HTTP client request construction allocation checks remain planned separately."
+        }
+      ]
+    },
+    {
+      "id": "powershell-51",
+      "language": "PowerShell 5.1",
+      "status": "supported",
+      "surfaces": ["http-client"],
+      "securityBoundary": "PowerShell 5.1 is transport-only; the Go daemon remains the filesystem security boundary.",
+      "allocationChecks": [
+        {
+          "id": "transport-loop-memory",
+          "status": "active",
+          "command": "pnpm ps:transport:alloc -- --shell powershell.exe",
+          "metric": "bounded process private bytes during repeated live JSON HTTP transport calls through the Go daemon"
+        }
+      ]
+    },
+    {
+      "id": "powershell-7",
+      "language": "PowerShell 7",
+      "status": "supported",
+      "surfaces": ["http-client"],
+      "securityBoundary": "PowerShell 7 is transport-only; the Go daemon remains the filesystem security boundary.",
+      "allocationChecks": [
+        {
+          "id": "transport-loop-memory",
+          "status": "active",
+          "command": "pnpm ps:transport:alloc -- --shell pwsh",
+          "metric": "bounded process private bytes during repeated live JSON HTTP transport calls through the Go daemon"
+        }
+      ]
+    },
+    {
+      "id": "powershell-module",
+      "language": "PowerShell module (5.1 + 7)",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "http-client"],
+      "securityBoundary": "Experimental PowerShell module provides lexical CanonicalPath parity and typed daemon HTTP client helpers; security-sensitive filesystem I/O remains delegated to the Go daemon.",
+      "allocationChecks": [
+        {
+          "id": "module-loop-memory",
+          "status": "active",
+          "command": "pnpm ps:alloc",
+          "metric": "bounded process private bytes during repeated CanonicalPath lexical helper loops and daemon client object construction for PowerShell 5.1 and 7",
+          "notes": "The allocation command runs with the first available PowerShell shell and skips only when PowerShell is unavailable. The manual Windows workflow runs this gate with both powershell.exe and pwsh when available. Live daemon HTTP transport memory checks are tracked on the PowerShell 5.1 and PowerShell 7 target rows."
+        }
+      ]
+    },
+    {
+      "id": "rust",
+      "language": "Rust",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Rust canonicalpath is lexical identity only; Rust canonicalfs must either call the Go daemon or use platform root-bound primitives before being security-supported.",
+      "notes": "Rust lexical CanonicalPath consumes the shared canonicalpath vectors locally; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "global-allocator-counter",
+          "status": "active",
+          "command": "pnpm rust:alloc",
+          "metric": "global allocator allocation count for fixed-input normalize, relative, join, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "cpp",
+      "language": "C++",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "C++ canonicalpath is lexical identity only; C++ canonicalfs must use platform root-bound primitives or delegate to the Go daemon before being security-supported.",
+      "notes": "C++ lexical CanonicalPath consumes the shared canonicalpath vectors locally; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "operator-new-counter",
+          "status": "active",
+          "command": "pnpm cpp:alloc",
+          "metric": "global operator new allocation count for fixed-input normalize, relative, join, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "csharp",
+      "language": "C# / .NET",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "C# canonicalpath is lexical identity only; security-sensitive filesystem I/O must delegate to the Go daemon or a separately reviewed root-bound design.",
+      "notes": "C# lexical CanonicalPath consumes the shared canonicalpath vectors locally through Windows dotnet when dotnet is unavailable in WSL; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "gc-allocated-bytes",
+          "status": "active",
+          "command": "pnpm csharp:alloc",
+          "metric": "GC.GetAllocatedBytesForCurrentThread delta for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "python",
+      "language": "Python",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Python canonicalpath is lexical identity only; security-sensitive filesystem I/O must delegate to the Go daemon or a separately reviewed root-bound design.",
+      "notes": "Python lexical CanonicalPath consumes the shared canonicalpath vectors locally; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "python-mem-check",
+          "status": "active",
+          "command": "pnpm python:alloc",
+          "metric": "bounded tracemalloc peak memory for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "dart-flutter",
+      "language": "Dart / Flutter",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Dart/Flutter canonicalpath is lexical identity only; security-sensitive filesystem I/O must delegate to the Go daemon or a separately reviewed root-bound design.",
+      "notes": "Dart lexical CanonicalPath consumes the shared canonicalpath vectors locally through the Windows Dart SDK when Dart is unavailable in WSL; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "dart-alloc",
+          "status": "active",
+          "command": "pnpm dart:alloc",
+          "metric": "bounded process RSS delta for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "bash-wrapper",
+      "language": "Bash wrapper",
+      "status": "supported",
+      "surfaces": ["http-client"],
+      "securityBoundary": "Bash wrapper is a thin CLI transport to the Go daemon; it has no direct filesystem security boundary claims.",
+      "notes": "The Bash wrapper shells out to curl for authenticated JSON HTTP calls and delegates all security-sensitive filesystem operations to the Go daemon.",
+      "allocationChecks": [
+        {
+          "id": "bash-wrapper-smoke",
+          "status": "active",
+          "command": "pnpm bash:alloc",
+          "metric": "bounded max RSS for repeated Bash wrapper CLI invocations against a live Go daemon"
+        }
+      ]
+    },
+    {
+      "id": "windows-cmd-batch-wrapper",
+      "language": "Windows CMD/BAT wrapper",
+      "status": "supported",
+      "surfaces": ["http-client"],
+      "securityBoundary": "Windows CMD/BAT wrapper is a thin CLI transport to the Go daemon; it has no direct filesystem security boundary claims.",
+      "notes": "The CMD wrapper uses curl.exe and powershell.exe for authenticated JSON HTTP calls and delegates all security-sensitive filesystem operations to the Go daemon.",
+      "allocationChecks": [
+        {
+          "id": "cmd-wrapper-smoke",
+          "status": "active",
+          "command": "pnpm cmd:alloc",
+          "metric": "bounded PowerShell private bytes delta during repeated CMD wrapper CLI invocations against a live Go daemon"
+        }
+      ]
+    },
+    {
+      "id": "javascript-standalone",
+      "language": "JavaScript (standalone/browser)",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Browser-safe JavaScript standalone CanonicalPath layer is lexical only and does not perform filesystem operations.",
+      "allocationChecks": [
+        {
+          "id": "js-standalone-alloc",
+          "status": "active",
+          "command": "pnpm js:standalone:alloc",
+          "metric": "bounded heap growth over repeated browser-safe canonicalpath helper loops"
+        }
+      ]
+    },
+    {
+      "id": "gdscript",
+      "language": "GDScript / Godot",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "GDScript canonicalpath is lexical identity only; security-sensitive filesystem access should stay in Go canonicalfs or engine-native abstractions.",
+      "notes": "GDScript lexical CanonicalPath consumes the shared canonicalpath vectors through Godot headless. Godot strings do not reliably preserve embedded NUL, so the vector runner rejects NUL-bearing source bytes before String conversion.",
+      "allocationChecks": [
+        {
+          "id": "gdscript-alloc",
+          "status": "active",
+          "command": "pnpm gdscript:alloc",
+          "metric": "bounded Godot static memory delta for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "haxe",
+      "language": "Haxe",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Haxe canonicalpath is lexical identity only; no filesystem security boundary until platform transport/design is defined.",
+      "notes": "Haxe lexical CanonicalPath consumes the shared canonicalpath vectors locally through Haxe interp; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "haxe-alloc",
+          "status": "active",
+          "command": "pnpm haxe:alloc",
+          "metric": "bounded Node process RSS delta for Haxe-to-JS fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "swift",
+      "language": "Swift",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Swift canonicalpath is lexical identity only; security-sensitive filesystem I/O must delegate to the Go daemon or a separately reviewed root-bound design.",
+      "notes": "Swift lexical CanonicalPath consumes the shared canonicalpath vectors locally when Swift is available; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "swift-alloc",
+          "status": "active",
+          "command": "pnpm swift:alloc",
+          "metric": "bounded process RSS delta for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "kotlin",
+      "language": "Kotlin",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "Kotlin canonicalpath is lexical identity only; security-sensitive filesystem I/O must delegate to the Go daemon or a separately reviewed root-bound design.",
+      "notes": "Kotlin lexical CanonicalPath consumes the shared canonicalpath vectors locally through kotlinc; daemon HTTP transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "kotlin-alloc",
+          "status": "active",
+          "command": "pnpm kotlin:alloc",
+          "metric": "bounded process RSS delta for fixed-input normalize, relative, join, equality, serialization, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "language": "C",
+      "status": "supported",
+      "surfaces": ["canonicalpath"],
+      "securityBoundary": "C canonicalpath is lexical identity only; filesystem security-bound behavior should rely on Go daemon bindings or explicit platform-native root-bound APIs.",
+      "notes": "C lexical CanonicalPath consumes the shared canonicalpath vectors locally; daemon HTTP/client or ABI transport remains planned.",
+      "allocationChecks": [
+        {
+          "id": "c-alloc",
+          "status": "active",
+          "command": "pnpm c:alloc",
+          "metric": "wrapped malloc/calloc/realloc allocation count for fixed-input normalize, relative, join, and sanitization loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-2022-3-managed",
+      "language": "Unity C#",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-managed", "http-client"],
+      "securityBoundary": "Unity managed code is lexical/client-side only and delegates security-sensitive filesystem I/O to the Go daemon.",
+      "unityVersion": "2022.3",
+      "burst": false,
+      "notes": "Early Unity managed CanonicalPath, daemon HTTP transport, minimal ICanonicalPathService + PathGuard facade, and versioned local EditMode lane are active for Unity 2022.3.",
+      "allocationChecks": [
+        {
+          "id": "dotnet-managed-allocation-smoke",
+          "status": "active",
+          "command": "pnpm unity:canonicalpath:alloc",
+          "metric": "bounded GC.GetAllocatedBytesForCurrentThread delta for shared-vector-style managed CanonicalPath lexical workload under local dotnet"
+        },
+        {
+          "id": "editmode-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:editmode:2022.3",
+          "metric": "GC allocations reported by Unity 2022.3 EditMode tests for managed CanonicalPath loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-2022-3-burst",
+      "language": "Unity C# Burst",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-burst"],
+      "securityBoundary": "Unity Burst code is lexical/client-side only; it must not implement secure filesystem access.",
+      "unityVersion": "2022.3",
+      "burst": true,
+      "notes": "No-string unsafe buffer helper surface smoke, optional compiler/allocation probes, and the Unity 2022.3 versioned zero-GC allocation lane are active locally.",
+      "allocationChecks": [
+        {
+          "id": "optional-burst-allocation-probe",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc",
+          "metric": "default-skipped optional Unity Burst function-pointer workload with zero managed allocations after warmup",
+          "notes": "Set UNITY_BURST_ALLOC_PROBE=1 to run against an installed Unity Editor and com.unity.burst."
+        },
+        {
+          "id": "burst-no-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc:2022.3",
+          "metric": "zero managed GC allocations for a Unity 2022.3 Burst function-pointer workload after warmup"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-1-managed",
+      "language": "Unity C#",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-managed", "http-client"],
+      "securityBoundary": "Unity managed code is lexical/client-side only and delegates security-sensitive filesystem I/O to the Go daemon.",
+      "unityVersion": "6000.1",
+      "burst": false,
+      "notes": "Early Unity managed CanonicalPath, daemon HTTP transport, minimal ICanonicalPathService + PathGuard facade, and versioned local EditMode lane are active for Unity 6000.1.",
+      "allocationChecks": [
+        {
+          "id": "dotnet-managed-allocation-smoke",
+          "status": "active",
+          "command": "pnpm unity:canonicalpath:alloc",
+          "metric": "bounded GC.GetAllocatedBytesForCurrentThread delta for shared-vector-style managed CanonicalPath lexical workload under local dotnet"
+        },
+        {
+          "id": "editmode-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:editmode:6000.1",
+          "metric": "GC allocations reported by Unity 6000.1 EditMode tests for managed CanonicalPath loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-1-burst",
+      "language": "Unity C# Burst",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-burst"],
+      "securityBoundary": "Unity Burst code is lexical/client-side only; it must not implement secure filesystem access.",
+      "unityVersion": "6000.1",
+      "burst": true,
+      "notes": "No-string unsafe buffer helper surface smoke, optional compiler/allocation probes, and the Unity 6000.1 versioned zero-GC allocation lane are active locally.",
+      "allocationChecks": [
+        {
+          "id": "optional-burst-allocation-probe",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc",
+          "metric": "default-skipped optional Unity Burst function-pointer workload with zero managed allocations after warmup",
+          "notes": "Set UNITY_BURST_ALLOC_PROBE=1 to run against an installed Unity Editor and com.unity.burst."
+        },
+        {
+          "id": "burst-no-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc:6000.1",
+          "metric": "zero managed GC allocations for a Unity 6000.1 Burst function-pointer workload after warmup"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-2-managed",
+      "language": "Unity C#",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-managed", "http-client"],
+      "securityBoundary": "Unity managed code is lexical/client-side only and delegates security-sensitive filesystem I/O to the Go daemon.",
+      "unityVersion": "6000.2",
+      "burst": false,
+      "notes": "Early Unity managed CanonicalPath, daemon HTTP transport, minimal ICanonicalPathService + PathGuard facade, and versioned local EditMode lane are active for Unity 6000.2.",
+      "allocationChecks": [
+        {
+          "id": "dotnet-managed-allocation-smoke",
+          "status": "active",
+          "command": "pnpm unity:canonicalpath:alloc",
+          "metric": "bounded GC.GetAllocatedBytesForCurrentThread delta for shared-vector-style managed CanonicalPath lexical workload under local dotnet"
+        },
+        {
+          "id": "editmode-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:editmode:6000.2",
+          "metric": "GC allocations reported by Unity 6000.2 EditMode tests for managed CanonicalPath loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-2-burst",
+      "language": "Unity C# Burst",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-burst"],
+      "securityBoundary": "Unity Burst code is lexical/client-side only; it must not implement secure filesystem access.",
+      "unityVersion": "6000.2",
+      "burst": true,
+      "notes": "No-string unsafe buffer helper surface smoke, optional compiler/allocation probes, and the Unity 6000.2 versioned zero-GC allocation lane are active locally.",
+      "allocationChecks": [
+        {
+          "id": "optional-burst-allocation-probe",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc",
+          "metric": "default-skipped optional Unity Burst function-pointer workload with zero managed allocations after warmup",
+          "notes": "Set UNITY_BURST_ALLOC_PROBE=1 to run against an installed Unity Editor and com.unity.burst."
+        },
+        {
+          "id": "burst-no-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc:6000.2",
+          "metric": "zero managed GC allocations for a Unity 6000.2 Burst function-pointer workload after warmup"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-3-managed",
+      "language": "Unity C#",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-managed", "http-client"],
+      "securityBoundary": "Unity managed code is lexical/client-side only and delegates security-sensitive filesystem I/O to the Go daemon.",
+      "unityVersion": "6000.3",
+      "burst": false,
+      "notes": "Early Unity managed CanonicalPath, daemon HTTP transport, minimal ICanonicalPathService + PathGuard facade, and versioned local EditMode lane are active for Unity 6000.3.",
+      "allocationChecks": [
+        {
+          "id": "dotnet-managed-allocation-smoke",
+          "status": "active",
+          "command": "pnpm unity:canonicalpath:alloc",
+          "metric": "bounded GC.GetAllocatedBytesForCurrentThread delta for shared-vector-style managed CanonicalPath lexical workload under local dotnet"
+        },
+        {
+          "id": "editmode-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:editmode:6000.3",
+          "metric": "GC allocations reported by Unity 6000.3 EditMode tests for managed CanonicalPath loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-3-burst",
+      "language": "Unity C# Burst",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-burst"],
+      "securityBoundary": "Unity Burst code is lexical/client-side only; it must not implement secure filesystem access.",
+      "unityVersion": "6000.3",
+      "burst": true,
+      "notes": "No-string unsafe buffer helper surface smoke, optional compiler/allocation probes, and the Unity 6000.3 versioned zero-GC allocation lane are active locally.",
+      "allocationChecks": [
+        {
+          "id": "optional-burst-allocation-probe",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc",
+          "metric": "default-skipped optional Unity Burst function-pointer workload with zero managed allocations after warmup",
+          "notes": "Set UNITY_BURST_ALLOC_PROBE=1 to run against an installed Unity Editor and com.unity.burst."
+        },
+        {
+          "id": "burst-no-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc:6000.3",
+          "metric": "zero managed GC allocations for a Unity 6000.3 Burst function-pointer workload after warmup"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-4-managed",
+      "language": "Unity C#",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-managed", "http-client"],
+      "securityBoundary": "Unity managed code is lexical/client-side only and delegates security-sensitive filesystem I/O to the Go daemon.",
+      "unityVersion": "6000.4",
+      "burst": false,
+      "notes": "Early Unity managed CanonicalPath, daemon HTTP transport, minimal ICanonicalPathService + PathGuard facade, and versioned local EditMode lane are active for Unity 6000.4.",
+      "allocationChecks": [
+        {
+          "id": "dotnet-managed-allocation-smoke",
+          "status": "active",
+          "command": "pnpm unity:canonicalpath:alloc",
+          "metric": "bounded GC.GetAllocatedBytesForCurrentThread delta for shared-vector-style managed CanonicalPath lexical workload under local dotnet"
+        },
+        {
+          "id": "editmode-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:editmode:6000.4",
+          "metric": "GC allocations reported by Unity 6000.4 EditMode tests for managed CanonicalPath loops"
+        }
+      ]
+    },
+    {
+      "id": "unity-6000-4-burst",
+      "language": "Unity C# Burst",
+      "status": "supported",
+      "surfaces": ["canonicalpath", "unity-burst"],
+      "securityBoundary": "Unity Burst code is lexical/client-side only; it must not implement secure filesystem access.",
+      "unityVersion": "6000.4",
+      "burst": true,
+      "notes": "No-string unsafe buffer helper surface smoke, optional compiler/allocation probes, and the Unity 6000.4 versioned zero-GC allocation lane are active locally.",
+      "allocationChecks": [
+        {
+          "id": "optional-burst-allocation-probe",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc",
+          "metric": "default-skipped optional Unity Burst function-pointer workload with zero managed allocations after warmup",
+          "notes": "Set UNITY_BURST_ALLOC_PROBE=1 to run against an installed Unity Editor and com.unity.burst."
+        },
+        {
+          "id": "burst-no-gc-alloc",
+          "status": "active",
+          "command": "pnpm unity:burst:alloc:6000.4",
+          "metric": "zero managed GC allocations for a Unity 6000.4 Burst function-pointer workload after warmup"
+        }
+      ]
+    }
+  ]
+}

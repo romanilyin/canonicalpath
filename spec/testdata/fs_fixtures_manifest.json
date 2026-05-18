@@ -1,0 +1,356 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "safe-read-allowed",
+      "operation": "read",
+      "path": "safe/README.md",
+      "expect": "allow"
+    },
+    {
+      "id": "dotdot-read-rejected",
+      "operation": "read",
+      "path": "../outside/secret.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "absolute-posix-read-rejected",
+      "operation": "read",
+      "path": "/etc/passwd",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "absolute-windows-read-rejected",
+      "operation": "read",
+      "path": "C:\\Windows\\win.ini",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH",
+      "platforms": ["windows"]
+    },
+    {
+      "id": "drive-relative-read-rejected",
+      "operation": "read",
+      "path": "C:foo",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "drive-relative-dotdot-read-rejected",
+      "operation": "read",
+      "path": "C:../outside/secret.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "nul-read-rejected",
+      "operation": "read",
+      "path": "safe\u0000name.txt",
+      "expect": "reject",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "backslash-read-rejected",
+      "operation": "read",
+      "path": "safe\\README.md",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "symlink-escape-read-rejected",
+      "operation": "read",
+      "path": "link_out/secret.txt",
+      "expect": "reject",
+      "error": "ERR_SYMLINK_ESCAPE",
+      "errorMode": "reject-only",
+      "notes": "Requires real filesystem fixture. Runtime error codes are platform-specific; only rejection is guaranteed."
+    },
+    {
+      "id": "dotdot-write-rejected",
+      "operation": "write",
+      "path": "../outside/pwned.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "safe-write-allowed",
+      "operation": "write",
+      "path": "safe/write-me.txt",
+      "expect": "allow"
+    },
+    {
+      "id": "drive-relative-write-rejected",
+      "operation": "write",
+      "path": "C:write.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "backslash-write-rejected",
+      "operation": "write",
+      "path": "safe\\write.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "symlink-escape-write-rejected",
+      "operation": "write",
+      "path": "link_out/pwned.txt",
+      "expect": "reject",
+      "error": "ERR_SYMLINK_ESCAPE",
+      "errorMode": "reject-only",
+      "notes": "Requires real filesystem fixture. Runtime error codes are platform-specific; only rejection is guaranteed."
+    },
+    {
+      "id": "safe-stat-allowed",
+      "operation": "stat",
+      "path": "safe/README.md",
+      "expect": "allow"
+    },
+    {
+      "id": "dotdot-stat-rejected",
+      "operation": "stat",
+      "path": "../outside/secret.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "drive-relative-stat-rejected",
+      "operation": "stat",
+      "path": "C:stat.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "backslash-stat-rejected",
+      "operation": "stat",
+      "path": "safe\\README.md",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "absolute-posix-stat-rejected",
+      "operation": "stat",
+      "path": "/etc/passwd",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "nul-stat-rejected",
+      "operation": "stat",
+      "path": "safe\u0000name.txt",
+      "expect": "reject",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "symlink-escape-stat-rejected",
+      "operation": "stat",
+      "path": "link_out/secret.txt",
+      "expect": "reject",
+      "error": "ERR_SYMLINK_ESCAPE",
+      "errorMode": "reject-only",
+      "notes": "Requires real filesystem fixture. Runtime error codes are platform-specific; only rejection is guaranteed."
+    },
+    {
+      "id": "safe-mkdir-allowed",
+      "operation": "mkdir",
+      "path": "created/nested",
+      "expect": "allow"
+    },
+    {
+      "id": "dotdot-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "../outside/new-dir",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "drive-relative-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "C:mkdir",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "backslash-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "safe\\new-dir",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "absolute-posix-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "/tmp/canonicalfs-escape",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "nul-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "safe\u0000dir",
+      "expect": "reject",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "symlink-escape-mkdir-rejected",
+      "operation": "mkdir",
+      "path": "link_out/new-dir",
+      "expect": "reject",
+      "error": "ERR_SYMLINK_ESCAPE",
+      "errorMode": "reject-only",
+      "notes": "Requires real filesystem fixture. Runtime error codes are platform-specific; only rejection is guaranteed."
+    },
+    {
+      "id": "safe-remove-allowed",
+      "operation": "remove",
+      "path": "safe/remove-me.txt",
+      "expect": "allow"
+    },
+    {
+      "id": "dotdot-remove-rejected",
+      "operation": "remove",
+      "path": "../outside/secret.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "drive-relative-remove-rejected",
+      "operation": "remove",
+      "path": "C:remove.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "backslash-remove-rejected",
+      "operation": "remove",
+      "path": "safe\\remove-me.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "absolute-posix-remove-rejected",
+      "operation": "remove",
+      "path": "/tmp/canonicalfs-escape",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "nul-remove-rejected",
+      "operation": "remove",
+      "path": "safe\u0000remove.txt",
+      "expect": "reject",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "symlink-escape-remove-rejected",
+      "operation": "remove",
+      "path": "link_out/secret.txt",
+      "expect": "reject",
+      "error": "ERR_SYMLINK_ESCAPE",
+      "errorMode": "reject-only",
+      "notes": "Requires real filesystem fixture. Runtime error codes are platform-specific; only rejection is guaranteed."
+    },
+    {
+      "id": "rename-outside-root-rejected",
+      "operation": "rename",
+      "path": "safe/file.txt",
+      "target": "../outside/file.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "rename-absolute-source-rejected",
+      "operation": "rename",
+      "path": "/tmp/canonicalfs-source",
+      "target": "safe/file.txt",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "rename-drive-relative-source-rejected",
+      "operation": "rename",
+      "path": "C:source.txt",
+      "target": "safe/file.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "rename-absolute-target-rejected",
+      "operation": "rename",
+      "path": "safe/file.txt",
+      "target": "/tmp/canonicalfs-target",
+      "expect": "reject",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "rename-backslash-target-rejected",
+      "operation": "rename",
+      "path": "safe/file.txt",
+      "target": "safe\\renamed.txt",
+      "expect": "reject",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "rename-drive-relative-target-rejected",
+      "operation": "rename",
+      "path": "safe/file.txt",
+      "target": "C:evil.txt",
+      "expect": "reject",
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "archive-safe-extract-allowed",
+      "operation": "extract",
+      "path": "archives/safe.zip",
+      "target": "extracted",
+      "expect": "allow"
+    },
+    {
+      "id": "archive-slip-rejected",
+      "operation": "extract",
+      "path": "archives/slip.zip",
+      "target": ".",
+      "expect": "reject",
+      "error": "ERR_ARCHIVE_TRAVERSAL",
+      "notes": "Archive member paths must be opened through CanonicalFS relative to root."
+    },
+    {
+      "id": "archive-absolute-entry-rejected",
+      "operation": "extract",
+      "path": "archives/absolute.zip",
+      "target": "extracted",
+      "expect": "reject",
+      "error": "ERR_ARCHIVE_TRAVERSAL",
+      "notes": "Archive member paths must remain relative after ZIP metadata is decoded."
+    },
+    {
+      "id": "archive-backslash-entry-rejected",
+      "operation": "extract",
+      "path": "archives/backslash.zip",
+      "target": "extracted",
+      "expect": "reject",
+      "error": "ERR_ARCHIVE_TRAVERSAL",
+      "notes": "Archive member paths must not use Windows backslash separators."
+    },
+    {
+      "id": "archive-drive-relative-entry-rejected",
+      "operation": "extract",
+      "path": "archives/drive-relative.zip",
+      "target": "extracted",
+      "expect": "reject",
+      "error": "ERR_ARCHIVE_TRAVERSAL",
+      "notes": "Archive member paths must reject Windows drive-relative names."
+    },
+    {
+      "id": "symlink-swap-race-rejected",
+      "operation": "read",
+      "path": "race/link/secret.txt",
+      "expect": "reject",
+      "error": "ERR_RACE_DETECTED",
+      "platforms": ["linux", "macos", "wsl"],
+      "notes": "Race fixture repeatedly swaps an in-root directory with an escaping symlink during access."
+    }
+  ]
+}

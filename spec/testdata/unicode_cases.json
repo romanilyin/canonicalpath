@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "unicode-preserved-nfc",
+      "operation": "normalize",
+      "raw": "/repo/caf\u00e9.txt",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/repo/caf\u00e9.txt",
+      "notes": "MVP preserves Unicode codepoints; it does not fold composed characters."
+    },
+    {
+      "id": "unicode-preserved-nfd",
+      "operation": "normalize",
+      "raw": "/repo/cafe\u0301.txt",
+      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "expected": "/repo/cafe\u0301.txt",
+      "notes": "NFD stays NFD; normalization policy is lexical and does not rewrite Unicode."
+    },
+    {
+      "id": "unicode-uri-decodes-once",
+      "operation": "normalize",
+      "raw": "file:///repo/caf%C3%A9.txt",
+      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
+      "expected": "/repo/caf\u00e9.txt"
+    }
+  ]
+}

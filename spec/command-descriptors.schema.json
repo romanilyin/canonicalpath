@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonicalpath.dev/spec/command-descriptors.schema.json",
+  "title": "Command descriptor path fragments",
+  "description": "Reusable JSON Schema fragments for MCP and daemon command descriptors that carry CanonicalPath or scoped Unity MCP paths.",
+  "$defs": {
+    "pathScope": {
+      "enum": ["unity_asset", "knowledge", "package_manifest", "artifact", "gateway_cache", "temp_session"]
+    },
+    "pathOperation": {
+      "enum": ["validate", "read", "write", "list", "delete", "import", "refresh", "generated-key"]
+    },
+    "boundedReadOptions": {
+      "type": "object",
+      "properties": {
+        "max_chars": { "type": "integer", "minimum": 1, "maximum": 1048576 }
+      },
+      "additionalProperties": false,
+      "description": "Bounded text read options. Omitted max_chars uses the implementation default and hard caps remain implementation-enforced."
+    },
+    "boundedWriteOptions": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 1048576 },
+        "max_chars": { "type": "integer", "minimum": 1, "maximum": 1048576 }
+      },
+      "additionalProperties": false,
+      "description": "Bounded text write options for knowledge/artifact workflows. text length must fit both caller and implementation caps."
+    },
+    "boundedListOptions": {
+      "type": "object",
+      "properties": {
+        "max_entries": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      },
+      "additionalProperties": false,
+      "description": "Bounded list/glob options. Omitted max_entries uses the implementation default and hard caps remain implementation-enforced."
+    },
+    "boundedGlobPattern": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*:)(?!.*(?:^|/)[^/]*[. ](?:/|$))(?!.*%(?:2[fF]|5[cC]|25(?:2[fF]|5[cC]))).*[?*].*$",
+      "description": "Scope-relative bounded glob pattern using / separators. It may contain * and ? wildcards but cannot express absolute paths, traversal, ADS, trailing dot/space components, or encoded separators."
+    },
+    "canonicalRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.\\.?(?:/|$)).+$",
+      "description": "Lexically clean non-empty project-relative path using / separators, with no absolute, drive-relative, empty, dot, or dot-dot components. Filesystem security still belongs to CanonicalFS."
+    },
+    "scopedRelativePath": {
+      "allOf": [
+        { "$ref": "#/$defs/canonicalRelativePath" },
+        {
+          "pattern": "^(?!.*:)(?!.*(?:^|/)[^/]*[. ](?:/|$))(?!.*%(?:2[fF]|5[cC]|25(?:2[fF]|5[cC]))).+$",
+          "description": "Additional Unity MCP scoped path lexical policy: no ADS colon, trailing dot/space components, encoded separators, or double-encoded separators."
+        }
+      ]
+    },
+    "scopedPath": {
+      "type": "object",
+      "required": ["scope", "path"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/pathScope" },
+        "operation": { "$ref": "#/$defs/pathOperation" },
+        "path": { "$ref": "#/$defs/scopedRelativePath" }
+      },
+      "additionalProperties": false
+    },
+    "artifactPath": {
+      "allOf": [
+        { "$ref": "#/$defs/scopedRelativePath" },
+        {
+          "pattern": "^(?:job-artifacts|screenshots)(?:/|$)",
+          "description": "Artifact scope-relative path. Implementations resolve this below Library/SGGUnityMcp."
+        }
+      ]
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["scope", "path"],
+      "properties": {
+        "scope": { "const": "artifact" },
+        "operation": { "enum": ["read", "write", "list"] },
+        "path": { "$ref": "#/$defs/artifactPath" }
+      },
+      "additionalProperties": false
+    },
+    "packageManifestPath": {
+      "enum": ["Packages/manifest.json", "Packages/packages-lock.json"],
+      "description": "Exact project-relative Unity package manifest files accepted by the package_manifest scope."
+    },
+    "knowledgePath": {
+      "allOf": [
+        { "$ref": "#/$defs/scopedRelativePath" },
+        {
+          "pattern": "^(?!(?:Assets|AssetsEvil|Packages|PackagesEvil|ProjectSettings|Library|Temp|UnityMcpKnowledge|UnityMcpKnowledgeEvil)(?:/|$)).+",
+          "description": "Knowledge scope-relative path. Implementations resolve this below Assets/UnityMcpKnowledge."
+        }
+      ]
+    }
+  }
+}
