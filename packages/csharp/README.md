@@ -4,6 +4,8 @@ Status: supported experimental lexical `canonicalpath` package checked against s
 
 C# support is intended for .NET consumers. Full Unity package support remains separate from this standalone package.
 
+Use this package to share CanonicalPath lexical identity with Go, TypeScript, Unity, and other runtimes. It is not an authoritative filesystem security boundary; security-sensitive filesystem I/O must delegate to the Go daemon unless a native root-bound implementation is separately reviewed and documented.
+
 Current scope:
 
 - `canonicalpath` lexical identity and serialization from shared JSON vectors.

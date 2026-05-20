@@ -2,9 +2,9 @@
 
 Status: supported experimental transport wrapper.
 
-This package provides a thin Windows `.cmd` CLI over the Go `canonicalfs` daemon HTTP API. It does not perform local filesystem security checks and is not an independent filesystem security boundary.
+This package provides a thin Windows `.cmd` CLI over the Go `canonicalfs` daemon HTTP API.
 
-Security-sensitive filesystem operations must still be authorized and executed by the Go daemon.
+Use it when CMD/BAT automation needs to call CanonicalFS through the Go daemon. It does not perform local filesystem security checks and is not an independent filesystem security boundary. Security-sensitive filesystem operations must still be authorized and executed by the Go daemon.
 
 ## Requirements
 

@@ -2,13 +2,15 @@
 
 Status: supported experimental lexical target.
 
-This package implements the lexical `canonicalpath` API for Python and consumes the shared JSON vectors used by the other language targets.
+This package gives Python code the same lexical CanonicalPath identity contract used by the other language targets.
+
+Use it to store, compare, or transmit path identity across tools. It is not an authoritative filesystem security boundary; security-sensitive filesystem operations must delegate to the Go daemon unless a separately reviewed native root-bound implementation is added.
 
 Scope:
 
 - `canonicalpath` lexical API parity with shared vectors.
 - No filesystem security guarantees in this package.
-- No daemon HTTP client yet; security-sensitive filesystem operations must delegate to the Go daemon.
+- No daemon HTTP client yet.
 
 Local checks:
 

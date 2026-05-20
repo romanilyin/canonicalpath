@@ -1,6 +1,10 @@
-# Unity Package Plan
+# Unity CanonicalPath Package
 
 Status: early managed CanonicalPath runtime plus bridge facade scaffold. `CanonicalPath`, `CanonicalPathBurst`, `CanonicalFSDaemonHttpClient`, `ICanonicalPathService`, `CanonicalPathValue`, `PathGuard`, and `ScopedPathGuard` are present for lexical identity, Burst-compatible unsafe buffer helper shape, daemon transport, bridge payload validation, and Unity MCP scope validation; the Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` EditMode and Burst allocation matrix is active locally. Full Unity package hardening remains planned. The TypeScript gateway skeleton lives in `@romanilyin/canonicalpath/unity-gateway`.
+
+CanonicalPath for Unity is a client/bridge surface: managed lexical identity, scoped `PathGuard` validation, daemon transport, and Burst-oriented helper shape for editor/tooling integrations.
+
+Unity code is not an independent filesystem security boundary. Security-sensitive filesystem I/O should delegate to the Go CanonicalFS daemon unless a native root-bound implementation is separately reviewed and documented.
 
 CanonicalPath behavior is tracked in shared vectors at `spec/testdata/*.json` and consumed by the local C# smoke gate via `pnpm unity:canonicalpath:vectors`. Bridge payload behavior is tracked in shared vectors at `spec/testdata/unity_bridge_vectors.json`; the TypeScript gateway and local C# smoke gate consume these vectors today. Unity MCP scope behavior is tracked in `spec/testdata/unity_mcp_path_scope_vectors.json` and consumed by TypeScript, Go, and local C# smoke gates through `pnpm unity:mcp:path-scopes:vectors`. `pnpm unity:burst:surface` checks the no-string unsafe buffer helper shape under dotnet. `pnpm unity:burst:probe` is a default-skipped optional compiler probe; set `UNITY_BURST_PROBE=1` to run it against an installed Unity Editor and `com.unity.burst`. `pnpm unity:burst:alloc` is a default-skipped optional allocation probe; set `UNITY_BURST_ALLOC_PROBE=1` to compile a Burst function pointer, warm it up, and assert zero managed allocations around the Burst workload. `pnpm unity:editmode:matrix` runs the active local versioned EditMode lanes, and `pnpm unity:burst:alloc:matrix` runs the active local versioned Burst allocation lanes.
 

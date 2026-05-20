@@ -1,110 +1,99 @@
 # CanonicalPath / CanonicalFS
 
-[![xkcd Standards](https://imgs.xkcd.com/comics/standards.png)](https://xkcd.com/927/)
+**Deterministic path identity across runtimes. Root-bound filesystem access where real I/O begins.**
 
-> Image: xkcd “Standards”.
+Every runtime has a path library. CanonicalPath is for the moment where a path leaves one runtime and enters another.
 
-Monorepo for cross-platform path identity and root-bound filesystem access.
+A Unity editor tool may pass a path to a TypeScript MCP gateway, a Go daemon, a PowerShell script, a browser UI, WSL, Windows, and back again. Each layer can interpret `..`, slashes, drive-relative paths, UNC paths, symlinks, device names, and missing files differently. That is how path bugs become security bugs, broken artifacts, and hard-to-debug agent behavior.
 
-Target public release: `2026.5.18-2`. The release plan is tracked in `docs/release-2026.5.18-2.md`; release notes are drafted in `docs/release-notes-2026.5.18-2.md`.
+The key idea:
 
-This repository follows the plan in `Documentation/`:
+- `CanonicalPath` says what path identity the tool means.
+- `CanonicalFS` decides whether real filesystem I/O may touch that path under a root.
+- Non-Go runtimes share lexical identity and delegate security-sensitive I/O to the Go daemon.
 
-- `CanonicalPath` is deterministic lexical identity and serialization.
-- `CanonicalFS` is root-bound filesystem access for real I/O.
-- `PathAliases` bridge one canonical project root to client-specific host paths.
+## What this repository provides
 
-## Current Status
+| Layer | Purpose | Filesystem access | Security claim |
+|---|---|---:|---|
+| `CanonicalPath` | Deterministic lexical identity, comparison, serialization, aliases, and shared test vectors. | No | Stable identity contract, not an I/O boundary. |
+| `CanonicalFS` | Root-bound filesystem access for real reads/writes. | Yes | Go implementation is the authoritative filesystem security boundary. |
+| Go daemon | Capability-style HTTP/RPC boundary for non-Go clients. | Yes | Other languages delegate security-sensitive I/O to this daemon. |
+| Client/runtime ports | Lexical helpers, wrappers, transports, Unity bridge adapters. | Usually no | Lexical/client-only unless explicitly documented otherwise. |
 
-Initial MVP implementation is present:
+The split is intentional: **path identity is not file access**.
 
-- Shared JSON test vectors and validation script.
-- Go `canonicalpath` lexical identity implementation.
-- JavaScript standalone/browser `canonicalpath` lexical implementation.
-- Python experimental lexical `canonicalpath` implementation checked against shared vectors.
-- Dart / Flutter experimental lexical `canonicalpath` implementation checked against shared vectors.
-- C# / .NET experimental lexical `canonicalpath` implementation checked against shared vectors.
-- Swift experimental lexical `canonicalpath` implementation checked against shared vectors.
-- Kotlin experimental lexical `canonicalpath` implementation checked against shared vectors.
-- C experimental lexical `canonicalpath` implementation checked against shared vectors.
-- Rust experimental lexical `canonicalpath` implementation checked against shared vectors.
-- C++ experimental lexical `canonicalpath` implementation checked against shared vectors.
-- Haxe experimental lexical `canonicalpath` implementation checked against shared vectors.
-- GDScript / Godot experimental lexical `canonicalpath` implementation checked against shared vectors.
-- TypeScript `canonicalpath` lexical identity implementation.
-- Go `canonicalfs` root-bound file access using Go `os.Root`.
-- Go `canonicalfs` HTTP daemon for root-bound project file access with bearer capability auth, allowed-root registration, server-side caps, and HTTP timeouts.
-- TypeScript `canonicalfs` best-effort layer plus RPC/HTTP client wrappers with explicit security limitations.
-- Bash experimental transport wrapper for authenticated Go daemon HTTP calls.
-- Windows CMD/BAT experimental transport wrapper for authenticated Go daemon HTTP calls.
-- TypeScript Unity MCP gateway skeleton with fake bridge, read/status/log/path-validation tools, and guarded write command contracts.
-- Unity bridge read-only built-ins for status, project info, recent logs, validated text reads, and path validation.
-- PowerShell 5.1 and PowerShell 7 experimental lexical module plus typed HTTP client helpers for the Go daemon.
-- Cross-language vector result comparison for Go, TypeScript, and JavaScript standalone.
-- Early Unity bridge adapter/facade is present before Unity write commands: `ICanonicalPathService` + `PathGuard` for `Assets/...` / `Packages/...` payload validation.
-- Active local target matrix for Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` with managed EditMode and Burst allocation lanes; Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot have experimental lexical lanes.
+## Why not just use `path.normalize`, `realpath`, or safe-join code?
 
-Supported runtime surfaces are Go, Python lexical, Dart/Flutter lexical, C#/.NET lexical, Swift lexical, Kotlin lexical, C lexical, Rust lexical, C++ lexical, Haxe lexical, GDScript/Godot lexical, JavaScript standalone/browser, TypeScript, Bash transport wrapper, Windows CMD/BAT transport wrapper, PowerShell 5.1, and PowerShell 7. Bash, Windows CMD/BAT, PowerShell, Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot support are lexical/client-only or transport-only and must still use the Go daemon as the filesystem security boundary for security-sensitive I/O.
+Use standard libraries for ordinary local path manipulation. Use CanonicalPath when a path must cross process, language, operating-system, editor, or agent boundaries without changing meaning.
 
-Planned language targets and allocation-check gates are tracked in `spec/language-targets.json` and summarized in `docs/language-targets.md`. Planned package directories are skeleton/not implemented placeholders unless listed as supported or as an early bridge target.
+CanonicalPath is designed for:
 
-Go `canonicalfs.Rename` is intentionally unsupported on Go 1.24 because `os.Root` does not expose a root-bound rename method there. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
+- agent tools and MCP servers that must validate scoped paths before touching a project;
+- build systems and generators that reference files before they exist;
+- Unity/editor pipelines that need scoped paths such as `Assets/...`, `Packages/...`, artifacts, caches, and temp sessions;
+- Windows/WSL/macOS/Linux workflows where host paths and project-relative paths are not the same thing;
+- archive extraction and file tools where untrusted filenames must not escape a root;
+- shared test vectors so Go, TypeScript, JavaScript, Python, Dart, C#, Swift, Kotlin, C, Rust, C++, Haxe, GDScript, PowerShell, Unity, and wrappers stay aligned.
 
-## Public Package Identity
+## Current language coverage
+
+| Group | Current surface | Filesystem security boundary |
+|---|---|---|
+| Go | `canonicalpath`, authoritative `canonicalfs`, daemon | Yes: Go `CanonicalFS` / daemon |
+| TypeScript | `canonicalpath`, best-effort `canonicalfs` helpers, RPC/HTTP clients | Delegates to Go daemon for adversarial I/O |
+| JavaScript standalone/browser | lexical `canonicalpath` | No filesystem access |
+| PowerShell 5.1 / 7 | lexical module, typed HTTP client helpers, daemon transport | Delegates to Go daemon |
+| Bash / Windows CMD-BAT | daemon transport wrappers | Delegates to Go daemon |
+| Unity C# | managed lexical helpers, PathGuard/scoped validation, daemon transport, Burst-oriented surface | Delegates to Go daemon |
+| Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, GDScript/Godot | vector-checked lexical `canonicalpath` surfaces | Lexical/client-only until native root-bound FS or daemon transport is reviewed |
+
+See `docs/language-coverage.md` and `docs/language-targets.md` for the detailed matrix.
+
+## Security boundary rule
+
+For security-sensitive filesystem operations, do not build paths with string concatenation, `Join`, `normalize`, or `realpath` and then open them later.
+
+Use the root-bound filesystem layer:
+
+- In Go, use `CanonicalFS` directly.
+- In TypeScript, Unity, C#, Python, PowerShell, Bash, CMD/BAT, or other runtimes, validate and serialize with the local CanonicalPath surface, then delegate real I/O to the Go daemon unless that runtime has a separately reviewed root-bound implementation.
+
+## Problems this is meant to prevent
+
+- Path traversal through `..`, absolute paths, encoded separators, or mixed separators.
+- Windows-specific surprises: drive-relative paths like `C:foo`, UNC paths, reserved device names, alternate data streams, trailing dots/spaces, and NUL bytes.
+- Symlink and reparse-point escape from a trusted project root.
+- Time-of-check/time-of-use bugs from validating a path string and opening it later.
+- Zip Slip style archive writes outside the destination directory.
+- Agent/MCP tools writing into the wrong project, cache, artifact, package, or temp root.
+- Broken identity when one runtime stores a path and another runtime interprets it differently.
+
+## Package identity and release
 
 - Canonical repository: `https://github.com/romanilyin/canonicalpath`.
-- TypeScript/npm package name: `@romanilyin/canonicalpath`.
-- JavaScript standalone npm package name: `@romanilyin/canonicalpath-standalone`.
-- Go module path: `github.com/romanilyin/canonicalpath/packages/go`.
-- Unity UPM package name: `com.romanilyin.canonicalpath`.
+- TypeScript/npm package: `@romanilyin/canonicalpath`.
+- JavaScript standalone npm package: `@romanilyin/canonicalpath-standalone`.
+- Go module: `github.com/romanilyin/canonicalpath/packages/go`.
+- Unity UPM package: `com.romanilyin.canonicalpath`.
 - Release version: `2026.5.18-2`.
 - License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
-The repository remains private until the final public release switch. These identifiers are fixed now so downstream Unity MCP work can target the public package instead of private or temporary coordinates.
+The release plan is tracked in `docs/release-2026.5.18-2.md`; release notes are drafted in `docs/release-notes-2026.5.18-2.md`. The Go module tag is `packages/go/v0.2026.5-18.2`; see `docs/release-process.md` for the release tag policy.
 
-The `2026.5.18-2` release includes the source repository, npm packages, Go source and daemon packages, Unity UPM Git package, and the current experimental lexical/client-only language targets. The Go module tag is `packages/go/v0.2026.5-18.2`, which preserves calendar-version freshness while staying valid for the current Go module path; see `docs/release-process.md` for the release tag policy.
+## Status notes
 
-## Initial Verification
+- Planned language targets and allocation-check gates are tracked in `spec/language-targets.json` and summarized in `docs/language-targets.md`.
+- Planned package directories are skeleton/not implemented placeholders unless listed as supported or as an early bridge target.
+- Go `canonicalfs.Rename` is intentionally unsupported on Go 1.24 because `os.Root` does not expose a root-bound rename method there. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
 
-After installing dependencies with `pnpm install`, run:
+## Quick verification
+
+After installing dependencies, run:
 
 ```bash
+pnpm install
 pnpm verify
-```
-
-Equivalent individual commands:
-
-```bash
-pnpm spec:validate
-pnpm check:unity-mcp-contract
-pnpm -C packages/ts typecheck
-pnpm -C packages/ts test
-pnpm js:standalone:typecheck
-pnpm js:standalone:build
-pnpm js:standalone:build:smoke
-pnpm js:standalone:test
-go test ./packages/go/...
-pnpm vectors
-pnpm python:vectors
-pnpm dart:vectors
-pnpm csharp:vectors
-pnpm swift:vectors
-pnpm kotlin:vectors
-pnpm c:vectors
-pnpm rust:vectors
-pnpm cpp:vectors
-pnpm haxe:vectors
-pnpm gdscript:vectors
-pnpm bash:smoke
-pnpm cmd:smoke
-pnpm unity:canonicalpath:vectors
-pnpm unity:bridge:vectors
-pnpm unity:mcp:path-scopes:vectors
-pnpm unity:canonicalfs:transport:smoke
-pnpm unity:burst:surface
-pnpm unity:burst:probe
-pnpm unity:editmode:matrix
-pnpm ps:test
 ```
 
 For Go race-sensitive filesystem tests, also run:
@@ -113,15 +102,32 @@ For Go race-sensitive filesystem tests, also run:
 pnpm go:race
 ```
 
-For active allocation smoke gates, run:
+For active allocation and memory smoke gates, run:
 
 ```bash
 pnpm alloc
 ```
 
-`pnpm alloc` also runs the Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot lexical allocation smoke gates, Bash and Windows CMD/BAT wrapper memory smoke gates, PowerShell module memory smoke gate, PowerShell live daemon transport memory smoke gate, Unity managed CanonicalPath allocation smoke, the default-skipped optional Unity Burst allocation probe, and the active Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` Burst allocation matrix when the required local tools are available.
+If the `pnpm` shim is not available, use `corepack pnpm` for the same commands. Detailed verification commands live in `docs/verification.md`.
 
-If the `pnpm` shim is not available, use `corepack pnpm` for the same commands.
+## When not to use this
+
+CanonicalPath is not meant to replace normal path utilities for simple, trusted, single-language applications.
+
+You probably do not need it if:
+
+- paths never cross a language/process/OS boundary;
+- filenames are fully trusted and intentionally allowed to point anywhere;
+- you only need local display formatting;
+- your OS sandbox/container already handles the security boundary and you do not need cross-runtime identity.
+
+## Philosophy
+
+This is not an attempt to invent a universal filesystem standard. It is a practical contract for codebases where path strings are already crossing too many boundaries.
+
+[![xkcd Standards](https://imgs.xkcd.com/comics/standards.png)](https://xkcd.com/927/)
+
+Image: xkcd “Standards”. The point is taken seriously: CanonicalPath should be used as a narrow contract at tool boundaries, not as a reason to rewrite every path helper in every program.
 
 ## License
 
