@@ -2,7 +2,9 @@
 
 Status: experimental lexical `canonicalpath` implementation.
 
-C++ support currently covers deterministic lexical identity and serialization only. It does not implement `canonicalfs`, does not perform filesystem I/O, and is not a security boundary.
+C++ support currently covers deterministic lexical identity and serialization only.
+
+Use this package to share CanonicalPath identity with other runtimes. It does not implement `canonicalfs`, does not perform filesystem I/O, and is not an authoritative filesystem security boundary. Security-sensitive filesystem I/O must delegate to the Go daemon unless a native root-bound implementation is separately reviewed and documented.
 
 Implemented scope:
 

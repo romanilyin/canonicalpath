@@ -4,6 +4,8 @@ Status: supported experimental transport wrapper.
 
 Thin Bash transport wrapper for the Go daemon HTTP API.
 
+Use this wrapper when shell automation needs to call CanonicalFS through the Go daemon. It is transport glue only; Bash does not become an independent filesystem security boundary.
+
 Scope:
 
 - Provide shell entry points for common CanonicalFS calls.

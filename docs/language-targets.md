@@ -1,12 +1,32 @@
 # Language Targets
 
-`spec/language-targets.json` is the source of truth for supported and planned language/runtime surfaces.
+`spec/language-targets.json` is the source of truth for supported and planned language/runtime surfaces. This page keeps the detailed status and validation gates; `docs/language-coverage.md` is the reader-friendly matrix for public docs.
 
-`canonicalfs` means an actual filesystem security layer. `http-client` means transport to the Go daemon and does not imply a separate root-bound implementation in that language.
+Read “supported” together with the security level. In this repository, `canonicalfs` means an actual filesystem security layer. `http-client`, wrappers, and Unity bridge code mean transport or scoped validation to the Go daemon and do not imply a separate root-bound implementation in that language.
+
+## Quick Surface Matrix
+
+| Runtime / language | Current surface | Security level |
+|---|---|---|
+| Go | `canonicalpath`, authoritative `canonicalfs`, daemon | Authoritative FS boundary |
+| TypeScript | `canonicalpath`, best-effort/RPC-helper `canonicalfs`, HTTP client transport | Delegates to Go daemon |
+| JavaScript standalone/browser | lexical `canonicalpath` | Lexical only |
+| PowerShell 5.1 / 7 | lexical module and typed JSON HTTP client transport | Delegates to Go daemon |
+| Bash wrapper | authenticated daemon HTTP transport wrapper | Transport only; delegates to Go daemon |
+| Windows CMD/BAT wrapper | authenticated daemon HTTP transport wrapper | Transport only; delegates to Go daemon |
+| Unity managed/Bridge adapter | lexical helpers, PathGuard/scopes, daemon transport, Burst-oriented surface | Early bridge; delegates real I/O to Go daemon |
+| Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, GDScript/Godot | vector-checked lexical `canonicalpath` surfaces | Lexical only until a daemon transport or reviewed native root-bound design exists |
 
 ## Current Support
 
 - Go: supported for `canonicalpath`, authoritative `canonicalfs`, and daemon transport.
+- TypeScript: supported for `canonicalpath`, best-effort/RPC-helper `canonicalfs`, and HTTP client transport. Security-sensitive filesystem I/O must delegate to the Go daemon.
+- JavaScript standalone/browser: supported experimental lexical `canonicalpath` surface, with no filesystem operations.
+- PowerShell 5.1: supported through the experimental lexical module and typed JSON HTTP client transport to the Go daemon.
+- PowerShell 7: supported through the experimental lexical module and typed JSON HTTP client transport to the Go daemon.
+- PowerShell module 5.1 + 7: experimental lexical `CanonicalPath` surface and typed daemon HTTP client helpers exist and are checked by shared-vector and daemon smoke tests locally and by a manual Windows workflow job.
+- Bash wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls; no filesystem security boundary claims.
+- Windows CMD/BAT wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls via `curl.exe` and `powershell.exe`; no filesystem security boundary claims.
 - Python: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm python:vectors`; no filesystem operations or daemon transport yet.
 - Dart / Flutter: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm dart:vectors`; no filesystem operations or daemon transport yet.
 - C# / .NET: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm csharp:vectors`; no filesystem operations or daemon transport yet.
@@ -17,13 +37,6 @@
 - C++: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm cpp:vectors`; no filesystem operations or daemon transport yet.
 - Haxe: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm haxe:vectors`; no filesystem operations or daemon transport yet.
 - GDScript / Godot: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm gdscript:vectors`; no filesystem operations or daemon transport yet.
-- JavaScript standalone/browser: supported experimental lexical `canonicalpath` surface, with no filesystem operations.
-- TypeScript: supported for `canonicalpath`, best-effort/RPC-helper `canonicalfs`, and HTTP client transport.
-- Bash wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls; no filesystem security boundary claims.
-- Windows CMD/BAT wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls via `curl.exe` and `powershell.exe`; no filesystem security boundary claims.
-- PowerShell 5.1: supported through the experimental lexical module and typed JSON HTTP client transport to the Go daemon.
-- PowerShell 7: supported through the experimental lexical module and typed JSON HTTP client transport to the Go daemon.
-- PowerShell module 5.1 + 7: experimental lexical `CanonicalPath` surface and typed daemon HTTP client helpers exist and are checked by shared-vector and daemon smoke tests locally and by a manual Windows workflow job.
 
 ## Early Bridge Targets
 

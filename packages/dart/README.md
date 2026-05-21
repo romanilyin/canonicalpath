@@ -2,9 +2,9 @@
 
 Status: supported experimental lexical `canonicalpath` package.
 
-This package implements deterministic lexical CanonicalPath helpers for Dart and Flutter consumers. It does not perform filesystem I/O and is not a filesystem security boundary.
+This package gives Dart and Flutter code the same deterministic lexical CanonicalPath identity contract used by the other language targets.
 
-Security-sensitive filesystem operations must delegate to the Go `canonicalfs` daemon or to a separately reviewed root-bound implementation.
+Use it to store, compare, or transmit path identity across tools. It does not perform filesystem I/O and is not an authoritative filesystem security boundary. Security-sensitive filesystem operations must delegate to the Go `canonicalfs` daemon or to a separately reviewed root-bound implementation.
 
 ## Scope
 

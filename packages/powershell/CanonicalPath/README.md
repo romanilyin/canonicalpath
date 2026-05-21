@@ -2,6 +2,8 @@
 
 Experimental lexical CanonicalPath module for Windows PowerShell 5.1 and PowerShell 7, with typed CanonicalFS daemon HTTP client helpers.
 
+Use this module when PowerShell automation needs to share CanonicalPath identity or call the Go daemon. The split is the same as the rest of the repository: PowerShell can validate/serialize or transport a path, but the Go daemon owns security-sensitive filesystem I/O.
+
 The lexical helpers only implement deterministic path identity and serialization. The CanonicalFS functions are JSON HTTP client wrappers for the Go daemon. This module does not implement local filesystem security; security-sensitive filesystem I/O must stay delegated to the Go CanonicalFS daemon.
 
 ## Daemon Client

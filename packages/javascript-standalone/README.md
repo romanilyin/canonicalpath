@@ -2,13 +2,15 @@
 
 Status: supported experimental lexical package.
 
-This package provides a browser-safe CanonicalPath lexical surface without Node-only imports.
+Browser-safe standalone CanonicalPath lexical identity helpers.
+
+Use this package when browser or standalone JavaScript code needs to share the same path identity contract as the rest of the monorepo without importing Node filesystem APIs. It does not perform filesystem I/O and is not an authoritative filesystem security boundary.
 
 Scope:
 
 - Reuse shared vectors from `spec/testdata` for `canonicalpath` lexical behavior.
 - No local filesystem operations in this target.
-- No local `canonicalfs` security claims.
+- No local `canonicalfs` security claims; delegate security-sensitive I/O to the Go daemon.
 - Package exports point at generated `dist` ESM and declaration output; `dist` is built locally and not committed.
 - Synchronous `encodeGitRef` uses an internal SHA-256 implementation so shared vector behavior matches Go and TypeScript.
 
