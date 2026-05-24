@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- No unreleased changes.
+- Prepared Unity npmjs scoped-registry packaging for `com.romanilyin.canonicalpath@2026.5.24-1`.
 
 ## 2026.5.18-2
 

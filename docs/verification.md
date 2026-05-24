@@ -33,6 +33,7 @@ pnpm js:standalone:typecheck
 pnpm js:standalone:build
 pnpm js:standalone:build:smoke
 pnpm js:standalone:test
+pnpm unity:pack:dry-run
 go test ./packages/go/...
 pnpm scoped-daemon:smoke
 pnpm vectors

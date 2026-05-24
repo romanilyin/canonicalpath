@@ -13,6 +13,7 @@ const standalonePackageName = "@romanilyin/canonicalpath-standalone";
 const unityPackageName = "com.romanilyin.canonicalpath";
 const goModulePath = "github.com/romanilyin/canonicalpath/packages/go";
 const releaseVersion = "2026.5.18-2";
+const unityReleaseVersion = "2026.5.24-1";
 const unityMcpErrors = [
   "ERR_ABSOLUTE_PATH",
   "ERR_DRIVE_RELATIVE_PATH",
@@ -111,7 +112,7 @@ function checkPublicIdentity() {
 
   const unityPackage = json("packages/unity/package.json");
   assert(unityPackage.name === unityPackageName, `packages/unity/package.json: expected package name ${unityPackageName}`);
-  assert(unityPackage.version === releaseVersion, `packages/unity/package.json: expected version ${releaseVersion}`);
+  assert(unityPackage.version === unityReleaseVersion, `packages/unity/package.json: expected version ${unityReleaseVersion}`);
   assert(unityPackage.license === stingerLicense, `packages/unity/package.json: expected license ${stingerLicense}`);
 
   const standalonePackage = json("packages/javascript-standalone/package.json");
