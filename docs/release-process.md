@@ -54,6 +54,7 @@ The `2026.5.24-1` Unity registry release is scoped to `packages/unity` and prepa
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - Run `pnpm ts:pack:dry-run`, `pnpm js:standalone:pack:dry-run`, and `pnpm unity:pack:dry-run` before npm publication.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, npm pack dry-runs, and `scripts/run-scoped-daemon-smoke.mjs`.
+- Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
