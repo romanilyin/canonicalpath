@@ -1,4 +1,8 @@
 .DS_Store
+.env
+.env.*
+!.env.example
+.npmrc
 *.log
 coverage/
 dist/

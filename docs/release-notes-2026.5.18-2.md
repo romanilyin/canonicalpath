@@ -31,7 +31,7 @@ Go `CanonicalFS` is the root-bound filesystem access layer for security-sensitiv
 
 - TypeScript `canonicalfs` is best-effort/client helper code and is not TOCTOU-proof.
 - Go `canonicalfs.Rename` depends on Go root-bound rename support and must not be replaced with string joining plus `os.Rename`.
-- Unity package distribution is Git UPM by repository tag for this release; registry/OpenUPM publication is a later decision.
+- Unity package distribution for `2026.5.18-2` is Git UPM by repository tag; npmjs scoped-registry publication is tracked separately as `com.romanilyin.canonicalpath@2026.5.24-1`.
 - Several language targets are experimental lexical/client-only surfaces and are covered by shared vectors, not full production package guarantees.
 
 ## Verification

@@ -1,15 +1,47 @@
 {
   "name": "com.romanilyin.canonicalpath",
-  "version": "2026.5.18-2",
+  "version": "2026.5.24-1",
   "displayName": "CanonicalPath",
   "description": "CanonicalPath lexical identity, scoped PathGuard validation, and daemon transport for Unity editor/tooling integrations.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
   "licensesUrl": "https://github.com/romanilyin/canonicalpath/blob/main/LICENSE.md",
-  "changelogUrl": "https://github.com/romanilyin/canonicalpath/blob/main/CHANGELOG.md",
+  "changelogUrl": "https://github.com/romanilyin/canonicalpath/blob/main/packages/unity/CHANGELOG.md",
   "documentationUrl": "https://github.com/romanilyin/canonicalpath/blob/main/packages/unity/README.md",
   "unity": "2022.3",
   "author": {
     "name": "ROMAN ILYIN",
     "url": "https://github.com/romanilyin"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romanilyin/canonicalpath.git",
+    "directory": "packages/unity"
+  },
+  "homepage": "https://github.com/romanilyin/canonicalpath/tree/main/packages/unity#readme",
+  "bugs": {
+    "url": "https://github.com/romanilyin/canonicalpath/issues"
+  },
+  "keywords": ["canonicalpath", "unity", "upm", "mcp", "path", "pathguard"],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "Runtime",
+    "Runtime.meta",
+    "Tests",
+    "Tests.meta",
+    "README.md",
+    "README.md.meta",
+    "CHANGELOG.md",
+    "CHANGELOG.md.meta",
+    "LICENSE.md",
+    "LICENSE.ru.md",
+    "NOTICE.md",
+    "package.json.meta"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/sync-npm-package-notices.mjs copy",
+    "postpack": "node ../../scripts/sync-npm-package-notices.mjs clean",
+    "pack:dry-run": "npm pack --dry-run"
   }
 }
