@@ -76,10 +76,11 @@ Use the root-bound filesystem layer:
 - JavaScript standalone npm package: `@romanilyin/canonicalpath-standalone`.
 - Go module: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
+- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.5.24-1`.
 - Release version: `2026.5.18-2`.
 - License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
-The release plan is tracked in `docs/release-2026.5.18-2.md`; release notes are drafted in `docs/release-notes-2026.5.18-2.md`. The Go module tag is `packages/go/v0.2026.5-18.2`; see `docs/release-process.md` for the release tag policy.
+The full source release plan is tracked in `docs/release-2026.5.18-2.md`; Unity registry publication is tracked in `docs/release-unity-2026.5.24-1.md`. The Go module tag is `packages/go/v0.2026.5-18.2`; see `docs/release-process.md` for the release tag policy.
 
 ## Status notes
 

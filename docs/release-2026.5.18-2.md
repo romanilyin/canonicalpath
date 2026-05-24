@@ -156,9 +156,11 @@ npm view @romanilyin/canonicalpath-standalone version
 
 ## Unity Package
 
-For the first release, publish Unity as a Git UPM package by repository tag and path. Registry/OpenUPM publication remains a separate decision.
+For the first release, publish Unity as a Git UPM package by repository tag and path.
 
-Before registry publication or copying `packages/unity` outside the repository, add package-local `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` or another reviewed notice strategy. The repository-level release tag already carries the authoritative root license and notices.
+Unity npmjs scoped-registry publication is prepared separately as `com.romanilyin.canonicalpath@2026.5.24-1`; see `docs/release-unity-2026.5.24-1.md`. Do not publish `com.romanilyin.canonicalpath@2026.5.18-2` to npmjs for Unity registry dependencies.
+
+Before registry publication or copying `packages/unity` outside the repository, include `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` in the package tarball or use another reviewed notice strategy. The Unity registry package uses npm prepack notice sync for this.
 
 ## GitHub Release
 

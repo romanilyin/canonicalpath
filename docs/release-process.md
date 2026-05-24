@@ -1,8 +1,8 @@
 # Release Process
 
-Release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases.
+Full release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases. Unity npmjs publication has a local token helper, but it still requires an explicit maintainer command.
 
-Current release plan: `docs/release-2026.5.18-2.md`.
+Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.5.24-1.md`.
 
 ## Public Coordinates
 
@@ -11,6 +11,7 @@ Current release plan: `docs/release-2026.5.18-2.md`.
 - Standalone browser-safe npm package: `@romanilyin/canonicalpath-standalone`.
 - Go module path: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
+- Unity npmjs scoped-registry package: `com.romanilyin.canonicalpath` under npmjs with Unity manifest scope `com.romanilyin`.
 - License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
 ## Version Policy
@@ -39,21 +40,44 @@ packages/go/v0.2026.5-18.2
 
 This keeps the visible year/month/day/release number while staying under major version `v0`, so the current Go module path does not need a `/v2026` suffix. Do not use `packages/go/v2026.5.18-2` under the current module path because Go would treat `v2026` as a major version and require `github.com/romanilyin/canonicalpath/packages/go/v2026`.
 
+Unity registry-only package releases may use the same calendar SemVer-compatible shape independently from full source releases. Example: `com.romanilyin.canonicalpath@2026.5.24-1` for a Unity npmjs scoped-registry package prepared after source release `2026.5.18-2`.
+
 ## Release Scope
 
 The `2026.5.18-2` public release is a full repository release. It includes the source repository, GitHub Release notes, npm publication for `@romanilyin/canonicalpath` and `@romanilyin/canonicalpath-standalone`, Go source and daemon packages with Go module tag `packages/go/v0.2026.5-18.2`, Unity UPM Git package, and the current experimental lexical/client-only language targets.
+
+The `2026.5.24-1` Unity registry release is scoped to `packages/unity` and prepares npmjs resolution for Unity dependency manifests. It does not republish the TypeScript, JavaScript standalone, or Go packages.
 
 ## Gates
 
 - CI, security baseline, and CodeQL workflows run on `pull_request`, `push` to `main`, and `workflow_dispatch` after the repository is public.
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:changelog`, and `git diff --check` before release commits.
-- Run `pnpm ts:pack:dry-run` and `pnpm js:standalone:pack:dry-run` before npm publication.
-- `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, `npm pack --dry-run`, and `scripts/run-scoped-daemon-smoke.mjs`.
+- Run `pnpm ts:pack:dry-run`, `pnpm js:standalone:pack:dry-run`, and `pnpm unity:pack:dry-run` before npm publication.
+- `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, npm pack dry-runs, and `scripts/run-scoped-daemon-smoke.mjs`.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
+- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, and synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
+
+## npm Token Publishing
+
+Token-based npm commands should use a local root `.env` file that is ignored by git:
+
+```text
+NPM_TOKEN=npm_...
+```
+
+Use the checked-in helper so the token is passed through a temporary npm userconfig instead of being typed into the shell command:
+
+```sh
+pnpm unity:npm:ping
+pnpm unity:npm:whoami
+pnpm unity:npm:publish
+```
+
+Do not commit `.env`, `.npmrc`, npm automation tokens, or command output that contains tokens.
 
 ## Public Switch
 
