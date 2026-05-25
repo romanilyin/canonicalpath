@@ -1,6 +1,6 @@
 # Release Process
 
-Full release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases. Unity npmjs publication has a local token helper, but it still requires an explicit maintainer command.
+Full release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases. Unity npmjs publication has local helpers for the current unsigned npm publish path and optional Unity-signed tarball publication, but it still requires an explicit maintainer command.
 
 Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.5.24-1.md`.
 
@@ -53,32 +53,42 @@ The `2026.5.24-1` Unity registry release is scoped to `packages/unity` and prepa
 - CI, security baseline, and CodeQL workflows run on `pull_request`, `push` to `main`, and `workflow_dispatch` after the repository is public.
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - Run `pnpm ts:pack:dry-run`, `pnpm js:standalone:pack:dry-run`, and `pnpm unity:pack:dry-run` before npm publication.
+- Before optional signed Unity npmjs publication, run `pnpm unity:pack:signed` with UPM CLI credentials available; it must produce a `.tgz` containing `.attestation.p7m`.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, npm pack dry-runs, and `scripts/run-scoped-daemon-smoke.mjs`.
 - Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
-- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, and synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files.
+- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, and synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files. Optional signed publication must also include Unity's `.attestation.p7m` signature file.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 
-## npm Token Publishing
+## Publishing Secrets
 
-Token-based npm commands should use a local root `.env` file that is ignored by git:
+Token-based npm commands and optional Unity signing should use a local root `.env` file that is ignored by git:
 
 ```text
 NPM_TOKEN=npm_...
+UPM_ORGANIZATION_ID=...
+UPM_SERVICE_ACCOUNT_KEY_ID=...
+UPM_SERVICE_ACCOUNT_KEY_SECRET=...
 ```
 
-Use the checked-in helper so the token is passed through a temporary npm userconfig instead of being typed into the shell command:
+The Unity service account must have the `Package Manager Package Signer` role for the selected Unity Cloud organization when using signed publication. Use the checked-in helpers so npm publication uses a temporary npm userconfig, and signed Unity publication signs the tarball before upload:
 
 ```sh
 pnpm unity:npm:ping
 pnpm unity:npm:whoami
+pnpm unity:npm:publish:dry-run
 pnpm unity:npm:publish
+pnpm unity:npm:publish:unsigned
+pnpm unity:npm:publish:unsigned:dry-run
+pnpm unity:pack:signed
+pnpm unity:npm:publish:signed:dry-run
+pnpm unity:npm:publish:signed
 ```
 
-Do not commit `.env`, `.npmrc`, npm automation tokens, or command output that contains tokens.
+Do not commit `.env`, `.npmrc`, npm automation tokens, Unity service account credentials, or command output that contains tokens.
 
 ## Public Switch
 
