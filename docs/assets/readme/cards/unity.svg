@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="156" height="76" viewBox="0 0 156 76" role="img" aria-label="Unity Unity 2022.3 plus Path plus Client">
+  <title>Unity - Unity 2022.3+ - Path+Client</title>
+  <rect width="156" height="76" rx="10" fill="#0D1117"/>
+  <rect x="1" y="1" width="154" height="74" rx="9" fill="#111827"/>
+  <rect x="1" y="51" width="154" height="24" fill="#30363D"/>
+  <text x="12" y="25" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="20" font-weight="800" fill="#F9FAFB">Unity</text>
+  <text x="12" y="43" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="11" font-weight="600" fill="#D1D5DB">Unity 2022.3+</text>
+  <text x="144" y="67" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="10" font-weight="700" fill="#FFFFFF">Path+Client</text>
+</svg>

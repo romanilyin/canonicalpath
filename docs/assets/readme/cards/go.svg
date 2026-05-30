@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="156" height="76" viewBox="0 0 156 76" role="img" aria-label="Go Go 1.24 plus Path plus FS">
+  <title>Go - Go 1.24+ - Path+FS</title>
+  <rect width="156" height="76" rx="10" fill="#0D1117"/>
+  <rect x="1" y="1" width="154" height="74" rx="9" fill="#00ADD8"/>
+  <rect x="1" y="51" width="154" height="24" fill="#007D9C"/>
+  <text x="12" y="25" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="20" font-weight="800" fill="#061A23">Go</text>
+  <text x="12" y="43" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" fill="#062F3D">Go 1.24+</text>
+  <text x="144" y="67" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif" font-size="10" font-weight="800" fill="#FFFFFF">Path+FS</text>
+</svg>
