@@ -1,6 +1,38 @@
+<div align="center">
+
 # CanonicalPath / CanonicalFS
 
 **Deterministic path identity across runtimes. Root-bound filesystem access where real I/O begins.**
+
+[English](./README.md) |
+[Language coverage](./docs/language-coverage.md) |
+[Targets](./docs/language-targets.md) |
+[Verification](./docs/verification.md) |
+[Security](./SECURITY.md)
+
+<p>
+  <a href="./packages/go"><img src="./docs/assets/readme/cards/go.svg" alt="Go: Go 1.24+, Path+FS" height="62"></a>
+  <a href="./packages/ts"><img src="./docs/assets/readme/cards/typescript.svg" alt="TypeScript: TS 6 and Node 22, Path+Client" height="62"></a>
+  <a href="./packages/javascript-standalone"><img src="./docs/assets/readme/cards/javascript.svg" alt="JavaScript: ESM/browser, Path only" height="62"></a>
+  <a href="./packages/unity"><img src="./docs/assets/readme/cards/unity.svg" alt="Unity: Unity 2022.3+, Path+Client" height="62"></a>
+  <a href="./packages/csharp"><img src="./docs/assets/readme/cards/csharp.svg" alt="C#/.NET: .NET 8, Path only" height="62"></a>
+  <a href="./packages/powershell/CanonicalPath"><img src="./docs/assets/readme/cards/powershell.svg" alt="PowerShell: 5.1 and 7, Path+Client" height="62"></a>
+  <a href="./packages/bash-wrapper"><img src="./docs/assets/readme/cards/bash.svg" alt="Bash: Bash and curl, Transport" height="62"></a>
+  <a href="./packages/windows-cmd-batch-wrapper"><img src="./docs/assets/readme/cards/cmd.svg" alt="CMD/BAT: Windows CMD, Transport" height="62"></a>
+  <a href="./packages/python"><img src="./docs/assets/readme/cards/python.svg" alt="Python: Python 3.10+, Path only" height="62"></a>
+  <a href="./packages/rust"><img src="./docs/assets/readme/cards/rust.svg" alt="Rust: Rust 2021, Path only" height="62"></a>
+  <a href="./packages/c"><img src="./docs/assets/readme/cards/c.svg" alt="C: C11, Path only" height="62"></a>
+  <a href="./packages/cpp"><img src="./docs/assets/readme/cards/cpp.svg" alt="C++: C++20, Path only" height="62"></a>
+  <a href="./packages/swift"><img src="./docs/assets/readme/cards/swift.svg" alt="Swift: Swift 6.2, Path only" height="62"></a>
+  <a href="./packages/kotlin"><img src="./docs/assets/readme/cards/kotlin.svg" alt="Kotlin: Kotlin 1.9 and JVM 17, Path only" height="62"></a>
+  <a href="./packages/dart"><img src="./docs/assets/readme/cards/dart.svg" alt="Dart/Flutter: Dart 3, Path only" height="62"></a>
+  <a href="./packages/haxe"><img src="./docs/assets/readme/cards/haxe.svg" alt="Haxe: Haxe interp, Path only" height="62"></a>
+  <a href="./packages/gdscript"><img src="./docs/assets/readme/cards/godot.svg" alt="GDScript/Godot: Godot, Path only" height="62"></a>
+</p>
+
+<sub><strong>Path+FS</strong> = authoritative root-bound filesystem boundary; <strong>Path+Client</strong> = lexical identity plus daemon/client helpers; <strong>Transport</strong> = daemon wrapper only; <strong>Path only</strong> = lexical identity only.</sub>
+
+</div>
 
 Every runtime has a path library. CanonicalPath is for the moment where a path leaves one runtime and enters another.
 
