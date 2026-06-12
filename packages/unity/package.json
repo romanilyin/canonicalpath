@@ -35,8 +35,11 @@
     "CHANGELOG.md",
     "CHANGELOG.md.meta",
     "LICENSE.md",
+    "LICENSE.md.meta",
     "LICENSE.ru.md",
+    "LICENSE.ru.md.meta",
     "NOTICE.md",
+    "NOTICE.md.meta",
     "package.json.meta"
   ],
   "scripts": {

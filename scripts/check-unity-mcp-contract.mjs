@@ -114,6 +114,23 @@ function checkPublicIdentity() {
   assert(unityPackage.name === unityPackageName, `packages/unity/package.json: expected package name ${unityPackageName}`);
   assert(unityPackage.version === unityReleaseVersion, `packages/unity/package.json: expected version ${unityReleaseVersion}`);
   assert(unityPackage.license === stingerLicense, `packages/unity/package.json: expected license ${stingerLicense}`);
+  assertExactArray("packages/unity/package.json files", unityPackage.files, [
+    "Runtime",
+    "Runtime.meta",
+    "Tests",
+    "Tests.meta",
+    "README.md",
+    "README.md.meta",
+    "CHANGELOG.md",
+    "CHANGELOG.md.meta",
+    "LICENSE.md",
+    "LICENSE.md.meta",
+    "LICENSE.ru.md",
+    "LICENSE.ru.md.meta",
+    "NOTICE.md",
+    "NOTICE.md.meta",
+    "package.json.meta",
+  ]);
 
   const standalonePackage = json("packages/javascript-standalone/package.json");
   assert(standalonePackage.name === standalonePackageName, "packages/javascript-standalone/package.json: unexpected package name");

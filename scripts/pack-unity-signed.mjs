@@ -1,19 +1,18 @@
 import { spawnSync } from "node:child_process";
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  rmSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import zlib from "node:zlib";
 
+import { cleanPackageNotices, copyPackageNotices } from "./sync-npm-package-notices.mjs";
+
 const root = fileURLToPath(new URL("..", import.meta.url));
-const noticeFiles = ["LICENSE.md", "LICENSE.ru.md", "NOTICE.md"];
 const requiredUnitySigningEnv = [
   "UPM_ORGANIZATION_ID",
   "UPM_SERVICE_ACCOUNT_KEY_ID",
@@ -40,7 +39,7 @@ export function packUnitySigned(options = {}) {
   mkdirSync(destination, { recursive: true });
   const startedAt = Date.now();
 
-  syncNoticeFiles(packageDir);
+  copyPackageNotices(packageDir);
   try {
     const result = spawnSync(
       "upm",
@@ -72,7 +71,7 @@ export function packUnitySigned(options = {}) {
     console.log(`Signed Unity package: ${path.relative(root, tarballPath)}`);
     return { tarballPath, packageName: manifest.name, version: manifest.version };
   } finally {
-    cleanNoticeFiles(packageDir);
+    cleanPackageNotices(packageDir);
   }
 }
 
@@ -105,25 +104,6 @@ function mergeEnv(envValues) {
 
 function isUsableSecret(value) {
   return typeof value === "string" && value.trim() !== "" && value !== "replace-me" && value !== "upm_xxx";
-}
-
-function syncNoticeFiles(packageDir) {
-  for (const file of noticeFiles) {
-    copyFileSync(path.join(root, file), path.join(packageDir, file));
-  }
-}
-
-function cleanNoticeFiles(packageDir) {
-  for (const file of noticeFiles) {
-    const source = path.join(root, file);
-    const target = path.join(packageDir, file);
-
-    if (!existsSync(source) || !existsSync(target)) continue;
-
-    if (readFileSync(source, "utf8") === readFileSync(target, "utf8")) {
-      rmSync(target);
-    }
-  }
 }
 
 function resolvePackedTarball(destination, manifest, startedAt) {
