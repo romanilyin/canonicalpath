@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.6.14-1
+
+- Added Unity `.meta` packaging for synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files so npmjs scoped-registry installs do not ignore legal assets from immutable package folders.
+- Reused the same legal-file sync path for npm and optional signed Unity package flows.
+
 ## 2026.5.24-1
 
 - Prepared the Unity package for npmjs scoped-registry installation as `com.romanilyin.canonicalpath@2026.5.24-1`.
