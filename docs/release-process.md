@@ -2,7 +2,7 @@
 
 Full release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases. Unity npmjs publication has local helpers for the current unsigned npm publish path and optional Unity-signed tarball publication, but it still requires an explicit maintainer command.
 
-Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.5.24-1.md`.
+Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 
@@ -46,7 +46,7 @@ Unity registry-only package releases may use the same calendar SemVer-compatible
 
 The `2026.5.18-2` public release is a full repository release. It includes the source repository, GitHub Release notes, npm publication for `@romanilyin/canonicalpath` and `@romanilyin/canonicalpath-standalone`, Go source and daemon packages with Go module tag `packages/go/v0.2026.5-18.2`, Unity UPM Git package, and the current experimental lexical/client-only language targets.
 
-The `2026.5.24-1` Unity registry release is scoped to `packages/unity` and prepares npmjs resolution for Unity dependency manifests. It does not republish the TypeScript, JavaScript standalone, or Go packages.
+The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publishes npmjs scoped-registry packaging with Unity `.meta` files for synced legal assets. It does not republish the TypeScript, JavaScript standalone, or Go packages.
 
 ## Gates
 
@@ -60,7 +60,7 @@ The `2026.5.24-1` Unity registry release is scoped to `packages/unity` and prepa
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
-- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, and synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files. Optional signed publication must also include Unity's `.attestation.p7m` signature file.
+- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, and synced `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files with their Unity `.meta` files. Optional signed publication must also include Unity's `.attestation.p7m` signature file.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 
 ## Publishing Secrets

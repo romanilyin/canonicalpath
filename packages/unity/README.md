@@ -39,15 +39,15 @@ Scoped registry use through npmjs:
     }
   ],
   "dependencies": {
-    "com.romanilyin.canonicalpath": "2026.5.24-1"
+    "com.romanilyin.canonicalpath": "2026.6.14-1"
   }
 }
 ```
 
 Release packaging:
 
-- Package version for the current Unity registry release candidate is `2026.5.24-1`.
-- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.5.24-1`.
+- Package version for the current Unity registry release candidate is `2026.6.14-1`.
+- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.6.14-1`.
 - Git UPM by repository tag remains available for the earlier source release: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2`.
 - npm prepack sync copies root `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and their Unity `.meta` files into the package tarball before publication, then removes unchanged copies after packing.
 - Default npm publication is currently unsigned: `pnpm unity:npm:publish`. Unity 6.3+ will show `Signature: Missing` for that artifact.

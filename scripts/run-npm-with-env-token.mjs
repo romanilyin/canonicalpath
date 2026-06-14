@@ -60,6 +60,7 @@ try {
     {
       cwd,
       env: { ...process.env, NPM_TOKEN: token },
+      shell: process.platform === "win32",
       stdio: "inherit",
     },
   );
