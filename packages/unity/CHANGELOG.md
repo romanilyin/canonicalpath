@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026.6.19-1
 
 - License files are now committed inside the Unity package and include Unity `.meta` files; package licensing remains Stinger Royalty-Free EULA 1.0.
 

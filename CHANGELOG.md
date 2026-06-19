@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bumped npm and Unity package metadata to `2026.6.19-1` for the MIT-with-Unity-exception publication.
 - Changed the repository default and non-Unity package licensing to MIT.
 - Kept the Unity UPM/npm package `com.romanilyin.canonicalpath` under Stinger Royalty-Free EULA 1.0.
 - Made npm license/notice prepack synchronization package-aware.

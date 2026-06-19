@@ -1,6 +1,6 @@
 {
   "name": "@romanilyin/canonicalpath",
-  "version": "2026.5.18-2",
+  "version": "2026.6.19-1",
   "description": "Shared CanonicalPath identity and daemon client helpers for cross-runtime tools.",
   "license": "MIT",
   "type": "module",
