@@ -6,8 +6,9 @@
     "spec:validate": "node scripts/validate-spec.mjs",
     "check:changelog": "node scripts/check-changelog.mjs",
     "check:error-taxonomy": "node scripts/check-error-taxonomy.mjs",
+    "check:licenses": "node scripts/check-package-license-layout.mjs",
     "check:unity-mcp-contract": "pnpm spec:validate && pnpm check:error-taxonomy && pnpm unity:mcp:path-scopes:vectors && node scripts/check-unity-mcp-contract.mjs",
-    "verify": "pnpm spec:validate && pnpm check:error-taxonomy && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:vectors && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
+    "verify": "pnpm spec:validate && pnpm check:error-taxonomy && pnpm check:licenses && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:vectors && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
     "test": "pnpm verify",
     "typecheck": "pnpm -C packages/ts typecheck",
     "lint": "pnpm -C packages/ts lint",
@@ -96,7 +97,7 @@
     "@types/node": "^25.9.1",
     "fast-check": "^4.8.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
+    "vite": "^8.0.16",
     "vitest": "^4.1.7"
   },
   "pnpm": {

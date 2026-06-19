@@ -36,8 +36,8 @@ Consumers should resolve the package through npmjs with a Unity scoped registry:
 - `packages/unity/package.json` includes npmjs `publishConfig`, repository metadata, keywords, packed-file allowlist, and `pack:dry-run`.
 - `packages/unity/CHANGELOG.md` documents the Unity registry release.
 - `packages/unity/README.md` documents npmjs scoped-registry installation.
-- npm prepack sync includes root `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` in the default unsigned npm tarball.
-- Optional signed tooling remains available: `scripts/pack-unity-signed.mjs` mirrors the same notice files before running `upm pack`, then removes unchanged synced copies after packing.
+- npm prepack verifies committed package-local `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and their Unity `.meta` files in the default unsigned npm tarball.
+- Optional signed tooling remains available: `scripts/pack-unity-signed.mjs` uses the same package-aware license/notice check before running `upm pack`.
 - Optional `pnpm unity:pack:signed` creates `tmp/unity-signed/com.romanilyin.canonicalpath-2026.5.24-1.tgz` and verifies that it contains `.attestation.p7m`.
 - Root `.env` is ignored and reserved for local npm and Unity signing credentials.
 
@@ -47,6 +47,7 @@ Run before publishing:
 
 ```bash
 pnpm unity:pack:dry-run
+pnpm check:licenses
 pnpm unity:canonicalpath:vectors
 pnpm unity:bridge:vectors
 pnpm unity:mcp:path-scopes:vectors

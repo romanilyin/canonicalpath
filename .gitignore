@@ -12,5 +12,6 @@ __pycache__/
 target/
 tmp/
 vendor/
+**/.canonicalpath-notice-sync-state.json
 packages/csharp/bin/
 packages/csharp/obj/

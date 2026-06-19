@@ -6,7 +6,14 @@ Use this package when a path leaves TypeScript and must stay aligned with Go, Un
 
 - Root export: `@romanilyin/canonicalpath` for lexical CanonicalPath identity.
 - Subpath exports: `@romanilyin/canonicalpath/canonicalpath`, `@romanilyin/canonicalpath/canonicalfs`, and `@romanilyin/canonicalpath/unity-gateway`.
-- License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
+- License: `MIT`.
 - Canonical repository: `https://github.com/romanilyin/canonicalpath`.
 
 Security-sensitive filesystem I/O must delegate to the Go `canonicalfs` daemon unless a separately reviewed native root-bound implementation is used.
+
+## License
+
+`@romanilyin/canonicalpath` is licensed under the MIT License.
+
+The Unity package `com.romanilyin.canonicalpath` is licensed separately under
+Stinger Royalty-Free EULA 1.0.

@@ -23,6 +23,7 @@ pnpm install
 ```bash
 pnpm spec:validate
 pnpm check:error-taxonomy
+pnpm check:licenses
 node scripts/check-unity-mcp-contract.mjs
 pnpm -C packages/ts typecheck
 pnpm -C packages/ts test

@@ -2,7 +2,7 @@
   "name": "@romanilyin/canonicalpath-standalone",
   "version": "2026.5.18-2",
   "description": "Browser-safe standalone CanonicalPath lexical identity helpers.",
-  "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "repository": {
@@ -27,7 +27,7 @@
       "default": "./dist/canonicalpath.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"],
+  "files": ["dist", "README.md", "LICENSE.md", "NOTICE.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:smoke": "node test/build-smoke.mjs",

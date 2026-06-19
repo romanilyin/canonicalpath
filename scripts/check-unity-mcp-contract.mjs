@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scopes = ["unity_asset", "knowledge", "package_manifest", "artifact", "gateway_cache", "temp_session"];
 const operations = ["validate", "read", "write", "list", "delete", "import", "refresh", "generated-key"];
 const publicRepoUrl = "https://github.com/romanilyin/canonicalpath";
+const mitLicense = "MIT";
 const stingerLicense = "LicenseRef-Stinger-Royalty-Free-EULA-1.0";
 const npmPackageName = "@romanilyin/canonicalpath";
 const standalonePackageName = "@romanilyin/canonicalpath-standalone";
@@ -80,13 +81,14 @@ function schemaDef(schema, name) {
 
 function checkPackageScripts() {
   const pkg = json("package.json");
+  assert(pkg.scripts?.["check:licenses"] === "node scripts/check-package-license-layout.mjs", "package.json: missing scripts.check:licenses");
   const script = pkg.scripts?.["check:unity-mcp-contract"];
   assert(typeof script === "string", "package.json: missing scripts.check:unity-mcp-contract");
   for (const part of ["pnpm spec:validate", "pnpm check:error-taxonomy", "pnpm unity:mcp:path-scopes:vectors", "node scripts/check-unity-mcp-contract.mjs"]) {
     assertIncludes("package.json scripts.check:unity-mcp-contract", script, part);
   }
   const verify = pkg.scripts?.verify ?? "";
-  for (const part of ["node scripts/check-unity-mcp-contract.mjs", "pnpm ts:build", "pnpm ts:package:smoke", "pnpm ts:pack:dry-run", "pnpm scoped-daemon:smoke"]) {
+  for (const part of ["pnpm check:licenses", "node scripts/check-unity-mcp-contract.mjs", "pnpm ts:build", "pnpm ts:package:smoke", "pnpm ts:pack:dry-run", "pnpm scoped-daemon:smoke"]) {
     assertIncludes("package.json scripts.verify", verify, part);
   }
   assert(pkg.scripts?.["ts:build"] === "pnpm -C packages/ts build", "package.json: missing scripts.ts:build");
@@ -99,11 +101,11 @@ function checkPublicIdentity() {
   const tsPackage = json("packages/ts/package.json");
   assert(tsPackage.name === npmPackageName, `packages/ts/package.json: expected package name ${npmPackageName}`);
   assert(tsPackage.version === releaseVersion, `packages/ts/package.json: expected version ${releaseVersion}`);
-  assert(tsPackage.license === stingerLicense, `packages/ts/package.json: expected license ${stingerLicense}`);
+  assert(tsPackage.license === mitLicense, `packages/ts/package.json: expected license ${mitLicense}`);
   assert(!Object.hasOwn(tsPackage, "private"), "packages/ts/package.json: publishable package must not be private for release");
   assert(tsPackage.main === "./dist/canonicalpath/index.js", "packages/ts/package.json: root main must point at dist");
   assert(tsPackage.types === "./dist/canonicalpath/index.d.ts", "packages/ts/package.json: root types must point at dist");
-  assertExactArray("packages/ts/package.json files", tsPackage.files, ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"]);
+  assertExactArray("packages/ts/package.json files", tsPackage.files, ["dist", "README.md", "LICENSE.md", "NOTICE.md"]);
   assert(tsPackage.scripts?.build === "tsc -p tsconfig.build.json", "packages/ts/package.json: missing build script");
   assert(tsPackage.scripts?.["package:smoke"] === "node test/package-smoke.mjs", "packages/ts/package.json: missing package:smoke script");
   assert(tsPackage.scripts?.prepack === "node ../../scripts/sync-npm-package-notices.mjs copy", "packages/ts/package.json: missing prepack notice sync");
@@ -114,6 +116,7 @@ function checkPublicIdentity() {
   assert(unityPackage.name === unityPackageName, `packages/unity/package.json: expected package name ${unityPackageName}`);
   assert(unityPackage.version === unityReleaseVersion, `packages/unity/package.json: expected version ${unityReleaseVersion}`);
   assert(unityPackage.license === stingerLicense, `packages/unity/package.json: expected license ${stingerLicense}`);
+  assert(unityPackage.licensesUrl === `${publicRepoUrl}/blob/main/packages/unity/LICENSE.md`, "packages/unity/package.json: unexpected licensesUrl");
   assertExactArray("packages/unity/package.json files", unityPackage.files, [
     "Runtime",
     "Runtime.meta",
@@ -135,21 +138,19 @@ function checkPublicIdentity() {
   const standalonePackage = json("packages/javascript-standalone/package.json");
   assert(standalonePackage.name === standalonePackageName, "packages/javascript-standalone/package.json: unexpected package name");
   assert(standalonePackage.version === releaseVersion, `packages/javascript-standalone/package.json: expected version ${releaseVersion}`);
-  assert(standalonePackage.license === stingerLicense, `packages/javascript-standalone/package.json: expected license ${stingerLicense}`);
+  assert(standalonePackage.license === mitLicense, `packages/javascript-standalone/package.json: expected license ${mitLicense}`);
   assert(!Object.hasOwn(standalonePackage, "private"), "packages/javascript-standalone/package.json: publishable package must not be private for release");
-  assertExactArray("packages/javascript-standalone/package.json files", standalonePackage.files, ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"]);
+  assertExactArray("packages/javascript-standalone/package.json files", standalonePackage.files, ["dist", "README.md", "LICENSE.md", "NOTICE.md"]);
   assert(standalonePackage.scripts?.prepack === "node ../../scripts/sync-npm-package-notices.mjs copy", "packages/javascript-standalone/package.json: missing prepack notice sync");
   assert(standalonePackage.scripts?.postpack === "node ../../scripts/sync-npm-package-notices.mjs clean", "packages/javascript-standalone/package.json: missing postpack notice cleanup");
 
   assertIncludes("packages/go/go.mod", read("packages/go/go.mod"), `module ${goModulePath}`);
-  for (const relativePath of ["README.md", "NOTICE.md", "NOTICE.ru.md"]) {
+  for (const relativePath of ["README.md", "NOTICE.md"]) {
     assertIncludes(relativePath, read(relativePath), publicRepoUrl);
   }
 
-  for (const relativePath of ["package.json", "packages/ts/package.json", "packages/unity/package.json", "packages/javascript-standalone/package.json"]) {
-    const text = read(relativePath);
-    assert(!/"license"\s*:\s*"(?:MIT|Apache-2\.0|ISC|BSD-[23]-Clause)"/.test(text), `${relativePath}: public package metadata must not claim an OSI license`);
-  }
+  const unityPackageText = read("packages/unity/package.json");
+  assert(!/"license"\s*:\s*"(?:MIT|Apache-2\.0|ISC|BSD-[23]-Clause)"/.test(unityPackageText), "packages/unity/package.json: Unity package must not claim an OSI license");
 }
 
 function checkScopeSchema() {
@@ -232,7 +233,7 @@ function checkCommandDescriptorFragments() {
 function checkTypeScriptSurface() {
   const pkg = json("packages/ts/package.json");
   assert(pkg.name === npmPackageName, `packages/ts/package.json: expected package name ${npmPackageName}`);
-  assert(pkg.license === stingerLicense, `packages/ts/package.json: expected license ${stingerLicense}`);
+  assert(pkg.license === mitLicense, `packages/ts/package.json: expected license ${mitLicense}`);
   assert(pkg.exports?.["."]?.import === "./dist/canonicalpath/index.js", "packages/ts/package.json: missing root canonicalpath dist export");
   assert(pkg.exports?.["."]?.types === "./dist/canonicalpath/index.d.ts", "packages/ts/package.json: missing root canonicalpath types export");
   assert(pkg.exports?.["./canonicalpath"]?.import === "./dist/canonicalpath/index.js", "packages/ts/package.json: missing ./canonicalpath dist export");

@@ -49,7 +49,7 @@ https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2
 - `SECURITY.md` documents private vulnerability reporting.
 - `.github/ISSUE_TEMPLATE/config.yml` redirects security reports to private advisory flow.
 - `CONTRIBUTING.md` and `CONTRIBUTING.ru.md` document PR and branch naming rules, including `l10n` for localization-only documentation changes.
-- npm package metadata is publish-ready and includes `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` in pack dry-runs.
+- npm package metadata is publish-ready. TypeScript and JavaScript standalone package dry-runs include MIT `LICENSE.md` and root `NOTICE.md`; Unity keeps package-local Stinger `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files.
 - GitHub repository settings are squash-only, delete merged branches, and keep Actions token permissions read-only.
 - GitHub Actions were manual-only while the repository was private.
 - CI, security baseline, and CodeQL workflows are enabled on `pull_request`, `push` to `main`, and `workflow_dispatch` after the public switch.
@@ -60,6 +60,7 @@ Run locally before the release commit is tagged:
 
 ```bash
 pnpm check:changelog
+pnpm check:licenses
 pnpm verify
 pnpm go:race
 pnpm ts:pack:dry-run
@@ -160,7 +161,7 @@ For the first release, publish Unity as a Git UPM package by repository tag and 
 
 Unity npmjs scoped-registry publication is prepared separately as `com.romanilyin.canonicalpath@2026.5.24-1`; see `docs/release-unity-2026.5.24-1.md`. Do not publish `com.romanilyin.canonicalpath@2026.5.18-2` to npmjs for Unity registry dependencies.
 
-Before registry publication or copying `packages/unity` outside the repository, include `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` in the package tarball or use another reviewed notice strategy. The Unity registry package uses npm prepack notice sync for this.
+Before registry publication or copying `packages/unity` outside the repository, ensure package-local `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and matching Unity `.meta` files are present in the package tarball. The Unity registry package uses npm prepack verification for this.
 
 ## GitHub Release
 
