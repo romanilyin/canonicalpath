@@ -1,6 +1,6 @@
 {
   "name": "@romanilyin/canonicalpath-standalone",
-  "version": "2026.5.18-2",
+  "version": "2026.6.19-1",
   "description": "Browser-safe standalone CanonicalPath lexical identity helpers.",
   "license": "MIT",
   "type": "module",
