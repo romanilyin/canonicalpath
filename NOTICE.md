@@ -1,45 +1,18 @@
-# NOTICE
+# CanonicalPath / CanonicalFS Notice
 
-This repository is licensed under **Stinger Royalty-Free EULA 1.0**.
+CanonicalPath / CanonicalFS
+Copyright (c) 2026 Roman Ilyin.
 
-**SPDX-License-Identifier:** `LicenseRef-Stinger-Royalty-Free-EULA-1.0`  
-**Authoritative license version:** Russian text in `LICENSE.ru.md`  
-**English convenience text:** `LICENSE.md`, provided for readability  
-**Licensor:** ROMAN ILYIN  
-**Project / Asset name:** CanonicalPath  
-**Canonical repository:** https://github.com/romanilyin/canonicalpath
-**Copyright:** Copyright © 2026 ROMAN ILYIN. All rights reserved except as expressly granted by the EULA.
+Canonical repository: https://github.com/romanilyin/canonicalpath
 
-The Russian EULA is the primary and controlling version. If the Russian and English versions conflict, differ, or are interpreted differently, the Russian version controls.
+The repository default license is the MIT License.
 
-## Licensed materials
+The Unity package `com.romanilyin.canonicalpath` under `packages/unity` is
+licensed separately under Stinger Royalty-Free EULA 1.0. See:
 
-The licensed Asset includes CanonicalPath source code, lexical canonical path components, filesystem-facing components, documentation, samples, tests, configuration files, and related materials.
+- `packages/unity/LICENSE.md`
+- `packages/unity/LICENSE.ru.md`
 
-This EULA applies to all files in this repository unless a file, folder, dependency, package, or third-party notice states otherwise.
-
-## Required attribution notice
-
-Any distribution of this Asset, a Derivative Asset, or an End Product containing this Asset must preserve the applicable notices required by the EULA. Use the following attribution notice where third-party notices are customarily placed:
-
-```text
-This product includes or is based on CanonicalPath.
-Original repository: https://github.com/romanilyin/canonicalpath
-Copyright © 2026 ROMAN ILYIN.
-Licensed under Stinger Royalty-Free EULA 1.0.
-```
-
-## Modified versions
-
-Modified standalone forks, free forks, and Derivative Assets must also include:
-
-```text
-This is an unofficial modified version. It is not endorsed, sponsored,
-approved, certified, maintained, or supported by ROMAN ILYIN.
-```
-
-## Summary
-
-Free for personal, internal, open, and commercial End Products. Royalty-free. Attribution and the Canonical Repository notice must be preserved. Standalone sale, resale, paid redistribution, or standalone commercialization of this Asset or Derivative Assets is prohibited.
-
-This summary is provided for convenience only. The English convenience license text is in `LICENSE.md`; the authoritative Russian license text is in `LICENSE.ru.md`.
+The MIT License grants rights to use the code. It does not grant trademark
+rights to use the CanonicalPath name, logo, or branding to imply official
+endorsement.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Changed the repository default and non-Unity package licensing to MIT.
+- Kept the Unity UPM/npm package `com.romanilyin.canonicalpath` under Stinger Royalty-Free EULA 1.0.
+- Made npm license/notice prepack synchronization package-aware.
+- Added committed Unity license/notice files and `.meta` files for package consumers.
 - Prepared Unity npmjs scoped-registry packaging for `com.romanilyin.canonicalpath@2026.6.14-1`.
 
 ## 2026.5.18-2

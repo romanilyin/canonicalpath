@@ -21,3 +21,10 @@ Checks:
 - `pnpm -C packages/javascript-standalone build:smoke`
 - `pnpm -C packages/javascript-standalone test`
 - `pnpm js:standalone:alloc`
+
+## License
+
+`@romanilyin/canonicalpath-standalone` is licensed under the MIT License.
+
+The Unity package `com.romanilyin.canonicalpath` is licensed separately under
+Stinger Royalty-Free EULA 1.0.

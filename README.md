@@ -110,7 +110,12 @@ Use the root-bound filesystem layer:
 - Unity UPM package: `com.romanilyin.canonicalpath`.
 - Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.6.14-1`.
 - Release version: `2026.5.18-2`.
-- License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
+- License model:
+  - Repository default: `MIT`.
+  - `@romanilyin/canonicalpath`: `MIT`.
+  - `@romanilyin/canonicalpath-standalone`: `MIT`.
+  - Go `canonicalpath` / `canonicalfs`: `MIT` unless a package directory says otherwise.
+  - Unity UPM package `com.romanilyin.canonicalpath`: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
 The full source release plan is tracked in `docs/release-2026.5.18-2.md`; Unity registry publication is tracked in `docs/release-unity-2026.6.14-1.md`. The Go module tag is `packages/go/v0.2026.5-18.2`; see `docs/release-process.md` for the release tag policy.
 
@@ -164,16 +169,15 @@ Image: xkcd “Standards”. The point is taken seriously: CanonicalPath should 
 
 ## License
 
-This project is licensed under **Stinger Royalty-Free EULA 1.0**.
+This repository uses package-level licensing.
 
-- Authoritative version: Russian text in `LICENSE.ru.md`.
-- English convenience text: `LICENSE.md`, provided for readability.
-- SPDX identifier: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
-- Licensor: ROMAN ILYIN.
-- Canonical repository: https://github.com/romanilyin/canonicalpath.
+The repository default and the non-Unity CanonicalPath / CanonicalFS packages are
+licensed under the MIT License. See `LICENSE.md` and `LICENSES/MIT.txt`.
 
-Free for personal, internal, open, and commercial End Products. Royalty-free. Attribution and the Canonical Repository notice must be preserved. Standalone sale, resale, paid redistribution, or standalone commercialization of this Asset or Derivative Assets is prohibited.
+The Unity UPM/npm package `com.romanilyin.canonicalpath` under `packages/unity`
+is licensed separately under Stinger Royalty-Free EULA 1.0. See
+`packages/unity/LICENSE.md` and `packages/unity/LICENSE.ru.md`.
 
-The Russian EULA is the primary and controlling version. If the Russian and English versions conflict, differ, or are interpreted differently, the Russian version controls.
-
-See `LICENSE.md` for the English convenience text, `LICENSE.ru.md` for the authoritative Russian text, and `NOTICE.md` for project-specific notices.
+The MIT License grants rights to use the code. It does not grant trademark
+rights to use the CanonicalPath name, logo, or branding to imply official
+endorsement.

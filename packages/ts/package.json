@@ -2,7 +2,7 @@
   "name": "@romanilyin/canonicalpath",
   "version": "2026.5.18-2",
   "description": "Shared CanonicalPath identity and daemon client helpers for cross-runtime tools.",
-  "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "repository": {
@@ -42,7 +42,7 @@
       "default": "./dist/unity-gateway/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE.md", "LICENSE.ru.md", "NOTICE.md"],
+  "files": ["dist", "README.md", "LICENSE.md", "NOTICE.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "package:smoke": "node test/package-smoke.mjs",

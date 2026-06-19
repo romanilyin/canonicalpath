@@ -49,7 +49,9 @@ Release packaging:
 - Package version for the current Unity registry release candidate is `2026.6.14-1`.
 - npmjs package coordinate: `com.romanilyin.canonicalpath@2026.6.14-1`.
 - Git UPM by repository tag remains available for the earlier source release: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2`.
-- npm prepack sync copies root `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and their Unity `.meta` files into the package tarball before publication, then removes unchanged copies after packing.
+- The Unity package keeps committed Stinger license and notice files under
+  `packages/unity`. npm `prepack` verifies that these files match the
+  Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.
 - Default npm publication is currently unsigned: `pnpm unity:npm:publish`. Unity 6.3+ will show `Signature: Missing` for that artifact.
 - Optional Unity-signed publication uses `pnpm unity:pack:signed` and `pnpm unity:npm:publish:signed`, which run UPM CLI `upm pack`, verify `.attestation.p7m`, and publish the signed tarball from `tmp/unity-signed`.
 - Token-based npm publication uses a local ignored root `.env` file with `NPM_TOKEN`; optional signed publication also needs `UPM_ORGANIZATION_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`. Do not commit real tokens, service account credentials, or local `.npmrc` files.
@@ -109,6 +111,14 @@ Full package scope:
 - Broader Unity Editor UX wiring for managed `canonicalpath` and daemon transport.
 - Broader Burst-compatible lexical helpers and real Burst compiler tests.
 - Unity Editor UX wiring for managed daemon transport.
+
+## License
+
+The Unity package `com.romanilyin.canonicalpath` is licensed under
+Stinger Royalty-Free EULA 1.0. See `LICENSE.md` and `LICENSE.ru.md` in this
+package directory.
+
+Other packages in the repository may use different licenses.
 
 Security boundary:
 

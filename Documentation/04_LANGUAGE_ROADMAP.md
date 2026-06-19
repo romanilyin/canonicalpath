@@ -97,7 +97,7 @@
 - npm package: `@romanilyin/canonicalpath`.
 - Go module: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
-- License: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
+- License model: repository default and non-Unity packages are `MIT`; Unity UPM package `com.romanilyin.canonicalpath` remains `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
 `pnpm check:unity-mcp-contract` guards these identity decisions together with the Unity MCP path contract. The current public release plan and package publish gates are tracked in `docs/release-process.md` and `docs/release-2026.5.18-2.md`.
 
