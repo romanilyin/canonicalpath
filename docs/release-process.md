@@ -85,7 +85,7 @@ Environment name: npm
 Allowed actions: npm publish
 ```
 
-The workflow uses GitHub-hosted runners, Node 24, npm 11.5.1 or newer, `id-token: write`, and the GitHub `npm` environment. No `NPM_TOKEN` secret is required. Before the first automated publication, configure required reviewers on the `npm` environment and GitHub tag rules that prevent updates or deletion of normal release tags and `unity/com.romanilyin.canonicalpath/*` tags. After a successful trusted publication, npm recommends setting each package's publishing access to require 2FA and disallow token-based publishing.
+The workflow uses GitHub-hosted runners, pinned Node `24.18.0` and npm `11.16.0`, `id-token: write`, and the GitHub `npm` environment. Pinning the pack toolchain keeps integrity checks reproducible across partial-publish retries. No `NPM_TOKEN` secret is required. Before the first automated publication, configure required reviewers on the `npm` environment and GitHub tag rules that prevent updates or deletion of normal release tags and `unity/com.romanilyin.canonicalpath/*` tags. After a successful trusted publication, npm recommends setting each package's publishing access to require 2FA and disallow token-based publishing.
 
 ## Local Publishing Secrets
 
