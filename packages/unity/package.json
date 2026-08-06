@@ -23,7 +23,8 @@
   },
   "keywords": ["canonicalpath", "unity", "upm", "mcp", "path", "pathguard"],
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "files": [
     "Runtime",
