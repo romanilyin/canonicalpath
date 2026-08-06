@@ -1,0 +1,220 @@
+name: Publish npm packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing published non-prerelease GitHub Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.prerelease == false) }}
+    runs-on: ubuntu-latest
+    environment: npm
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+
+    steps:
+      - name: Validate release tag
+        id: release
+        run: |
+          VERSION_PATTERN='[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}-[0-9]+'
+
+          if [[ "$RELEASE_TAG" =~ ^${VERSION_PATTERN}$ ]]; then
+            RELEASE_KIND=full
+            RELEASE_VERSION="$RELEASE_TAG"
+          elif [[ "$RELEASE_TAG" =~ ^unity/com\.romanilyin\.canonicalpath/(${VERSION_PATTERN})$ ]]; then
+            RELEASE_KIND=unity
+            RELEASE_VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "Unsupported release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          echo "kind=$RELEASE_KIND" >> "$GITHUB_OUTPUT"
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Verify published release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_COMMIT="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$TAG_COMMIT" refs/remotes/origin/main
+
+          if [[ "$EVENT_NAME" == release ]]; then
+            test "$TAG_COMMIT" = "$(git rev-parse "${EVENT_SHA}^{commit}")"
+          fi
+
+          ENCODED_TAG="$(node -p 'encodeURIComponent(process.argv[1])' "$RELEASE_TAG")"
+          PUBLISHED_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${ENCODED_TAG}" --jq 'select(.draft == false and .prerelease == false) | .tag_name')"
+          test "$PUBLISHED_TAG" = "$RELEASE_TAG"
+
+      - name: Verify npm version
+        run: |
+          NPM_VERSION="$(npm --version)"
+          IFS=. read -r NPM_MAJOR NPM_MINOR NPM_PATCH <<< "$NPM_VERSION"
+
+          if (( NPM_MAJOR < 11 || (NPM_MAJOR == 11 && NPM_MINOR < 5) || (NPM_MAJOR == 11 && NPM_MINOR == 5 && NPM_PATCH < 1) )); then
+            echo "npm 11.5.1 or newer is required for trusted publishing; found $NPM_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Verify package versions
+        env:
+          RELEASE_KIND: ${{ steps.release.outputs.kind }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          verify_version() {
+            local package_dir="$1"
+            local package_version
+            package_version="$(node -p "require('./${package_dir}/package.json').version")"
+            test "$package_version" = "$RELEASE_VERSION"
+          }
+
+          if [[ "$RELEASE_KIND" == full ]]; then
+            verify_version packages/ts
+            verify_version packages/javascript-standalone
+          fi
+
+          verify_version packages/unity
+
+      - name: Verify package licenses
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: node scripts/check-package-license-layout.mjs
+
+      - name: Install package dependencies
+        if: steps.release.outputs.kind == 'full'
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Build and test JavaScript packages
+        if: steps.release.outputs.kind == 'full'
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: |
+          pnpm -C packages/ts typecheck
+          pnpm -C packages/ts test
+          pnpm ts:build
+          pnpm ts:package:smoke
+          pnpm -C packages/javascript-standalone typecheck
+          pnpm js:standalone:test
+          pnpm js:standalone:build
+          pnpm js:standalone:build:smoke
+
+      - name: Pack release artifacts
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+          RELEASE_KIND: ${{ steps.release.outputs.kind }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          PACK_DIR="$RUNNER_TEMP/npm-packages"
+          MANIFEST="$PACK_DIR/manifest.tsv"
+          mkdir -p "$PACK_DIR"
+          : > "$MANIFEST"
+
+          pack_package() {
+            local package_dir="$1"
+            local expected_name="$2"
+            local pack_json name version integrity filename
+            pack_json="$PACK_DIR/$(basename "$package_dir").json"
+
+            npm pack --json --pack-destination "$PACK_DIR" "./$package_dir" > "$pack_json"
+            IFS=$'\t' read -r name version integrity filename <<< "$(node -e 'const [entry] = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (!entry) process.exit(1); process.stdout.write([entry.name, entry.version, entry.integrity, entry.filename].join("\t"));' "$pack_json")"
+            test "$name" = "$expected_name"
+            test "$version" = "$RELEASE_VERSION"
+            test -f "$PACK_DIR/$filename"
+            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$PACK_DIR/$filename" >> "$MANIFEST"
+          }
+
+          if [[ "$RELEASE_KIND" == full ]]; then
+            pack_package packages/ts @romanilyin/canonicalpath
+            pack_package packages/javascript-standalone @romanilyin/canonicalpath-standalone
+          fi
+
+          pack_package packages/unity com.romanilyin.canonicalpath
+
+      - name: Preflight npm versions
+        run: |
+          PACK_DIR="$RUNNER_TEMP/npm-packages"
+          PENDING="$PACK_DIR/pending.tsv"
+          : > "$PENDING"
+
+          while IFS=$'\t' read -r name version integrity tarball; do
+            view_json="$PACK_DIR/view-$(basename "$tarball").json"
+            view_error="$PACK_DIR/view-$(basename "$tarball").error"
+
+            if npm view "$name@$version" dist.integrity --json > "$view_json" 2> "$view_error"; then
+              published_integrity="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$view_json")"
+              if [[ "$published_integrity" != "$integrity" ]]; then
+                echo "$name@$version is already published with different contents" >&2
+                exit 1
+              fi
+
+              latest_json="$PACK_DIR/latest-$(basename "$tarball").json"
+              npm view "$name" dist-tags.latest --json > "$latest_json"
+              latest_version="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$latest_json")"
+              if [[ "$latest_version" != "$version" ]]; then
+                echo "$name@$version is published, but the latest dist-tag points to $latest_version" >&2
+                exit 1
+              fi
+
+              echo "$name@$version is already published with matching integrity; skipping"
+              continue
+            fi
+
+            view_error_text="$(<"$view_error")"
+            if [[ "$view_error_text" != *E404* ]]; then
+              printf '%s\n' "$view_error_text" >&2
+              exit 1
+            fi
+
+            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$tarball" >> "$PENDING"
+          done < "$PACK_DIR/manifest.tsv"
+
+      - name: Publish to npm
+        run: |
+          PENDING="$RUNNER_TEMP/npm-packages/pending.tsv"
+
+          if [[ ! -s "$PENDING" ]]; then
+            echo "All release artifacts are already published"
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r name version _ tarball; do
+            echo "Publishing $name@$version"
+            npm publish "$tarball" --access public --tag latest
+          done < "$PENDING"

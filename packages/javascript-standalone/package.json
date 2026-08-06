@@ -16,7 +16,8 @@
   },
   "keywords": ["canonicalpath", "path", "browser", "lexical", "path-identity"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "main": "./dist/canonicalpath.js",
   "types": "./dist/canonicalpath.d.ts",

@@ -16,7 +16,8 @@
   },
   "keywords": ["canonicalpath", "canonicalfs", "path", "filesystem", "path-traversal"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "main": "./dist/canonicalpath/index.js",
   "types": "./dist/canonicalpath/index.d.ts",

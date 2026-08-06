@@ -1,6 +1,6 @@
 # Release Process
 
-Full release publishing automation is not implemented yet. The repository has CI, security baseline, CodeQL, and manual release-readiness workflows that validate release gates without publishing packages or creating releases. Unity npmjs publication has local helpers for the current unsigned npm publish path and optional Unity-signed tarball publication, but it still requires an explicit maintainer command.
+The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local helpers for unsigned or optional Unity-signed tarballs.
 
 Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
@@ -58,14 +58,38 @@ The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publi
 - Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
+- The `Publish npm packages` workflow checks out the exact published release tag, requires that its commit belongs to `main`, rebuilds and tests the JavaScript packages, packs all selected artifacts before upload, and publishes without an npm token.
+- A normal `YYYY.M.D-N` release publishes all three npm packages. A `unity/com.romanilyin.canonicalpath/YYYY.M.D-N` release publishes only the Unity package.
+- A manual retry must run from `main` and must name an existing published non-prerelease GitHub Release. Matching packages already present on npm are skipped only when their registry and local tarball integrity values match.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
 - The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, committed package-local `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files with their Unity `.meta` files. Optional signed publication must also include Unity's `.attestation.p7m` signature file.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 
-## Publishing Secrets
+## npm Trusted Publishing
 
-Token-based npm commands and optional Unity signing should use a local root `.env` file that is ignored by git:
+Configure a separate npm trusted publisher for each package because npm permits only one trusted publisher per package:
+
+- `@romanilyin/canonicalpath`
+- `@romanilyin/canonicalpath-standalone`
+- `com.romanilyin.canonicalpath`
+
+Use the same settings for all three npm package entries:
+
+```text
+Provider: GitHub Actions
+Organization or user: romanilyin
+Repository: canonicalpath
+Workflow filename: publish-npm.yml
+Environment name: npm
+Allowed actions: npm publish
+```
+
+The workflow uses GitHub-hosted runners, Node 24, npm 11.5.1 or newer, `id-token: write`, and the GitHub `npm` environment. No `NPM_TOKEN` secret is required. Before the first automated publication, configure required reviewers on the `npm` environment and GitHub tag rules that prevent updates or deletion of normal release tags and `unity/com.romanilyin.canonicalpath/*` tags. After a successful trusted publication, npm recommends setting each package's publishing access to require 2FA and disallow token-based publishing.
+
+## Local Publishing Secrets
+
+Local fallback npm commands and optional Unity signing use a root `.env` file that is ignored by git. These credentials are not used by the GitHub Actions trusted-publishing workflow:
 
 ```text
 NPM_TOKEN=npm_...
