@@ -21,9 +21,11 @@ concurrency:
 jobs:
   publish:
     if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.prerelease == false) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: npm
     env:
+      NODE_VERSION: 24.18.0
+      NPM_VERSION: 11.16.0
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
     steps:
@@ -54,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: "24"
+          node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
@@ -75,15 +77,10 @@ jobs:
           PUBLISHED_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${ENCODED_TAG}" --jq 'select(.draft == false and .prerelease == false) | .tag_name')"
           test "$PUBLISHED_TAG" = "$RELEASE_TAG"
 
-      - name: Verify npm version
+      - name: Verify release toolchain
         run: |
-          NPM_VERSION="$(npm --version)"
-          IFS=. read -r NPM_MAJOR NPM_MINOR NPM_PATCH <<< "$NPM_VERSION"
-
-          if (( NPM_MAJOR < 11 || (NPM_MAJOR == 11 && NPM_MINOR < 5) || (NPM_MAJOR == 11 && NPM_MINOR == 5 && NPM_PATCH < 1) )); then
-            echo "npm 11.5.1 or newer is required for trusted publishing; found $NPM_VERSION" >&2
-            exit 1
-          fi
+          test "$(node --version)" = "v$NODE_VERSION"
+          test "$(npm --version)" = "$NPM_VERSION"
 
       - name: Verify package versions
         env:
@@ -117,6 +114,7 @@ jobs:
           ACTIONS_ID_TOKEN_REQUEST_URL: ""
         run: |
           corepack enable
+          test "$(pnpm --version)" = "10.0.0"
           pnpm install --frozen-lockfile
 
       - name: Build and test JavaScript packages
@@ -125,6 +123,7 @@ jobs:
           ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
           ACTIONS_ID_TOKEN_REQUEST_URL: ""
         run: |
+          umask 022
           pnpm -C packages/ts typecheck
           pnpm -C packages/ts test
           pnpm ts:build
@@ -141,6 +140,7 @@ jobs:
           RELEASE_KIND: ${{ steps.release.outputs.kind }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
+          umask 022
           PACK_DIR="$RUNNER_TEMP/npm-packages"
           MANIFEST="$PACK_DIR/manifest.tsv"
           mkdir -p "$PACK_DIR"
