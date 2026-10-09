@@ -56,11 +56,20 @@ try {
         $tokenValue = 'ps-smoke-token-' + [guid]::NewGuid().ToString('n')
         $endpointValue = 'http://127.0.0.1:' + $port
 
+        # Own the actual daemon process, not the go run parent. Bootstrap root
+        # handles stay open until daemon exit and lock the fixture on Windows.
+        $daemonExecutable = Join-Path $tempParent 'canonicalfs-daemon.exe'
+        Push-Location -LiteralPath $RepoRoot
+        try {
+            & $GoCommand build -o $daemonExecutable ./packages/go/cmd/canonicalfs-daemon
+            if ($LASTEXITCODE -ne 0) { throw 'failed to build the smoke-test daemon' }
+        } finally { Pop-Location }
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $GoCommand
-        $psi.Arguments = 'run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:' + $port + ' -allow-root "' + $projectRoot + '"'
+        $psi.FileName = $daemonExecutable
+        $psi.Arguments = '-listen 127.0.0.1:' + $port + ' -allow-root "' + $projectRoot + '"'
         $psi.WorkingDirectory = $RepoRoot
         $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
         $psi.RedirectStandardError = $true
         $psi.RedirectStandardOutput = $true
         $psi.EnvironmentVariables['CANONICALFS_DAEMON_TOKEN'] = $tokenValue
@@ -133,6 +142,7 @@ try {
         $daemon.Kill()
         $daemon.WaitForExit()
     }
+    if ($null -ne $daemon) { $daemon.Dispose() }
     if ($null -ne $tempParent -and (Test-Path -LiteralPath $tempParent)) {
         Remove-Item -LiteralPath $tempParent -Recurse -Force
     }
