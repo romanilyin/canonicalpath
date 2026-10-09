@@ -43,6 +43,13 @@ if (!token || token.trim() === "" || token === "npm_xxx" || token === "replace-m
   throw new Error(`Set NPM_TOKEN in ${path.relative(root, envFile)} before running npm registry commands`);
 }
 
+// Build/package lifecycle work belongs in a credential-free process before
+// invoking this wrapper. Registry commands always disable lifecycle execution.
+const childEnv = { ...process.env };
+for (const key of Object.keys(childEnv)) {
+  if (/TOKEN|SECRET|PASSWORD|UPM_SERVICE_ACCOUNT|UPM_ORGANIZATION|NODE_OPTIONS/i.test(key)) delete childEnv[key];
+}
+if (!/^[A-Za-z0-9_\-]+$/.test(token)) throw new Error("NPM_TOKEN has invalid characters");
 const tempDir = mkdtempSync(path.join(os.tmpdir(), "canonicalpath-npm-"));
 const userconfigPath = path.join(tempDir, ".npmrc");
 
@@ -56,17 +63,17 @@ try {
   const executable = process.platform === "win32" ? "npm.cmd" : "npm";
   const result = spawnSync(
     executable,
-    [...npmArgs, "--registry", "https://registry.npmjs.org/", "--userconfig", userconfigPath],
+    [...npmArgs, "--ignore-scripts=true", "--registry", "https://registry.npmjs.org/", "--userconfig", userconfigPath],
     {
       cwd,
-      env: { ...process.env, NPM_TOKEN: token },
+      env: { ...childEnv, NPM_CONFIG_IGNORE_SCRIPTS: "true" },
       shell: process.platform === "win32",
       stdio: "inherit",
     },
   );
 
   if (result.error) throw result.error;
-  process.exit(typeof result.status === "number" ? result.status : 1);
+  process.exitCode = typeof result.status === "number" ? result.status : 1;
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

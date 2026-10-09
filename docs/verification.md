@@ -76,4 +76,4 @@ For active allocation smoke gates, run:
 pnpm alloc
 ```
 
-`pnpm alloc` also runs the Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot lexical allocation smoke gates, Bash and Windows CMD/BAT wrapper memory smoke gates, PowerShell module memory smoke gate, PowerShell live daemon transport memory smoke gate, Unity managed CanonicalPath allocation smoke, the default-skipped optional Unity Burst allocation probe, and the active Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` Burst allocation matrix when the required local tools are available.
+`pnpm alloc` also runs the Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot lexical allocation smoke gates, Bash and Windows CMD/BAT wrapper memory smoke gates, PowerShell module memory smoke gate, PowerShell live daemon transport memory smoke gate, Unity managed CanonicalPath allocation smoke, the default-skipped optional Unity Burst allocation probe, and the active Unity installed editors (including beta and alpha versions) Burst allocation matrix when the required local tools are available.

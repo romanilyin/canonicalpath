@@ -341,6 +341,7 @@ String _parseHierarchicalUriPath(
   if (slash < 0) throw _pathError('ERR_INVALID_URI', 'URI path is empty');
   final decodedAuthority = _percentDecode(rest.substring(0, slash));
   final decodedPath = _percentDecode(rest.substring(slash));
+  if (decodedPath.contains("\u0000") || decodedAuthority.contains("\u0000")) throw _pathError("ERR_NUL_BYTE", "decoded URI contains NUL");
   if (decodedPath.isEmpty)
     throw _pathError('ERR_INVALID_URI', 'URI path is empty');
   if (prefix == 'file://' &&

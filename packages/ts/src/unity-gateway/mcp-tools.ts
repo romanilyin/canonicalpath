@@ -50,21 +50,21 @@ export class UnityMCPToolRegistry {
       case "unity.readLog":
         return this.bridge.readLog(optionalString(input, "project_id"), optionalInteger(input, "max_entries"));
       case "unity.read":
-        return this.bridge.readText(requiredString(input, "project_id"), requiredString(input, "unity_path"), optionalInteger(input, "max_chars"));
+        return this.bridge.readText(requiredString(input, "project_id"), requiredString(input, "unity_path"), readChars(input));
       case "unity.validatePath":
         return this.bridge.validatePath(requiredString(input, "project_id"), requiredString(input, "unity_path"), validationOptions(input));
       case "unity.knowledge.read":
-        return this.bridge.readScopedText(requiredString(input, "project_id"), "knowledge", requiredString(input, "path"), optionalInteger(input, "max_chars"));
+        return this.bridge.readScopedText(requiredString(input, "project_id"), "knowledge", requiredString(input, "path"), readChars(input));
       case "unity.knowledge.write":
-        return this.bridge.writeScopedText(requiredString(input, "project_id"), "knowledge", requiredString(input, "path"), requiredString(input, "text"), optionalInteger(input, "max_chars"));
+        return this.bridge.writeScopedText(requiredString(input, "project_id"), "knowledge", requiredString(input, "path"), requiredString(input, "text"), readChars(input));
       case "unity.knowledge.list":
         return this.bridge.listScoped(requiredString(input, "project_id"), "knowledge", optionalString(input, "path_prefix"), optionalInteger(input, "max_entries"));
       case "unity.knowledge.glob":
         return this.bridge.globScoped(requiredString(input, "project_id"), "knowledge", requiredString(input, "glob"), optionalInteger(input, "max_entries"));
       case "unity.artifact.read":
-        return this.bridge.readScopedText(requiredString(input, "project_id"), "artifact", requiredString(input, "path"), optionalInteger(input, "max_chars"));
+        return this.bridge.readScopedText(requiredString(input, "project_id"), "artifact", requiredString(input, "path"), readChars(input));
       case "unity.artifact.write":
-        return this.bridge.writeScopedText(requiredString(input, "project_id"), "artifact", requiredString(input, "path"), requiredString(input, "text"), optionalInteger(input, "max_chars"));
+        return this.bridge.writeScopedText(requiredString(input, "project_id"), "artifact", requiredString(input, "path"), requiredString(input, "text"), readChars(input));
       case "unity.artifact.list":
         return this.bridge.listScoped(requiredString(input, "project_id"), "artifact", optionalString(input, "path_prefix"), optionalInteger(input, "max_entries"));
       case "unity.artifact.glob":
@@ -112,7 +112,7 @@ const unityToolDescriptors: McpToolDescriptor[] = [
       {
         project_id: { type: "string" },
         unity_path: { type: "string" },
-        max_chars: { type: "integer", minimum: 1 },
+        max_chars: { type: "integer", minimum: 1, maximum: 1_048_576 },
       },
       ["project_id", "unity_path"],
     ),
@@ -290,4 +290,10 @@ function scopedGlobTool(name: UnityMCPToolName, scope: UnityMcpWorkflowScope): M
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function readChars(args: Record<string, unknown>): number | undefined {
+  const value = optionalInteger(args, "max_chars");
+  if (value !== undefined && (value < 1 || value > 1_048_576)) throw new Error("max_chars must be between 1 and 1048576");
+  return value;
 }

@@ -68,6 +68,7 @@ function projectFile() {
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../packages/unity/Runtime/CanonicalPath.cs" Link="CanonicalPath.cs" />
+    <Compile Include="../../packages/unity/Runtime/CanonicalPathHttpClient.cs" Link="CanonicalPathHttpClient.cs" />
     <Compile Include="../../packages/unity/Runtime/UnityBridgeBuiltins.cs" Link="UnityBridgeBuiltins.cs" />
   </ItemGroup>
 </Project>
@@ -165,7 +166,7 @@ internal static class Program
         if (Contains(message, "payload path must be relative")) return "ERR_ABSOLUTE_PATH";
         if (Contains(message, "traversal") || Contains(message, "outside project root")) return "ERR_OUTSIDE_ROOT";
         if (Contains(message, "File name input must not be empty") || Contains(message, "maxLength")) return "ERR_INVALID_COMPONENT";
-        if (Contains(message, "must start with Assets/ or Packages/")) return "ERR_INVALID_PATH";
+        if (Contains(message, "must not contain colon") || Contains(message, "must start with Assets/ or Packages/")) return "ERR_INVALID_PATH";
         if (Contains(message, "Unity path must not be empty")) return "ERR_EMPTY_PATH";
         return ex.GetType().Name + ": " + message;
     }

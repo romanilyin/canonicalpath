@@ -228,6 +228,7 @@ object CanonicalPath {
         if (slash < 0) throw pathError("ERR_INVALID_URI", "URI path is empty")
         val decodedAuthority = percentDecode(rest.substring(0, slash))
         val decodedPath = percentDecode(rest.substring(slash))
+        if (hasNul(decodedPath) || hasNul(decodedAuthority)) throw pathError("ERR_NUL_BYTE", "decoded URI contains NUL")
         if (decodedPath.isEmpty()) throw pathError("ERR_INVALID_URI", "URI path is empty")
         if (prefix == "file://" && decodedAuthority.isNotEmpty() && lowerASCII(decodedAuthority) != "localhost") {
             return "//$decodedAuthority$decodedPath"

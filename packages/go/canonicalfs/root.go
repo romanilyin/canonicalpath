@@ -31,6 +31,24 @@ func OpenRoot(hostRoot string) (*Root, error) {
 	return &Root{root: root}, nil
 }
 
+// OpenRoot opens a descendant relative to this existing root handle.
+// Authorization must never reopen a previously checked global pathname.
+func (r *Root) OpenRoot(rel string) (*Root, error) {
+	clean, err := cleanRelative(rel)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := r.rootHandle()
+	if err != nil {
+		return nil, err
+	}
+	child, err := handle.OpenRoot(clean)
+	if err != nil {
+		return nil, err
+	}
+	return &Root{root: child}, nil
+}
+
 // Close closes the underlying root handle.
 func (r *Root) Close() error {
 	if r == nil || r.root == nil {

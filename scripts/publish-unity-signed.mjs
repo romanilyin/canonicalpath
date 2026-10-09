@@ -14,7 +14,7 @@ try {
   const { tarballPath } = packUnitySigned(packOptions);
   const result = spawnSync(
     process.execPath,
-    [path.join(root, "scripts/run-npm-with-env-token.mjs"), "publish", tarballPath, ...npmArgs],
+    ["--", path.join(root, "scripts/run-npm-with-env-token.mjs"), ...(packOptions.envFile ? ["--env-file", packOptions.envFile] : []), "publish", tarballPath, ...npmArgs],
     {
       cwd: root,
       stdio: "inherit",

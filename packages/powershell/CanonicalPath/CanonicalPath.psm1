@@ -254,6 +254,7 @@ function ConvertFrom-FileUriPath {
     } catch {
         throw (New-CanonicalPathError 'ERR_INVALID_PERCENT_ENCODING' 'URI percent encoding is invalid')
     }
+    if ($decoded.IndexOf([char]0) -ge 0 -or $decodedAuthority.IndexOf([char]0) -ge 0) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'decoded URI contains NUL') }
     if ($decoded -eq '') { throw (New-CanonicalPathError 'ERR_INVALID_URI' 'URI path is empty') }
     if ($Prefix -eq 'file://' -and $decodedAuthority -ne '' -and $decodedAuthority.ToLowerInvariant() -ne 'localhost') {
         return '//' + $decodedAuthority + $decoded

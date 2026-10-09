@@ -272,6 +272,7 @@ public enum CanonicalPath {
         let pathPart = String(rest[slash...])
         let decodedAuthority = try percentDecode(authority)
         let decodedPath = try percentDecode(pathPart)
+        if decodedPath.utf8.contains(0) || decodedAuthority.utf8.contains(0) { throw pathError("ERR_NUL_BYTE", "decoded URI contains NUL") }
         if decodedPath.isEmpty { throw pathError("ERR_INVALID_URI", "URI path is empty") }
         if prefix == "file://" && !decodedAuthority.isEmpty && decodedAuthority.lowercased() != "localhost" {
             return "//" + decodedAuthority + decodedPath

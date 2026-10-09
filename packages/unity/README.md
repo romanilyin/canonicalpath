@@ -1,6 +1,6 @@
 # Unity CanonicalPath Package
 
-Status: early managed CanonicalPath runtime plus bridge facade scaffold. `CanonicalPath`, `CanonicalPathBurst`, `CanonicalFSDaemonHttpClient`, `ICanonicalPathService`, `CanonicalPathValue`, `PathGuard`, and `ScopedPathGuard` are present for lexical identity, Burst-compatible unsafe buffer helper shape, daemon transport, bridge payload validation, and Unity MCP scope validation; the Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` EditMode and Burst allocation matrix is active locally. Full Unity package hardening remains planned. The TypeScript gateway skeleton lives in `@romanilyin/canonicalpath/unity-gateway`.
+Status: early managed CanonicalPath runtime plus bridge facade scaffold. `CanonicalPath`, `CanonicalPathBurst`, `CanonicalFSDaemonHttpClient`, `ICanonicalPathService`, `CanonicalPathValue`, `PathGuard`, and `ScopedPathGuard` are present for lexical identity, Burst-compatible unsafe buffer helper shape, daemon transport, bridge payload validation, and Unity MCP scope validation; the Unity installed editors (including beta and alpha versions) EditMode and Burst allocation matrix is active locally. Full Unity package hardening remains planned. The TypeScript gateway skeleton lives in `@romanilyin/canonicalpath/unity-gateway`.
 
 CanonicalPath for Unity is a client/bridge surface: managed lexical identity, scoped `PathGuard` validation, daemon transport, and Burst-oriented helper shape for editor/tooling integrations.
 
@@ -39,16 +39,16 @@ Scoped registry use through npmjs:
     }
   ],
   "dependencies": {
-    "com.romanilyin.canonicalpath": "2026.6.19-1"
+    "com.romanilyin.canonicalpath": "2026.10.9-1"
   }
 }
 ```
 
 Release packaging:
 
-- Package version for the current Unity registry release candidate is `2026.6.19-1`.
-- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.6.19-1`.
-- Git UPM by repository tag remains available for the earlier source release: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.5.18-2`.
+- Package version for the current Unity registry release candidate is `2026.10.9-1`.
+- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.9-1`.
+- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.9-1`.
 - The Unity package keeps committed Stinger license and notice files under
   `packages/unity`. npm `prepack` verifies that these files match the
   Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.
@@ -76,7 +76,7 @@ Implemented early bridge scope:
 - Local Burst-compatible unsafe buffer surface smoke via `pnpm unity:burst:surface` when `dotnet` is available.
 - Optional Unity Burst compiler probe via `UNITY_BURST_PROBE=1 pnpm unity:burst:probe` when Unity Editor and `com.unity.burst` are available.
 - Optional Unity Burst allocation probe via `UNITY_BURST_ALLOC_PROBE=1 pnpm unity:burst:alloc` when Unity Editor and `com.unity.burst` are available.
-- Active Unity Burst allocation matrix via `pnpm unity:burst:alloc:matrix` for local `2022.3`, `6000.1`, `6000.2`, `6000.3`, and `6000.4` editors.
+- Active Unity Burst allocation matrix via `pnpm unity:burst:alloc:matrix` for installed editors, including beta and alpha versions.
 - Unity EditMode matrix via `pnpm unity:editmode:matrix` when Unity Editor is available through `UNITY_EDITOR`, `UNITY_EXE`, or the Unity Hub install path.
 
 Facade:
@@ -135,6 +135,6 @@ Allocation gate plan:
 - `pnpm unity:burst:surface` verifies the current no-string unsafe buffer helper shape with zero managed allocations under dotnet.
 - `UNITY_BURST_PROBE=1 pnpm unity:burst:probe` compiles and invokes a small Burst function pointer over that helper shape when Unity Editor and `com.unity.burst` are available.
 - `UNITY_BURST_ALLOC_PROBE=1 pnpm unity:burst:alloc` compiles and invokes a Burst function pointer after warmup, then asserts zero managed allocations around the Burst workload.
-- `pnpm unity:burst:alloc:matrix` runs active local Unity `2022.3`, `6000.1`, `6000.2`, `6000.3`, and `6000.4` Burst allocation lanes and skips missing editors.
+- `pnpm unity:burst:alloc:matrix` runs Burst allocation lanes for installed Unity editors, including beta and alpha versions and skips missing editors.
 - Individual versioned lanes are available as `pnpm unity:burst:alloc:2022.3`, `pnpm unity:burst:alloc:6000.1`, `pnpm unity:burst:alloc:6000.2`, `pnpm unity:burst:alloc:6000.3`, and `pnpm unity:burst:alloc:6000.4`.
 - Keep every Unity lane tracked in `spec/language-targets.json`.

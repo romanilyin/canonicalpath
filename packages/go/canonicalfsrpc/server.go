@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/romanilyin/canonicalpath/packages/go/canonicalfs"
 	"github.com/romanilyin/canonicalpath/packages/go/canonicalpath"
@@ -31,24 +32,36 @@ const (
 
 // Server keeps root-bound project handles and serves canonicalfs operations.
 type Server struct {
-	mu               sync.Mutex
-	roots            map[string]*canonicalfs.Root
-	capabilityToken  string
-	allowedRoots     []string
-	maxRequestBytes  int64
-	defaultReadBytes int64
-	maxReadBytes     int64
-	maxResponseBytes int64
+	mu                 sync.Mutex
+	roots              map[string]*canonicalfs.Root
+	capabilityToken    string
+	allowedRoots       []allowedRoot
+	maxProjects        int
+	projectIdleTimeout time.Duration
+	lastUsed           map[string]time.Time
+	closed             bool
+	maxRequestBytes    int64
+	defaultReadBytes   int64
+	maxReadBytes       int64
+	maxResponseBytes   int64
 }
 
 // ServerOptions configures the canonicalfs JSON transport server.
+type allowedRoot struct {
+	path   string
+	handle *canonicalfs.Root
+}
+
+// ServerOptions includes bounded registration and idle lease policies.
 type ServerOptions struct {
-	CapabilityToken  string
-	AllowedRoots     []string
-	MaxRequestBytes  int64
-	DefaultReadBytes int64
-	MaxReadBytes     int64
-	MaxResponseBytes int64
+	MaxProjects        int
+	ProjectIdleTimeout time.Duration
+	CapabilityToken    string
+	AllowedRoots       []string
+	MaxRequestBytes    int64
+	DefaultReadBytes   int64
+	MaxReadBytes       int64
+	MaxResponseBytes   int64
 }
 
 type serverLimits struct {
@@ -113,14 +126,39 @@ func NewServer(options ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if options.MaxProjects < 0 || options.ProjectIdleTimeout < 0 {
+		return nil, errors.New("canonicalfsrpc: registration limits must be non-negative")
+	}
+	maxProjects := options.MaxProjects
+	if maxProjects == 0 {
+		maxProjects = 128
+	}
+	idleTimeout := options.ProjectIdleTimeout
+	if idleTimeout == 0 {
+		idleTimeout = 30 * time.Minute
+	}
+	handles := make([]allowedRoot, 0, len(allowedRoots))
+	for _, path := range allowedRoots {
+		handle, err := canonicalfs.OpenRoot(path)
+		if err != nil {
+			for _, allowed := range handles {
+				_ = allowed.handle.Close()
+			}
+			return nil, err
+		}
+		handles = append(handles, allowedRoot{path: path, handle: handle})
+	}
 	return &Server{
-		roots:            make(map[string]*canonicalfs.Root),
-		capabilityToken:  capabilityToken,
-		allowedRoots:     allowedRoots,
-		maxRequestBytes:  limits.maxRequestBytes,
-		defaultReadBytes: limits.defaultReadBytes,
-		maxReadBytes:     limits.maxReadBytes,
-		maxResponseBytes: limits.maxResponseBytes,
+		roots:              make(map[string]*canonicalfs.Root),
+		capabilityToken:    capabilityToken,
+		allowedRoots:       handles,
+		maxProjects:        maxProjects,
+		projectIdleTimeout: idleTimeout,
+		lastUsed:           make(map[string]time.Time),
+		maxRequestBytes:    limits.maxRequestBytes,
+		defaultReadBytes:   limits.defaultReadBytes,
+		maxReadBytes:       limits.maxReadBytes,
+		maxResponseBytes:   limits.maxResponseBytes,
 	}, nil
 }
 
@@ -168,10 +206,16 @@ func (s *Server) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.closed = true
 	var joined error
+	for _, allowed := range s.allowedRoots {
+		joined = errors.Join(joined, allowed.handle.Close())
+	}
+	s.allowedRoots = nil
 	for projectID, root := range s.roots {
 		joined = errors.Join(joined, root.Close())
 		delete(s.roots, projectID)
+		delete(s.lastUsed, projectID)
 	}
 	return joined
 }
@@ -230,22 +274,25 @@ func (s *Server) handleOpenProject(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusBadRequest, string(canonicalfs.ErrOutsideRoot), "project_id and host_root are required")
 		return
 	}
-	hostRoot, err := s.authorizeHostRoot(req.HostRoot)
-	if err != nil {
-		writeHTTPError(w, http.StatusForbidden, "ERR_ROOT_NOT_ALLOWED", err.Error())
+	if len(req.ProjectID) > 128 || strings.ContainsRune(req.ProjectID, '\x00') {
+		writeHTTPError(w, http.StatusBadRequest, "ERR_DAEMON", "project_id must be at most 128 bytes and contain no NUL")
 		return
 	}
-
-	root, err := canonicalfs.OpenRoot(hostRoot)
-	if err != nil {
-		writeCanonicalError(w, err)
-		return
-	}
-
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireRootsLocked(time.Now())
+	if s.closed || (s.roots[req.ProjectID] == nil && len(s.roots) >= s.maxProjects) {
+		writeHTTPError(w, http.StatusTooManyRequests, "ERR_DAEMON", "project registration limit reached")
+		return
+	}
+	root, err := s.openAuthorizedRoot(req.HostRoot)
+	if err != nil {
+		writeHTTPError(w, http.StatusForbidden, "ERR_ROOT_NOT_ALLOWED", "host_root is not allowed")
+		return
+	}
 	old := s.roots[req.ProjectID]
 	s.roots[req.ProjectID] = root
-	s.mu.Unlock()
+	s.lastUsed[req.ProjectID] = time.Now()
 	if old != nil {
 		_ = old.Close()
 	}
@@ -464,21 +511,43 @@ func (s *Server) decodeScopedRootRequest(w http.ResponseWriter, r *http.Request,
 	return req, root, string(result.Path), true
 }
 
-func (s *Server) authorizeHostRoot(hostRoot string) (string, error) {
-	clean, err := cleanHostRoot(hostRoot)
+// openAuthorizedRoot compares only lexical components, then opens through
+// the trusted bootstrap handle. Untrusted paths are never statted globally.
+// Caller holds s.mu, which also serializes registration quota enforcement.
+func (s *Server) openAuthorizedRoot(hostRoot string) (*canonicalfs.Root, error) {
+	if strings.ContainsRune(hostRoot, '\x00') {
+		return nil, os.ErrPermission
+	}
+	abs, err := filepath.Abs(hostRoot)
 	if err != nil {
-		return "", err
+		return nil, os.ErrPermission
 	}
 	for _, allowed := range s.allowedRoots {
-		inside, err := isInsideAllowedRoot(allowed, clean)
+		inside, err := isInsideAllowedRoot(allowed.path, abs)
+		if err != nil || !inside {
+			continue
+		}
+		rel, err := filepath.Rel(allowed.path, abs)
 		if err != nil {
 			continue
 		}
-		if inside {
-			return clean, nil
+		handle, err := allowed.handle.OpenRoot(filepath.ToSlash(rel))
+		if err == nil {
+			return handle, nil
 		}
 	}
-	return "", fmt.Errorf("host_root is not in the daemon allowlist")
+	return nil, os.ErrPermission
+}
+
+// Idle handles are reclaimed on the next registration or operation.
+func (s *Server) expireRootsLocked(now time.Time) {
+	for id, last := range s.lastUsed {
+		if now.Sub(last) >= s.projectIdleTimeout {
+			_ = s.roots[id].Close()
+			delete(s.roots, id)
+			delete(s.lastUsed, id)
+		}
+	}
 }
 
 func (s *Server) readLimit(requested int64) (int64, error) {
@@ -500,10 +569,12 @@ func (s *Server) root(projectID string) (*canonicalfs.Root, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireRootsLocked(time.Now())
 	root := s.roots[projectID]
 	if root == nil {
 		return nil, canonicalfs.ErrUnsupportedOperation
 	}
+	s.lastUsed[projectID] = time.Now()
 	return root, nil
 }
 
@@ -513,11 +584,13 @@ func (s *Server) takeRoot(projectID string) (*canonicalfs.Root, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireRootsLocked(time.Now())
 	root := s.roots[projectID]
 	if root == nil {
 		return nil, canonicalfs.ErrUnsupportedOperation
 	}
 	delete(s.roots, projectID)
+	delete(s.lastUsed, projectID)
 	return root, nil
 }
 

@@ -231,6 +231,7 @@ class CanonicalPath {
     if (slash < 0) throw pathError("ERR_INVALID_URI", "URI path is empty");
     var decodedAuthority = percentDecode(rest.substr(0, slash));
     var decodedPath = percentDecode(rest.substr(slash));
+    if (decodedPath.indexOf(String.fromCharCode(0)) >= 0 || decodedAuthority.indexOf(String.fromCharCode(0)) >= 0) throw pathError("ERR_NUL_BYTE", "decoded URI contains NUL");
     if (decodedPath.length == 0) throw pathError("ERR_INVALID_URI", "URI path is empty");
     if (prefix == "file://" && decodedAuthority.length != 0 && lowerASCII(decodedAuthority) != "localhost") {
       return "//" + decodedAuthority + decodedPath;

@@ -103,3 +103,5 @@ console.log(importDryRun.structuredContent);
 ## Next Step
 
 Replace `FakeUnityBridge` with a real Unity bridge adapter that calls `UnityBridgeBuiltins`. Keep prefab/module creation implementation separate from the generic dispatcher and keep all writes behind `PathGuard`.
+
+`UnityBridgeBuiltins.ReadText` and `ReadTextAsync` require a `CanonicalFSDaemonHttpClient` passed to the constructor after the optional path service. The trusted host registers the project with the daemon first. Reads use `unity_asset` scoped I/O, reject ADS syntax, and fail closed without a daemon. `maxChars` is capped at 1,048,576; the daemon reads at most 4 MiB before decoding and rejects larger files. The HTTP client also caps encoded response bytes at 24 MiB. Lexical canonical paths remain response metadata.

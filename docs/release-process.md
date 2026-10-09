@@ -2,7 +2,7 @@
 
 The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local helpers for unsigned or optional Unity-signed tarballs.
 
-Current full release plan: `docs/release-2026.5.18-2.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
+Current full release plan: `docs/release-2026.10.9-1.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 
@@ -58,7 +58,7 @@ The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publi
 - Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
 - The manual `release` workflow runs `pnpm check:changelog`, `pnpm verify`, `pnpm go:race`, and npm pack dry-runs for the TypeScript and JavaScript standalone packages.
-- The `Publish npm packages` workflow checks out the exact published release tag, requires that its commit belongs to `main`, rebuilds and tests the JavaScript packages, packs all selected artifacts before upload, and publishes without an npm token.
+- The `Publish npm packages` workflow checks out the exact published release tag, requires that its commit belongs to `main`, rebuilds and tests the JavaScript packages in a job without OIDC authority, uploads artifacts and digests, then publishes on a fresh runner without repository checkout or package lifecycle scripts.
 - A normal `YYYY.M.D-N` release publishes all three npm packages. A `unity/com.romanilyin.canonicalpath/YYYY.M.D-N` release publishes only the Unity package.
 - A manual retry must run from `main` and must name an existing published non-prerelease GitHub Release. Matching packages already present on npm are skipped only when their registry and local tarball integrity values match.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
@@ -93,10 +93,13 @@ Local fallback npm commands and optional Unity signing use a root `.env` file th
 
 ```text
 NPM_TOKEN=npm_...
+UPM_CLI_PATH=/absolute/path/to/verified/upm
 UPM_ORGANIZATION_ID=...
 UPM_SERVICE_ACCOUNT_KEY_ID=...
 UPM_SERVICE_ACCOUNT_KEY_SECRET=...
 ```
+
+Build and pack unsigned artifacts before invoking the local token wrapper: it disables all npm lifecycle scripts, removes publication/signing secrets from the npm child environment, and cleans its temporary userconfig on normal success and failure. Use `pnpm ts:build`, `pnpm js:standalone:build`, and `npm pack` in the selected package before publishing its tarball.
 
 The Unity service account must have the `Package Manager Package Signer` role for the selected Unity Cloud organization when using signed publication. Use the checked-in helpers so npm publication uses a temporary npm userconfig, and signed Unity publication signs the tarball before upload:
 
@@ -131,7 +134,14 @@ After the repository is public:
 Start the Go `canonicalfs` daemon with an explicit bearer token and allowed project root:
 
 ```sh
-CANONICALFS_DAEMON_TOKEN=change-me go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /path/to/project
+export CANONICALFS_DAEMON_TOKEN="$(openssl rand -hex 32)"
+go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /path/to/project
 ```
 
 Clients should call `/v1/projects/open` with a known `project_id` and then use project-relative `/v1/fs/*` or scope-relative `/v1/scoped/*` requests. Do not send arbitrary absolute paths as file-operation payloads.
+
+The daemon accepts `-token-file` or `CANONICALFS_DAEMON_TOKEN`, and requires at least 32 token characters. On Unix, token files must be owner-only; on Windows, restrict the file ACL to the daemon account. The `-token` flag has been removed so the capability cannot appear in process arguments. Loopback is reachable by other local processes and still requires an unpredictable bearer token.
+
+Non-loopback listeners require both `-tls-cert` and `-tls-key`. Allowed roots are opened once during trusted daemon bootstrap; requested descendants are opened relative to those handles. A moved allowed directory remains bound to its original handle. Registrations default to 128 retained roots, IDs are capped at 128 bytes, and idle leases expire after 30 minutes on the next request. Configure `-max-projects` and `-project-idle-timeout` if needed.
+
+ZIP extraction uses a separate destination root, rejects symlink destination components and archive links/special files, and defaults to 64 MiB compressed input, 1000 entries, 16 MiB per entry, 64 MiB total expanded output, a 1000:1 compression ratio, and 30 seconds. `ExtractZipWithLimits` accepts a context and explicit limits; zero limits select bounded defaults. ZIP64 is refused before metadata allocation. Earlier completed entries can remain after an error; incomplete files are removed.

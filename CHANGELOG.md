@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- No unreleased changes; the security remediation batch is included in 2026.10.9-1 below.
+
+## 2026.10.9-1
+
+- Fixed all 18 findings from the 2026-10-09 repository security review; see `docs/security-review-2026-10-09.md` for controls and regression evidence.
+- Bound daemon registration to pre-opened allowed roots, bounded project leases, required TLS for remote listeners, and removed bearer credentials from process arguments and runnable examples.
+- Bounded ZIP metadata/decompression and confined extraction to pinned destination and member-parent handles.
+- Rejected URI-decoded NUL across lexical ports and fixed Rust Unicode device-name checks.
+- Routed Unity text reads through the bounded scoped Go daemon, rejected ADS paths, and discovered the installed Unity editor matrix, including beta and 7000 alpha versions.
+- Isolated npm OIDC publication onto a fresh runner, pinned action/tool identities, and hardened local npm/UPM credential handling and cleanup.
+- Merged Dependabot patch updates for fast-check 4.10.2, Vite 8.3.2, Vitest 5.0.3, and Node types 26.6.4.
+
+## 2026.6.19-1
+
 - Bumped npm and Unity package metadata to `2026.6.19-1` for the MIT-with-Unity-exception publication.
 - Changed the repository default and non-Unity package licensing to MIT.
 - Kept the Unity UPM/npm package `com.romanilyin.canonicalpath` under Stinger Royalty-Free EULA 1.0.

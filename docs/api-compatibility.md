@@ -117,7 +117,7 @@ Client-local error codes are not daemon wire codes:
 - Unity bridge built-ins currently cover status, project info, recent logs, validated text reads, path validation, and guarded write command dispatch.
 - Unity bridge write dispatch covers `assets.refresh`, `scene.save`, `asset.import`, and prefab/module command contracts; every path-bearing write must pass `PathGuard` before execution.
 - TypeScript Unity gateway exposes bounded fake-bridge knowledge/artifact read, write, list, and glob tool contracts. Artifact references are scope-relative `{ scope: "artifact", path }` values and do not carry host filesystem paths.
-- Unity `2022.3` / `6000.1` / `6000.2` / `6000.3` / `6000.4` have active local EditMode lanes via `pnpm unity:editmode:matrix` and active local Burst allocation lanes via `pnpm unity:burst:alloc:matrix`.
+- Installed Unity editors (including beta and alpha versions) have active local EditMode lanes via `pnpm unity:editmode:matrix` and active local Burst allocation lanes via `pnpm unity:burst:alloc:matrix`.
 
 ## Planned Client Surfaces
 
@@ -128,7 +128,7 @@ Client-local error codes are not daemon wire codes:
 - Haxe daemon HTTP transport remains planned; the current package support is lexical `CanonicalPath` only.
 - GDScript/Godot daemon HTTP transport remains planned; the current package support is lexical `CanonicalPath` only.
 - PowerShell module 5.1 + 7 has experimental `CanonicalPath` vector parity and typed daemon HTTP client helpers, but no independent root-bound `CanonicalFS` security boundary.
-- Full Unity hardening remains planned, while the early package lanes currently cover `2022.3`, `6000.1`, `6000.2`, `6000.3`, and `6000.4` with managed EditMode and Burst-compatible allocation gates.
+- Full Unity hardening remains planned, while the early package lanes currently cover installed editors, including beta and alpha versions, with managed EditMode and Burst-compatible allocation gates.
 - Allocation-check plans for all supported and planned targets are tracked in `spec/language-targets.json`.
 
 ## Go Version Compatibility

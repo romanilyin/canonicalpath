@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Text;
 
 namespace CanonicalPath
@@ -61,6 +62,9 @@ namespace CanonicalPath
 
     public sealed class UnityBridgeBuiltins
     {
+        public const int MaxReadChars = 1048576;
+        public const long MaxReadBytes = 4L * 1048576;
+        private readonly CanonicalFSDaemonHttpClient daemon;
         private readonly ICanonicalPathService paths;
         private readonly CanonicalPathValue projectRoot;
         private readonly string projectId;
@@ -68,7 +72,7 @@ namespace CanonicalPath
         private readonly string unityVersion;
         private readonly List<UnityBridgeLogEntry> logs = new List<UnityBridgeLogEntry>();
 
-        public UnityBridgeBuiltins(string projectId, CanonicalPathValue projectRoot, string projectName, string unityVersion, ICanonicalPathService paths = null)
+        public UnityBridgeBuiltins(string projectId, CanonicalPathValue projectRoot, string projectName, string unityVersion, ICanonicalPathService paths = null, CanonicalFSDaemonHttpClient daemon = null)
         {
             if (string.IsNullOrEmpty(projectId)) throw new ArgumentException("projectId is required.", "projectId");
             this.projectId = projectId;
@@ -76,6 +80,7 @@ namespace CanonicalPath
             this.projectName = projectName ?? string.Empty;
             this.unityVersion = unityVersion ?? string.Empty;
             this.paths = paths ?? BridgeCanonicalPathService.Instance;
+            this.daemon = daemon;
         }
 
         public UnityBridgeStatus Status()
@@ -112,10 +117,20 @@ namespace CanonicalPath
 
         public UnityBridgeReadResult ReadText(string unityPath, int maxChars)
         {
-            if (maxChars < 1) throw new ArgumentOutOfRangeException("maxChars", "maxChars must be positive.");
+            return ReadTextAsync(unityPath, maxChars, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        // The daemon project must already be registered by the trusted host.
+        // Lexical CanonicalPath values are metadata and never become local I/O.
+        public async Task<UnityBridgeReadResult> ReadTextAsync(string unityPath, int maxChars, CancellationToken cancellationToken)
+        {
+            if (maxChars < 1 || maxChars > MaxReadChars) throw new ArgumentOutOfRangeException("maxChars", "maxChars exceeds the bounded read limit.");
             string cleanUnityPath = PathGuard.NormalizeUnityPath(unityPath);
+            ScopedPathGuard.NormalizeScopedPath(UnityMcpPathScope.UnityAsset, cleanUnityPath);
             CanonicalPathValue canonicalPath = paths.FromUnityAssetPath(projectRoot, cleanUnityPath);
-            string text = File.ReadAllText(canonicalPath.Value, Encoding.UTF8);
+            if (daemon == null) throw new InvalidOperationException("Unity text reads require a registered CanonicalFS daemon client.");
+            byte[] data = await daemon.ReadScopedFileAsync(projectId, UnityMcpPathScope.UnityAsset, cleanUnityPath, MaxReadBytes, cancellationToken).ConfigureAwait(false);
+            string text = Encoding.UTF8.GetString(data);
             bool truncated = text.Length > maxChars;
             if (truncated) text = text.Substring(0, maxChars);
             return new UnityBridgeReadResult
