@@ -37,7 +37,7 @@ export function unwrapWindowsExtendedPrefix(value: string): string {
 
 export function mapWSLDrive(value: string, options: WSLOptions | undefined): string | undefined {
   if (!options?.enabled) return undefined;
-  const mountRoot = (options.mountRoot ?? "/mnt").replace(/\/+$/, "");
+  const mountRoot = trimBoundaryCharacters(options.mountRoot ?? "/mnt", "/", false);
   const prefix = `${mountRoot}/`;
   if (!value.startsWith(prefix)) return undefined;
 
@@ -127,4 +127,13 @@ export function hasReservedDeviceName(value: string): boolean {
 export function isReservedDeviceBase(base: string): boolean {
   if (["CON", "PRN", "AUX", "NUL"].includes(base)) return true;
   return /^(COM|LPT)[1-9]$/.test(base);
+}
+
+// Strip boundary characters in one pass, without regex backtracking.
+export function trimBoundaryCharacters(value: string, characters: string, trimStart = true): string {
+  let start = 0;
+  let end = value.length;
+  if (trimStart) while (start < end && characters.includes(value.charAt(start))) start++;
+  while (end > start && characters.includes(value.charAt(end - 1))) end--;
+  return value.slice(start, end);
 }

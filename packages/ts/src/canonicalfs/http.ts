@@ -1,3 +1,4 @@
+import { trimBoundaryCharacters } from "../canonicalpath/internal.js";
 import { Buffer } from "node:buffer";
 import type { CanonicalRelativePath } from "../canonicalpath/types.js";
 import { fsError } from "./errors.js";
@@ -45,7 +46,7 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
   constructor(endpoint: string, options: CanonicalFSHTTPClientOptions) {
     const capabilityToken = options.capabilityToken.trim();
     if (capabilityToken === "") throw fsError("ERR_DAEMON", "capabilityToken is required");
-    this.endpoint = endpoint.replace(/\/+$/, "");
+    this.endpoint = trimBoundaryCharacters(endpoint, "/", false);
     this.capabilityToken = capabilityToken;
     this.fetchImpl = options.fetch ?? fetch;
   }

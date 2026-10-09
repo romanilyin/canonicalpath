@@ -6,6 +6,7 @@
 
 ## 2026.10.9-1
 
+- Replaced potentially quadratic JavaScript boundary-trimming regexes with linear scans and removed dynamic CMD strings from Dart runners to address the existing GitHub CodeQL backlog.
 - Fixed all 18 findings from the 2026-10-09 repository security review; see `docs/security-review-2026-10-09.md` for controls and regression evidence.
 - Bound daemon registration to pre-opened allowed roots, bounded project leases, required TLS for remote listeners, and removed bearer credentials from process arguments and runnable examples.
 - Bounded ZIP metadata/decompression and confined extraction to pinned destination and member-parent handles.

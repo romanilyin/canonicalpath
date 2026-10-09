@@ -27,6 +27,9 @@ All 18 findings have code fixes in the combined `2026.10.9-1` release. Defaults 
 | 17. Security and CI workflows execute mutable upstream action and tool versions | `csf_e52728a2c8c97b63261d7888` | All Actions use full commit hashes, govulncheck is pinned to v1.8.0 and CI uses patched Go 1.26.9. | actionlint, npm audit and govulncheck gates. |
 | 18. Executable daemon examples use predictable bearer tokens | `csf_c4707e3828f7aed729c6fd8d` | Runnable examples generate cryptographically random bearer tokens; daemon startup rejects short sample values; smoke clients share a fresh random token. | CLI rejects change-me/dev-token; random-token live transport smokes. |
 
+## Additional GitHub CodeQL remediation
+
+Before publishing, the existing GitHub code-scanning backlog was also reviewed. Boundary-trimming regex alerts in TypeScript/standalone JavaScript (HTTP endpoints, WSL roots, component/git-ref sanitization, Unity safe filenames) now use linear character scans. Tests preserve output on 200,000-character interior runs of slash, space and hyphen. Dart verification/allocation runners discover the native executable with a constant command, then pass filenames as direct process arguments; no dynamic repository/environment string reaches CMD. Dart vector/allocation checks and a literal filename containing spaces, ampersand and parentheses passed locally. These changes belong to the same combined release, with no separate release tag.
 ## Compatibility and scope
 
 - CanonicalPath remains lexical-only. Go CanonicalFS/os.Root is the actual filesystem boundary.
