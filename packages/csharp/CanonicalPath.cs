@@ -305,6 +305,7 @@ public static class CanonicalPath
             ValidatePercentEncoding(authority);
             string decoded = Uri.UnescapeDataString(pathPart);
             string decodedAuthority = Uri.UnescapeDataString(authority);
+            if (decoded.IndexOf('\0') >= 0 || decodedAuthority.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "decoded URI contains NUL");
             if (decoded.Length == 0) throw PathError("ERR_INVALID_URI", "URI path is empty");
             if (prefix == "file://" && decodedAuthority.Length != 0 && !string.Equals(decodedAuthority, "localhost", StringComparison.OrdinalIgnoreCase))
             {

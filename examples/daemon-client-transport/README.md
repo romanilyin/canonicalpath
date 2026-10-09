@@ -3,7 +3,8 @@
 Run the Go canonicalfs daemon locally:
 
 ```bash
-CANONICALFS_DAEMON_TOKEN=dev-token go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /home/alice/repo
+export CANONICALFS_DAEMON_TOKEN="$(openssl rand -hex 32)"
+go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /home/alice/repo
 ```
 
 Use the TypeScript HTTP client to register a project root and access project-relative files through the daemon:
@@ -11,7 +12,7 @@ Use the TypeScript HTTP client to register a project root and access project-rel
 ```ts
 import { CanonicalFSHTTPClient, CanonicalFSRPCRoot } from "@romanilyin/canonicalpath/canonicalfs";
 
-const client = new CanonicalFSHTTPClient("http://127.0.0.1:8765", { capabilityToken: "dev-token" });
+const client = new CanonicalFSHTTPClient("http://127.0.0.1:8765", { capabilityToken: process.env.CANONICALFS_DAEMON_TOKEN! });
 await client.openProject("project-1", "/home/alice/repo");
 
 const root = new CanonicalFSRPCRoot("project-1", client);

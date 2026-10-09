@@ -1,15 +1,24 @@
+import { existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const versions = [
-  { prefix: "2022.3", installed: "2022.3.62f3" },
-  { prefix: "6000.1", installed: "6000.1.17f1" },
-  { prefix: "6000.2", installed: "6000.2.15f1" },
-  { prefix: "6000.3", installed: "6000.3.15f1" },
-  { prefix: "6000.4", installed: "6000.4.5f1" },
+// Discover installed editors so local verification follows the actual host,
+// including beta/alpha versions. CI hosts without Unity skip this local gate.
+const hubRoots = process.env.UNITY_HUB_EDITOR_ROOT ? [process.env.UNITY_HUB_EDITOR_ROOT] : [
+  "C:/Program Files/Unity/Hub/Editor", "/mnt/c/Program Files/Unity/Hub/Editor", "/Applications/Unity/Hub/Editor",
 ];
+const versions = [];
+for (const hubRoot of hubRoots) {
+  if (!existsSync(hubRoot)) continue;
+  for (const entry of readdirSync(hubRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+\.\d+\.\d+[abfp]\d+$/.test(entry.name)) continue;
+    const editor = [path.join(hubRoot, entry.name, "Editor", "Unity.exe"), path.join(hubRoot, entry.name, "Unity.app", "Contents", "MacOS", "Unity")].find(existsSync);
+    if (editor) versions.push({ prefix: entry.name, installed: entry.name, editor });
+  }
+}
+versions.sort((a, b) => a.installed.localeCompare(b.installed, undefined, { numeric: true }));
 
 const lanes = {
   editmode: {
@@ -35,13 +44,17 @@ if (!lane) {
   process.exit(1);
 }
 
+if (versions.length === 0) {
+  console.log("No installed Unity editors found; skipping local Unity version matrix");
+  process.exit(0);
+}
 const failures = [];
 for (const version of versions) {
   console.log(`Running Unity ${version.installed} ${lane.label} lane`);
   const result = spawnSync(process.execPath, [path.join(root, "scripts", lane.script)], {
     stdio: "inherit",
     cwd: root,
-    env: { ...process.env, ...lane.env(version.prefix) },
+    env: { ...process.env, ...lane.env(version.prefix), UNITY_EDITOR: version.editor },
   });
 
   if (result.error) {

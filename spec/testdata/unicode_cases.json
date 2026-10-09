@@ -23,6 +23,36 @@
       "raw": "file:///repo/caf%C3%A9.txt",
       "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
       "expected": "/repo/caf\u00e9.txt"
+    },
+    {
+      "id": "unicode-device-check-two-byte",
+      "operation": "normalize",
+      "raw": "C:/repo/éé.txt",
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
+      "expected": "c:/repo/éé.txt"
+    },
+    {
+      "id": "unicode-device-check-four-byte",
+      "operation": "normalize",
+      "raw": "C:/repo/😀.txt",
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
+      "expected": "c:/repo/😀.txt"
+    },
+    {
+      "id": "unicode-device-check-mixed",
+      "operation": "normalize",
+      "raw": "C:/repo/a€.txt",
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
+      "expected": "c:/repo/a€.txt"
     }
   ]
 }

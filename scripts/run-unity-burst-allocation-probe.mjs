@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const unitySuccessMarker = "Unity Burst allocation probe passed";
 const unknownEntryPointDiagnostic = "not a known Burst entry point";
 const requiredUnityVersionPrefix = process.env.UNITY_BURST_REQUIRED_VERSION_PREFIX;
-const projectRoot = path.join(root, "tmp", tempProjectName("unity-burst-allocation-probe-project", requiredUnityVersionPrefix));
+const projectRoot = path.join(root, "tmp", `${tempProjectName("unity-burst-allocation-probe-project", requiredUnityVersionPrefix)}-${process.pid}`);
 
 if (process.env.UNITY_BURST_ALLOC_PROBE !== "1") {
   console.log("Unity Burst allocation probe skipped. Set UNITY_BURST_ALLOC_PROBE=1 to enable this optional gate.");
@@ -22,6 +22,8 @@ if (!unity) {
 }
 const unityVersion = projectVersionForUnity(unity, requiredUnityVersionPrefix);
 if (requiredUnityVersionPrefix) console.log(`Using Unity Editor ${unityVersion} for versioned Unity Burst allocation probe.`);
+const burstVersion = burstPackageVersion(unity);
+console.log(`Using Burst package ${burstVersion}.`);
 
 rmSync(projectRoot, { recursive: true, force: true });
 mkdirSync(path.join(projectRoot, "Assets", "Editor"), { recursive: true });
@@ -81,12 +83,28 @@ function manifest() {
     {
       dependencies: {
         "com.romanilyin.canonicalpath": `file:${packagePath}`,
-        "com.unity.burst": process.env.UNITY_BURST_PACKAGE_VERSION || "1.8.18",
+        "com.unity.burst": burstVersion,
       },
     },
     null,
     2,
   );
+}
+
+function burstPackageVersion(editor) {
+  if (process.env.UNITY_BURST_PACKAGE_VERSION) return process.env.UNITY_BURST_PACKAGE_VERSION;
+  // New editors can require a bundled Burst version whose editor APIs differ
+  // from the old registry package. Follow the installed editor's own manifest.
+  const manifests = [
+    path.join(path.dirname(editor), "Data", "Resources", "PackageManager", "Editor", "manifest.json"),
+    path.join(path.dirname(editor), "..", "Resources", "PackageManager", "Editor", "manifest.json"),
+  ];
+  for (const manifest of manifests) {
+    if (!existsSync(manifest)) continue;
+    const burst = JSON.parse(readFileSync(manifest, "utf8")).packages?.["com.unity.burst"];
+    if (burst?.version || burst?.minimumVersion) return burst.version || burst.minimumVersion;
+  }
+  return "1.8.18";
 }
 
 function copyUnityPackage() {
@@ -163,7 +181,10 @@ public static unsafe class CanonicalPathUnityBurstAllocationProbeRunner
             BurstCompiler.Options.EnableBurstCompilation = true;
             BurstCompiler.Options.EnableBurstSafetyChecks = true;
             FunctionPointer<ProbeDelegate> pointer = BurstCompiler.CompileFunctionPointer<ProbeDelegate>(Probe);
-            int warmup = pointer.Invoke(1000);
+            // CoreCLR can allocate a new managed delegate on each Invoke
+            // property access. Cache it before measuring the warmed workload.
+            ProbeDelegate invoke = pointer.Invoke;
+            int warmup = invoke(1000);
             if (warmup != 0) throw new InvalidOperationException("Burst allocation probe warmup failed with result " + warmup);
 
             GC.Collect();
@@ -171,7 +192,7 @@ public static unsafe class CanonicalPathUnityBurstAllocationProbeRunner
             GC.Collect();
 
             long before = GC.GetAllocatedBytesForCurrentThread();
-            int result = pointer.Invoke(1000000);
+            int result = invoke(1000000);
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
             if (result != 0) throw new InvalidOperationException("Burst allocation probe failed with result " + result);
             if (allocated != 0) throw new InvalidOperationException("expected zero managed allocations after Burst warmup, got " + allocated);

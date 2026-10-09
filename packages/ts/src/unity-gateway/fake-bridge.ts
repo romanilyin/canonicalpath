@@ -68,7 +68,7 @@ export class FakeUnityBridge implements UnityBridgeClient {
   }
 
   async readText(projectId: string, unityPath: string, maxChars = 1_048_576): Promise<UnityBridgeReadResult> {
-    if (!Number.isInteger(maxChars) || maxChars < 1) throw new Error("maxChars must be a positive integer");
+    if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 1_048_576) throw new Error("maxChars must be a positive integer");
     const validation = this.broker.validateUnityAssetPath(projectId, unityPath);
     const text = this.options.files?.[fileKey(projectId, validation.unityPath)] ?? "";
     const truncated = text.length > maxChars;

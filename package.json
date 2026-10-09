@@ -8,7 +8,7 @@
     "check:error-taxonomy": "node scripts/check-error-taxonomy.mjs",
     "check:licenses": "node scripts/check-package-license-layout.mjs",
     "check:unity-mcp-contract": "pnpm spec:validate && pnpm check:error-taxonomy && pnpm unity:mcp:path-scopes:vectors && node scripts/check-unity-mcp-contract.mjs",
-    "verify": "pnpm spec:validate && pnpm check:error-taxonomy && pnpm check:licenses && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:vectors && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
+    "verify": "pnpm security:regressions && pnpm spec:validate && pnpm check:error-taxonomy && pnpm check:licenses && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:vectors && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
     "test": "pnpm verify",
     "typecheck": "pnpm -C packages/ts typecheck",
     "lint": "pnpm -C packages/ts lint",
@@ -91,7 +91,8 @@
     "vectors:ts": "VECTOR_RESULTS_OUT=../../tmp/vector-results/ts.json pnpm -C packages/ts exec vitest run test/vector-results.test.ts",
     "vectors:js-standalone": "VECTOR_RESULTS_OUT=../../tmp/vector-results/js-standalone.json pnpm -C packages/javascript-standalone exec vitest run test/vectors.test.ts",
     "vectors:compare": "node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/ts.json && node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/js-standalone.json",
-    "ps:test": "node scripts/run-powershell-tests.mjs"
+    "ps:test": "node scripts/run-powershell-tests.mjs",
+    "security:regressions": "node --test scripts/security-regression.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

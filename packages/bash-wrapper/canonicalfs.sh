@@ -116,20 +116,23 @@ request() {
   local path="$2"
   local mode="$3"
   local body="${4:-}"
-  local tmp status parse_status
+  local tmp status parse_status config=""
   tmp="$(mktemp)"
 
   local curl_args=(-sS -o "$tmp" -w "%{http_code}" -H "Accept: application/json")
   if [[ "$path" != "/healthz" ]]; then
     require_token
-    curl_args+=(-H "Authorization: Bearer $TOKEN")
+    [[ "$TOKEN" != *$'\n'* && "$TOKEN" != *$'\r'* ]] || die "token contains a line break"
+    local escaped_token="${TOKEN//\\/\\\\}"
+    escaped_token="${escaped_token//\"/\\\"}"
+    printf -v config 'header = "Authorization: Bearer %s"\n' "$escaped_token"
   fi
   if [[ "$method" == "POST" ]]; then
     curl_args+=(-X POST -H "Content-Type: application/json" --data "$body")
   fi
   curl_args+=("$BASE_URL$path")
 
-  if ! status="$(curl "${curl_args[@]}")"; then
+  if ! status="$(printf '%s' "$config" | curl --config - "${curl_args[@]}")"; then
     rm -f "$tmp"
     die "daemon request failed: $method $path"
   fi

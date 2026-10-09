@@ -12,22 +12,24 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: npm-publish
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.prerelease == false) }}
     runs-on: ubuntu-24.04
-    environment: npm
     env:
       NODE_VERSION: 24.18.0
       NPM_VERSION: 11.16.0
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
+    outputs:
+      kind: ${{ steps.release.outputs.kind }}
+      version: ${{ steps.release.outputs.version }}
+      manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
     steps:
       - name: Validate release tag
         id: release
@@ -157,7 +159,7 @@ jobs:
             test "$name" = "$expected_name"
             test "$version" = "$RELEASE_VERSION"
             test -f "$PACK_DIR/$filename"
-            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$PACK_DIR/$filename" >> "$MANIFEST"
+            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$filename" >> "$MANIFEST"
           }
 
           if [[ "$RELEASE_KIND" == full ]]; then
@@ -167,13 +169,77 @@ jobs:
 
           pack_package packages/unity com.romanilyin.canonicalpath
 
+      - name: Hash release manifest
+        id: digest
+        run: echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/npm-packages/manifest.tsv" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # immutable release artifacts
+        with:
+          name: npm-packages
+          path: |
+            ${{ runner.temp }}/npm-packages/*.tgz
+            ${{ runner.temp }}/npm-packages/manifest.tsv
+          if-no-files-found: error
+          retention-days: 7
+
+  # Fresh runner: no repository checkout, dependency installation, build code,
+  # package lifecycle execution, or persisted executable state from the build.
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NODE_VERSION: 24.18.0
+      NPM_VERSION: 11.16.0
+      RELEASE_KIND: ${{ needs.build.outputs.kind }}
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+      MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # same-run immutable artifacts
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/npm-packages
+
+      - name: Verify artifact manifest and tarball digests
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          test "$(npm --version)" = "$NPM_VERSION"
+          cd "$RUNNER_TEMP/npm-packages"
+          printf '%s  manifest.tsv\n' "$MANIFEST_SHA256" | sha256sum --check --strict
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const expected = new Set(process.env.RELEASE_KIND === 'full'
+            ? ['@romanilyin/canonicalpath', '@romanilyin/canonicalpath-standalone', 'com.romanilyin.canonicalpath']
+            : ['com.romanilyin.canonicalpath']);
+          const rows = readFileSync('manifest.tsv', 'utf8').trimEnd().split('\n');
+          if (rows.length !== expected.size) throw new Error('Wrong artifact count');
+          for (const row of rows) {
+            const [name, version, integrity, filename, extra] = row.split('\t');
+            if (!expected.delete(name) || version !== process.env.RELEASE_VERSION || extra !== undefined
+              || !/^[A-Za-z0-9_.-]+\.tgz$/.test(filename) || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity)) throw new Error('Invalid artifact manifest');
+            const actual = 'sha512-' + createHash('sha512').update(readFileSync(filename)).digest('base64');
+            if (actual !== integrity) throw new Error('Artifact integrity mismatch');
+          }
+          JS
+
       - name: Preflight npm versions
         run: |
           PACK_DIR="$RUNNER_TEMP/npm-packages"
           PENDING="$PACK_DIR/pending.tsv"
           : > "$PENDING"
 
-          while IFS=$'\t' read -r name version integrity tarball; do
+          while IFS=$'\t' read -r name version integrity filename; do
+            tarball="$PACK_DIR/$filename"
             view_json="$PACK_DIR/view-$(basename "$tarball").json"
             view_error="$PACK_DIR/view-$(basename "$tarball").error"
 
@@ -216,5 +282,5 @@ jobs:
 
           while IFS=$'\t' read -r name version _ tarball; do
             echo "Publishing $name@$version"
-            npm publish "$tarball" --access public --tag latest
+            npm publish "$tarball" --ignore-scripts=true --access public --tag latest
           done < "$PENDING"

@@ -5,7 +5,10 @@ PowerShell 5.1 and PowerShell 7 can call the Go canonicalfs daemon over the same
 Start the daemon:
 
 ```powershell
-$env:CANONICALFS_DAEMON_TOKEN = "dev-token"
+$TokenBytes = New-Object byte[] 32
+$TokenRng = [Security.Cryptography.RandomNumberGenerator]::Create()
+try { $TokenRng.GetBytes($TokenBytes) } finally { $TokenRng.Dispose() }
+$env:CANONICALFS_DAEMON_TOKEN = [Convert]::ToBase64String($TokenBytes)
 go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root "C:\Users\Alice\Repo"
 ```
 
@@ -13,7 +16,7 @@ Register a project and read a file with the typed PowerShell module client:
 
 ```powershell
 $ProjectId = "project-1"
-$Client = New-CanonicalFSDaemonClient -Endpoint "http://127.0.0.1:8765" -Token "dev-token"
+$Client = New-CanonicalFSDaemonClient -Endpoint "http://127.0.0.1:8765" -Token $env:CANONICALFS_DAEMON_TOKEN
 
 Get-CanonicalFSDaemonCapabilities -Client $Client
 Open-CanonicalFSProject -Client $Client -ProjectId $ProjectId -HostRoot "C:\Users\Alice\Repo"
@@ -24,7 +27,7 @@ Raw transport remains straightforward when needed:
 
 ```powershell
 $Endpoint = "http://127.0.0.1:8765"
-$Headers = @{ Authorization = "Bearer dev-token" }
+$Headers = @{ Authorization = "Bearer $env:CANONICALFS_DAEMON_TOKEN" }
 
 $Response = Invoke-RestMethod -Method Post -Uri "$Endpoint/v1/fs/readFile" -Headers $Headers -ContentType "application/json" -Body (@{
   project_id = $ProjectId

@@ -24,7 +24,11 @@ export function packUnitySigned(options = {}) {
   const destination = resolveFromRoot(options.destination ?? "tmp/unity-signed");
   const envFile = resolveFromRoot(options.envFile ?? ".env");
   const envValues = existsSync(envFile) ? parseDotEnv(readFileSync(envFile, "utf8")) : {};
-  const env = mergeEnv(envValues);
+  const env = signingEnvironment(envValues);
+  const upmPath = options.upmPath || process.env.UPM_CLI_PATH || envValues.UPM_CLI_PATH;
+  if (!upmPath || !path.isAbsolute(upmPath) || !existsSync(upmPath) || !statSync(upmPath).isFile()) {
+    throw new Error("Set UPM_CLI_PATH to the absolute path of the verified Unity UPM executable");
+  }
   const missing = requiredUnitySigningEnv.filter((key) => !isUsableSecret(env[key]));
 
   if (missing.length > 0) {
@@ -42,7 +46,7 @@ export function packUnitySigned(options = {}) {
   copyPackageNotices(packageDir);
   try {
     const result = spawnSync(
-      "upm",
+      upmPath,
       ["pack", packageDir, "--organization-id", env.UPM_ORGANIZATION_ID, "--destination", destination],
       {
         cwd: root,
@@ -90,15 +94,13 @@ function resolveFromRoot(value) {
   return path.isAbsolute(value) ? value : path.resolve(root, value);
 }
 
-function mergeEnv(envValues) {
-  const env = { ...process.env };
-
-  for (const [key, value] of Object.entries(envValues)) {
-    if (!Object.hasOwn(env, key) || env[key] === "") {
-      env[key] = value;
-    }
+export function signingEnvironment(envValues = {}, source = process.env) {
+  const env = {};
+  const allowed = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "LANG", "LC_ALL"]);
+  for (const [key, value] of Object.entries(source)) {
+    if (allowed.has(key.toUpperCase())) env[key] = value;
   }
-
+  for (const key of requiredUnitySigningEnv) env[key] = source[key] || envValues[key];
   return env;
 }
 

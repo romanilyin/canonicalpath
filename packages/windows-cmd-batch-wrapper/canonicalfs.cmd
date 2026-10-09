@@ -149,57 +149,19 @@ exit /b 0
 set "REQ_METHOD=%~1"
 set "REQ_PATH=%~2"
 set "RESP_MODE=%~3"
-set "RESP_FILE=%TEMP%\canonicalfs-cmd-%RANDOM%-%RANDOM%.json"
-set "REQ_BODY_FILE="
+set "RESP_FILE="
 set "STATUS="
-
-if /i "%REQ_PATH%"=="/healthz" goto request_without_auth
-if "%TOKEN%"=="" (echo CANONICALFS_DAEMON_TOKEN is required for this operation 1>&2 & exit /b 64)
-if /i "%REQ_METHOD%"=="POST" goto request_post_auth
-goto request_get_auth
-
-:request_without_auth
-for /f "usebackq delims=" %%S in (`curl.exe -sS -o "%RESP_FILE%" -w "%%{http_code}" -H "Accept: application/json" "%BASE_URL%%REQ_PATH%"`) do set "STATUS=%%S"
-goto request_parse
-
-:request_get_auth
-for /f "usebackq delims=" %%S in (`curl.exe -sS -o "%RESP_FILE%" -w "%%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer %TOKEN%" "%BASE_URL%%REQ_PATH%"`) do set "STATUS=%%S"
-goto request_parse
-
-:request_post_auth
-set "REQ_BODY_FILE=%TEMP%\canonicalfs-cmd-body-%RANDOM%-%RANDOM%.json"
-"%POWERSHELL_BIN%" -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; [IO.File]::WriteAllText($env:REQ_BODY_FILE, $env:JSON_BODY, [Text.UTF8Encoding]::new($false))"
-if errorlevel 1 (
-  del "%REQ_BODY_FILE%" >nul 2>nul
-  del "%RESP_FILE%" >nul 2>nul
-  echo failed to write JSON request body 1>&2
-  exit /b 1
+if /i not "%REQ_PATH%"=="/healthz" if "%TOKEN%"=="" (echo CANONICALFS_DAEMON_TOKEN is required for this operation 1>&2 & exit /b 64)
+rem HttpWebRequest reads the capability from the inherited environment. Neither
+rem PowerShell nor a curl process receives an Authorization value in argv.
+for /f "usebackq tokens=1,* delims=|" %%S in (`%POWERSHELL_BIN% -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $file = [IO.Path]::GetTempFileName(); try { $request = [Net.HttpWebRequest]::Create($env:BASE_URL + $env:REQ_PATH); $request.Method = $env:REQ_METHOD; $request.Accept = 'application/json'; $request.AllowAutoRedirect = $false; if ($env:REQ_PATH -ne '/healthz') { $request.Headers['Authorization'] = 'Bearer ' + $env:TOKEN }; if ($env:REQ_METHOD -eq 'POST') { $request.ContentType = 'application/json'; $bytes = [Text.Encoding]::UTF8.GetBytes($env:JSON_BODY); $request.ContentLength = $bytes.Length; $stream = $request.GetRequestStream(); try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() } }; try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response; if ($null -eq $response) { throw } }; try { $output = [IO.File]::Create($file); try { $response.GetResponseStream().CopyTo($output) } finally { $output.Dispose() }; [Console]::WriteLine(([int]$response.StatusCode).ToString() + '|' + $file) } finally { $response.Dispose() } } catch { Remove-Item -LiteralPath $file -Force; [Console]::Error.WriteLine('daemon request failed'); exit 1 }"`) do (
+  set "STATUS=%%S"
+  set "RESP_FILE=%%T"
 )
-for /f "usebackq delims=" %%S in (`curl.exe -sS -o "%RESP_FILE%" -w "%%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer %TOKEN%" -H "Content-Type: application/json" --data-binary "@%REQ_BODY_FILE%" "%BASE_URL%%REQ_PATH%"`) do set "STATUS=%%S"
-goto request_parse
-
-:request_parse
-if "%STATUS%"=="" (
-  del "%REQ_BODY_FILE%" >nul 2>nul
-  del "%RESP_FILE%" >nul 2>nul
-  echo daemon request failed: %REQ_METHOD% %REQ_PATH% 1>&2
-  exit /b 1
-)
-if "%STATUS%"=="000" (
-  del "%REQ_BODY_FILE%" >nul 2>nul
-  del "%RESP_FILE%" >nul 2>nul
-  echo daemon request failed: %REQ_METHOD% %REQ_PATH% 1>&2
-  exit /b 1
-)
-if not exist "%RESP_FILE%" (
-  del "%REQ_BODY_FILE%" >nul 2>nul
-  echo daemon response file missing: %REQ_METHOD% %REQ_PATH% 1>&2
-  exit /b 1
-)
+if "%STATUS%"=="" (echo daemon request failed 1>&2 & exit /b 1)
 call :parse_response "%RESP_MODE%" "%STATUS%" "%RESP_FILE%"
 set "PARSE_STATUS=%ERRORLEVEL%"
-del "%REQ_BODY_FILE%" >nul 2>nul
-del "%RESP_FILE%" >nul 2>nul
+"%POWERSHELL_BIN%" -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath $env:RESP_FILE -Force"
 exit /b %PARSE_STATUS%
 
 :parse_response

@@ -49,6 +49,9 @@ func parseHierarchicalURIPath(raw string, prefix string, opts Options) (string, 
 	if err != nil {
 		return "", newError(ErrInvalidPercentEncoding, "URI authority percent encoding is invalid")
 	}
+	if strings.ContainsRune(decoded, '\x00') || strings.ContainsRune(decodedAuthority, '\x00') {
+		return "", newError(ErrNULByte, "decoded URI contains NUL")
+	}
 	if decoded == "" {
 		return "", newError(ErrInvalidURI, "URI path is empty")
 	}

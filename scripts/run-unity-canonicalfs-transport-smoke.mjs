@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,6 +74,7 @@ function projectFile() {
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../packages/unity/Runtime/CanonicalPath.cs" Link="CanonicalPath.cs" />
+    <Compile Include="../../packages/unity/Runtime/UnityBridgeBuiltins.cs" Link="UnityBridgeBuiltins.cs" />
     <Compile Include="../../packages/unity/Runtime/CanonicalPathHttpClient.cs" Link="CanonicalPathHttpClient.cs" />
   </ItemGroup>
 </Project>
@@ -125,6 +127,12 @@ internal static class Program
             string scopedText = await client.ReadScopedTextAsync("unity-project", UnityMcpPathScope.Knowledge, "notes/agent.md", 128, cancellationToken);
             if (scopedText != "scoped knowledge") throw new InvalidOperationException("scoped read text mismatch");
 
+            UnityBridgeBuiltins bridge = new UnityBridgeBuiltins("unity-project", new CanonicalPathValue("/identity-only/Game"), "Game", "transport", null, client);
+            UnityBridgeReadResult bridgeRead = await bridge.ReadTextAsync("Assets/UnityMcpKnowledge/notes/agent.md", 6, cancellationToken);
+            if (bridgeRead.Text != "scoped" || !bridgeRead.Truncated) throw new InvalidOperationException("bridge bypassed daemon or truncation limit");
+
+            await ExpectError("ERR_READ_LIMIT_EXCEEDED", async () => await bridge.ReadTextAsync("Assets/UnityMcpKnowledge/large.txt", UnityBridgeBuiltins.MaxReadChars, cancellationToken));
+
             CanonicalFSFileStat scopedStat = await client.StatScopedAsync("unity-project", UnityMcpPathScope.Knowledge, "notes/agent.md", cancellationToken);
             if (scopedStat.Path != "Assets/UnityMcpKnowledge/notes/agent.md" || scopedStat.IsDirectory || scopedStat.Size <= 0) throw new InvalidOperationException("scoped stat response mismatch");
 
@@ -176,7 +184,9 @@ async function startDaemon() {
   mkdirSync(projectRoot);
   const port = await freePort();
   const endpoint = `http://127.0.0.1:${port}`;
-  const token = `unity-transport-token-${Math.random().toString(16).slice(2)}`;
+  const token = randomBytes(32).toString("hex");
+  mkdirSync(path.join(projectRoot, "Assets", "UnityMcpKnowledge"), { recursive: true });
+  writeFileSync(path.join(projectRoot, "Assets", "UnityMcpKnowledge", "large.txt"), Buffer.alloc(4 * 1048576 + 1, 97));
   const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },

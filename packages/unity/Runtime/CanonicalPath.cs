@@ -460,6 +460,7 @@ namespace CanonicalPath
 
             string value = unityPath.Replace('\\', '/');
             if (IsAbsolutePayload(value)) throw new ArgumentException("Unity payload path must be relative.", "unityPath");
+            if (value.IndexOf(':') >= 0) throw new ArgumentException("Unity path must not contain colon.", "unityPath");
 
             string[] rawParts = value.Split('/');
             List<string> parts = new List<string>();
@@ -775,6 +776,7 @@ namespace CanonicalPath
                 ValidatePercentEncoding(authority);
                 string decoded = Uri.UnescapeDataString(pathPart);
                 string decodedAuthority = Uri.UnescapeDataString(authority);
+                if (decoded.IndexOf('\0') >= 0 || decodedAuthority.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "decoded URI contains NUL");
                 if (decoded.Length == 0) throw PathError("ERR_INVALID_URI", "URI path is empty");
                 if (prefix == "file://" && decodedAuthority.Length != 0 && !string.Equals(decodedAuthority, "localhost", StringComparison.OrdinalIgnoreCase))
                 {

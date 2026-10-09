@@ -212,6 +212,24 @@
       "operation": "make-safe-file-name",
       "raw": "",
       "error": "ERR_INVALID_COMPONENT"
+    },
+    {
+      "id": "unity-reject-ads-34",
+      "operation": "normalize-unity-path",
+      "raw": "Assets/file.txt:secret",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-ads-35",
+      "operation": "normalize-unity-path",
+      "raw": "Packages/pkg/file:stream",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "unity-reject-ads-36",
+      "operation": "normalize-unity-path",
+      "raw": "Assets/dir:stream/file.txt",
+      "error": "ERR_INVALID_PATH"
     }
   ]
 }

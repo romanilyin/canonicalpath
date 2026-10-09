@@ -100,6 +100,61 @@
       "raw": "https://example.com/repo",
       "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix" },
       "error": "ERR_UNSUPPORTED_URI_SCHEME"
+    },
+    {
+      "id": "uri-decoded-nul-path",
+      "operation": "normalize",
+      "raw": "file:///repo/a%00b",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "targetProfile": "portable",
+        "uri": {
+          "allowFileUri": true,
+          "allowVSCodeFileUri": true
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "uri-decoded-nul-authority",
+      "operation": "normalize",
+      "raw": "file://server%00/share/a",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "targetProfile": "portable",
+        "uri": {
+          "allowFileUri": true,
+          "allowVSCodeFileUri": true
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "uri-decoded-nul-vscode-authority",
+      "operation": "normalize",
+      "raw": "vscode-file://app%00/repo/a",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "targetProfile": "portable",
+        "uri": {
+          "allowFileUri": true,
+          "allowVSCodeFileUri": true
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "uri-double-encoded-nul-preserved",
+      "operation": "normalize",
+      "raw": "file:///repo/a%2500b",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "targetProfile": "posix",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "/repo/a%00b"
     }
   ]
 }

@@ -478,6 +478,7 @@ fn parse_hierarchical_uri_path(
     };
     let decoded_authority = percent_decode(&rest[..slash])?;
     let decoded = percent_decode(&rest[slash..])?;
+    if decoded.contains('\0') || decoded_authority.contains('\0') { return Err(err("ERR_NUL_BYTE", "decoded URI contains NUL")); }
     if decoded.is_empty() {
         return Err(err("ERR_INVALID_URI", "URI path is empty"));
     }
@@ -684,7 +685,7 @@ fn is_reserved_device_base(base: &str) -> bool {
     }
     let bytes = upper.as_bytes();
     bytes.len() == 4
-        && (&upper[..3] == "COM" || &upper[..3] == "LPT")
+        && (bytes.starts_with(b"COM") || bytes.starts_with(b"LPT"))
         && (b'1'..=b'9').contains(&bytes[3])
 }
 

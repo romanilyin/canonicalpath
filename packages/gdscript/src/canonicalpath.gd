@@ -219,6 +219,8 @@ static func _parse_hierarchical_uri_path(raw: String, prefix: String, options: D
     var decoded_path := _percent_decode(rest.substr(slash))
     if not decoded_path.ok:
         return decoded_path
+    if str(decoded_path.value).contains(String.chr(0)) or str(decoded_authority.value).contains(String.chr(0)):
+        return _err("ERR_NUL_BYTE", "decoded URI contains NUL")
     if str(decoded_path.value).is_empty():
         return _err("ERR_INVALID_URI", "URI path is empty")
     if prefix == "file://" and not str(decoded_authority.value).is_empty() and str(decoded_authority.value).to_lower() != "localhost":
@@ -240,6 +242,8 @@ static func _percent_decode(value: String) -> Dictionary:
         var low := _hex_value(value.substr(index + 2, 1))
         if high < 0 or low < 0:
             return _err("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is invalid")
+        if ((high << 4) | low) == 0:
+            return _err("ERR_NUL_BYTE", "decoded URI contains NUL")
         bytes.append((high << 4) | low)
         index += 3
     return _ok(bytes.get_string_from_utf8())

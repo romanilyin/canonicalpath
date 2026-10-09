@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requiredUnityVersionPrefix = process.env.UNITY_REQUIRED_VERSION_PREFIX || process.env.UNITY_EDITMODE_REQUIRED_VERSION_PREFIX;
-const projectRoot = path.join(root, "tmp", tempProjectName("unity-editmode-project", requiredUnityVersionPrefix));
+const projectRoot = path.join(root, "tmp", `${tempProjectName("unity-editmode-project", requiredUnityVersionPrefix)}-${process.pid}`);
 
 const unity = findUnityEditor(requiredUnityVersionPrefix);
 if (!unity) {
@@ -95,6 +95,7 @@ public static class CanonicalPathUnityEditModeRunner
             ScopedPathGuardMatchesRepresentativeScopeRules();
             ManagedTransportAddsBearerAuthAndParsesCapabilities();
             ManagedTransportSendsScopedPayloads();
+            UnityBridgeReadsUseBoundedScopedDaemon();
             BurstCompatibleSurfaceUsesUnmanagedCodeUnits();
             ManagedHotLoopHasBoundedEditorAllocations();
             Console.WriteLine("Unity EditMode CanonicalPath runner passed");
@@ -120,6 +121,7 @@ public static class CanonicalPathUnityEditModeRunner
     private static void ManagedCanonicalPathRejectsSecurityCases()
     {
         PathError("ERR_NUL_BYTE", delegate { CP.Normalize("safe\0name", null); });
+        PathError("ERR_NUL_BYTE", delegate { CP.Normalize("vscode-file://vscode%00/repo/a", new CanonicalPathNormalizeOptions { URI = new CanonicalPathURIOptions { AllowVSCodeFileUri = true } }); });
         PathError("ERR_DRIVE_RELATIVE_PATH", delegate { CP.Normalize("C:foo", new CanonicalPathNormalizeOptions { SourceHost = "win32", TargetProfile = "win32-drive" }); });
         PathError("ERR_OUTSIDE_ROOT", delegate { CP.Relative("/tmp/project", "/tmp/project-evil/file.txt"); });
         PathError("ERR_ABSOLUTE_PATH", delegate { CP.Join("c:/repo", "d:/escape.txt"); });
@@ -200,6 +202,30 @@ public static class CanonicalPathUnityEditModeRunner
             True(!stat.IsDirectory);
             Contains(handler.LastBody, "\"operation\":\"read\"");
             Contains(handler.LastBody, "\"scope\":\"package_manifest\"");
+        }
+    }
+
+    private static void UnityBridgeReadsUseBoundedScopedDaemon()
+    {
+        UnityBridgeBuiltins disconnected = new UnityBridgeBuiltins("project-1", new CanonicalPathValue("/repo/Game"), "Game", "test");
+        bool failed = false;
+        try { disconnected.ReadText("Assets/file.txt", 10); } catch (InvalidOperationException) { failed = true; }
+        if (!failed) throw new InvalidOperationException("local fallback read was allowed");
+        FakeHandler handler = new FakeHandler("{\"data_base64\":\"aGVsbG8=\"}");
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        {
+            UnityBridgeBuiltins bridge = new UnityBridgeBuiltins("project-1", new CanonicalPathValue("/repo/Game"), "Game", "test", null, client);
+            UnityBridgeReadResult result = bridge.ReadText("Assets/file.txt", 3);
+            Equal("hel", result.Text);
+            if (!result.Truncated) throw new InvalidOperationException("character truncation failed");
+            Equal("/v1/scoped/readFile", handler.LastRequest.RequestUri.AbsolutePath);
+            if (!handler.LastBody.Contains("unity_asset") || !handler.LastBody.Contains("4194304")) throw new InvalidOperationException("scoped byte cap missing");
+            failed = false;
+            try { bridge.ReadText("Assets/file.txt:secret", 10); } catch (ArgumentException) { failed = true; }
+            if (!failed) throw new InvalidOperationException("ADS read accepted");
+            failed = false;
+            try { bridge.ReadText("Assets/file.txt", UnityBridgeBuiltins.MaxReadChars + 1); } catch (ArgumentOutOfRangeException) { failed = true; }
+            if (!failed) throw new InvalidOperationException("oversized read accepted");
         }
     }
 

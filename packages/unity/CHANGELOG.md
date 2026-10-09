@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.10.9-1
+
+- Text reads now require a registered scoped Go CanonicalFS daemon client, with a 4 MiB byte cap and 1,048,576 character cap.
+- Reject alternate data streams in legacy Unity asset paths and bound HTTP response allocation.
+- Harden local npm and UPM publication/signing credentials.
+- Validate against installed Unity editors, including the 7000 alpha series.
+
+
 ## 2026.6.19-1
 
 - License files are now committed inside the Unity package and include Unity `.meta` files; package licensing remains Stinger Royalty-Free EULA 1.0.

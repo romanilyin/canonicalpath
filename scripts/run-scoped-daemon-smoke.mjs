@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -112,7 +113,7 @@ async function startDaemon() {
   mkdirSync(siblingRoot);
   const port = await freePort();
   const endpoint = `http://127.0.0.1:${port}`;
-  const token = `scoped-daemon-smoke-${Math.random().toString(16).slice(2)}`;
+  const token = randomBytes(32).toString("hex");
   const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },

@@ -31,6 +31,7 @@ function parseHierarchicalURIPath(raw: string, prefix: string, options: Normaliz
   try {
     const decoded = decodeURIComponent(pathPart);
     const decodedAuthority = decodeURIComponent(authority);
+    if (decoded.includes("\0") || decodedAuthority.includes("\0")) throw pathError("ERR_NUL_BYTE", "decoded URI contains NUL");
     if (decoded === "") throw pathError("ERR_INVALID_URI", "URI path is empty");
     if (prefix === "file://" && decodedAuthority !== "" && decodedAuthority.toLowerCase() !== "localhost") {
       return `//${decodedAuthority}${decoded}`;

@@ -281,6 +281,8 @@ def _parse_hierarchical_uri_path(raw: str, prefix: str, options: Mapping[str, An
         raise _path_error("ERR_INVALID_URI", "URI path is empty")
     decoded_authority = _percent_decode(rest[:slash])
     decoded_path = _percent_decode(rest[slash:])
+    if "\x00" in decoded_path or "\x00" in decoded_authority:
+        raise _path_error("ERR_NUL_BYTE", "decoded URI contains NUL")
     if decoded_path == "":
         raise _path_error("ERR_INVALID_URI", "URI path is empty")
     if prefix == "file://" and decoded_authority != "" and decoded_authority.lower() != "localhost":

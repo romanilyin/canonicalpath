@@ -36,6 +36,7 @@ export class CanonicalPathService {
       throw pathError("ERR_OUTSIDE_ROOT", "Unity path traversal is not allowed");
     }
 
+    if (value.includes(":")) throw pathError("ERR_INVALID_PATH", "Unity path must not contain alternate data stream syntax");
     const clean = normalizeRelative(value);
     if (!isAllowedUnityRoot(clean)) {
       throw pathError("ERR_INVALID_PATH", "Unity path must start with Assets/ or Packages/");

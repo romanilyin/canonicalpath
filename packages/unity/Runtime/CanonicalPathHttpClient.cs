@@ -377,9 +377,9 @@ namespace CanonicalPath
                     request.Content = new StringContent(Serialize(body), Encoding.UTF8, "application/json");
                 }
 
-                using (HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false))
+                using (HttpResponseMessage response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
                 {
-                    string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    string json = await ReadBoundedResponseAsync(response, cancellationToken).ConfigureAwait(false);
                     T payload;
                     try
                     {
@@ -396,6 +396,24 @@ namespace CanonicalPath
                     }
                     return payload;
                 }
+            }
+        }
+
+        private static async Task<string> ReadBoundedResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
+            const int cap = 24 * 1048576;
+            if (response.Content.Headers.ContentLength > cap) throw new CanonicalFSDaemonException("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds client cap");
+            using (Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+            using (MemoryStream output = new MemoryStream())
+            {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) != 0)
+                {
+                    if (output.Length + count > cap) throw new CanonicalFSDaemonException("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds client cap");
+                    output.Write(buffer, 0, count);
+                }
+                return Encoding.UTF8.GetString(output.ToArray());
             }
         }
 

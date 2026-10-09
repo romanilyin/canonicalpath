@@ -174,6 +174,7 @@ static const char *cp_percent_decode(const char *value, size_t len, cp_string *o
       free(result);
       return "ERR_INVALID_PERCENT_ENCODING";
     }
+    if (((high << 4) | low) == 0) { free(result); return "ERR_NUL_BYTE"; }
     result[write++] = (char)((high << 4) | low);
     read += 2;
   }

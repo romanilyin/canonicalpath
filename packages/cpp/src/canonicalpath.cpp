@@ -115,6 +115,7 @@ std::string percent_decode(std::string_view value) {
     result.push_back(static_cast<char>((high << 4) | low));
     i += 2;
   }
+  if (result.find('\0') != std::string::npos) throw path_error("ERR_NUL_BYTE", "decoded URI contains NUL");
   return result;
 }
 
