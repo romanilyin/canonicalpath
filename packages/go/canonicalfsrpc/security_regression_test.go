@@ -11,6 +11,41 @@ import (
 	"time"
 )
 
+func TestRegistrationPreservesTrustedBootstrapAlias(t *testing.T) {
+	trusted, outside := t.TempDir(), t.TempDir()
+	for dir, value := range map[string]string{trusted: "trusted", outside: "outside"} {
+		if err := os.WriteFile(filepath.Join(dir, "identity"), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(trusted, alias); err != nil {
+		t.Skip(err)
+	}
+	server, err := NewServer(ServerOptions{CapabilityToken: testCapabilityToken, AllowedRoots: []string{alias}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{alias, trusted} {
+		root, err := server.openAuthorizedRoot(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := root.ReadFile("identity", 16)
+		_ = root.Close()
+		if err != nil || string(data) != "trusted" {
+			t.Fatalf("bootstrap alias followed the mutable namespace: %q %v", data, err)
+		}
+	}
+}
+
 func TestRegistrationUsesBootstrapHandleAfterRename(t *testing.T) {
 	parent := t.TempDir()
 	allowed := filepath.Join(parent, "allowed")

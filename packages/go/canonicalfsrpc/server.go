@@ -49,6 +49,7 @@ type Server struct {
 // ServerOptions configures the canonicalfs JSON transport server.
 type allowedRoot struct {
 	path   string
+	alias  string
 	handle *canonicalfs.Root
 }
 
@@ -138,15 +139,16 @@ func NewServer(options ServerOptions) (*Server, error) {
 		idleTimeout = 30 * time.Minute
 	}
 	handles := make([]allowedRoot, 0, len(allowedRoots))
-	for _, path := range allowedRoots {
-		handle, err := canonicalfs.OpenRoot(path)
+	for _, allowed := range allowedRoots {
+		handle, err := canonicalfs.OpenRoot(allowed.path)
 		if err != nil {
 			for _, allowed := range handles {
 				_ = allowed.handle.Close()
 			}
 			return nil, err
 		}
-		handles = append(handles, allowedRoot{path: path, handle: handle})
+		allowed.handle = handle
+		handles = append(handles, allowed)
 	}
 	return &Server{
 		roots:              make(map[string]*canonicalfs.Root),
@@ -523,17 +525,22 @@ func (s *Server) openAuthorizedRoot(hostRoot string) (*canonicalfs.Root, error) 
 		return nil, os.ErrPermission
 	}
 	for _, allowed := range s.allowedRoots {
-		inside, err := isInsideAllowedRoot(allowed.path, abs)
-		if err != nil || !inside {
-			continue
-		}
-		rel, err := filepath.Rel(allowed.path, abs)
-		if err != nil {
-			continue
-		}
-		handle, err := allowed.handle.OpenRoot(filepath.ToSlash(rel))
-		if err == nil {
-			return handle, nil
+		// Both names come only from trusted bootstrap configuration. Preserve
+		// its original spelling (including Windows 8.3 paths) without resolving
+		// any caller-supplied path through the mutable global namespace.
+		for _, anchor := range []string{allowed.path, allowed.alias} {
+			inside, err := isInsideAllowedRoot(anchor, abs)
+			if err != nil || !inside {
+				continue
+			}
+			rel, err := filepath.Rel(anchor, abs)
+			if err != nil {
+				continue
+			}
+			handle, err := allowed.handle.OpenRoot(filepath.ToSlash(rel))
+			if err == nil {
+				return handle, nil
+			}
 		}
 	}
 	return nil, os.ErrPermission
@@ -688,19 +695,23 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, value any) {
 	_, _ = w.Write(data)
 }
 
-func cleanAllowedRoots(roots []string) ([]string, error) {
-	allowed := make([]string, 0, len(roots))
+func cleanAllowedRoots(roots []string) ([]allowedRoot, error) {
+	allowed := make([]allowedRoot, 0, len(roots))
 	seen := make(map[string]bool, len(roots))
 	for _, root := range roots {
 		clean, err := cleanHostRoot(root)
 		if err != nil {
 			return nil, fmt.Errorf("canonicalfsrpc: allowed root %q is invalid: %w", root, err)
 		}
-		if seen[clean] {
+		alias, err := filepath.Abs(strings.TrimSpace(root))
+		if err != nil {
+			return nil, err
+		}
+		if seen[alias] {
 			continue
 		}
-		seen[clean] = true
-		allowed = append(allowed, clean)
+		seen[alias] = true
+		allowed = append(allowed, allowedRoot{path: clean, alias: alias})
 	}
 	if len(allowed) == 0 {
 		return nil, errors.New("canonicalfsrpc: at least one allowed root is required")
