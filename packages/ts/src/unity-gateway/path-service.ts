@@ -1,3 +1,4 @@
+import { trimBoundaryCharacters } from "../canonicalpath/internal.js";
 import { createHash } from "node:crypto";
 import { join, normalize, normalizeRelative, relative } from "../canonicalpath/index.js";
 import { pathError } from "../canonicalpath/errors.js";
@@ -76,7 +77,7 @@ export class CanonicalPathService {
     if (input === "") throw pathError("ERR_INVALID_COMPONENT", "file name input is empty");
     if (input.includes("\0")) throw pathError("ERR_NUL_BYTE", "file name input contains NUL");
 
-    let safe = input.replace(/[\\/:\t\n\r]+/g, "-").replace(/^[ ._-]+|[ ._-]+$/g, "");
+    let safe = trimBoundaryCharacters(input.replace(/[\\/:\t\n\r]+/g, "-"), " ._-");
     if (safe === "") safe = "file";
     safe = escapeReservedWin32Component(safe);
     if (safe.length <= maxLength) return safe;
@@ -225,7 +226,7 @@ function startsWithAny(value: string, roots: string[]): boolean {
 }
 
 function trimGeneratedName(value: string): string {
-  return value.replace(/[ ._-]+$/g, "") || "file";
+  return trimBoundaryCharacters(value, " ._-", false) || "file";
 }
 
 function escapeReservedWin32Component(value: string): string {

@@ -120,7 +120,7 @@ export function toWin32(canonical: CanonicalPath): string {
 export function toWSL(canonical: CanonicalPath, options: { mountRoot?: string } = {}): string {
   if (canonical.includes("\0")) throw pathError("ERR_NUL_BYTE", "path contains NUL");
   if (!hasDriveRoot(canonical)) return canonical;
-  const mountRoot = (options.mountRoot ?? "/mnt").replace(/\/+$/, "");
+  const mountRoot = trimBoundaryCharacters(options.mountRoot ?? "/mnt", "/", false);
   const drive = canonical[0]?.toLowerCase();
   const rest = canonical.slice(3);
   if (rest === "") return `${mountRoot}/${drive}`;
@@ -137,7 +137,7 @@ export function toPOSIX(canonical: CanonicalPath): string {
 export function sanitizeComponent(name: string, profile: "portable" | "win32" | "posix"): string {
   if (name === "") throw pathError("ERR_INVALID_COMPONENT", "component is empty");
   if (name.includes("\0")) throw pathError("ERR_NUL_BYTE", "component contains NUL");
-  let value = name.replace(/[\\/:\t\n\r]+/g, "-").replace(/^[ ._-]+|[ ._-]+$/g, "");
+  let value = trimBoundaryCharacters(name.replace(/[\\/:\t\n\r]+/g, "-"), " ._-");
   if (value === "") value = "component";
   if (profile === "win32") value = escapeReservedWin32Component(value);
   return value;
@@ -150,7 +150,7 @@ export function encodeComponent(name: string, profile: "portable" | "win32" | "p
 export function encodeGitRef(raw: string): string {
   if (raw === "") throw pathError("ERR_INVALID_COMPONENT", "git ref is empty");
   if (raw.includes("\0")) throw pathError("ERR_NUL_BYTE", "git ref contains NUL");
-  const slug = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "ref";
+  const slug = trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-") || "ref";
   return `${slug}--${sha256Hex(raw).slice(0, 12)}`;
 }
 
@@ -244,7 +244,7 @@ function unwrapWindowsExtendedPrefix(value: string): string {
 
 function mapWSLDrive(value: string, options: NormalizeOptions["wsl"]): string | undefined {
   if (!options?.enabled) return undefined;
-  const mountRoot = (options.mountRoot ?? "/mnt").replace(/\/+$/, "");
+  const mountRoot = trimBoundaryCharacters(options.mountRoot ?? "/mnt", "/", false);
   const prefix = `${mountRoot}/`;
   if (!value.startsWith(prefix)) return undefined;
   const rest = value.slice(prefix.length);
@@ -402,4 +402,13 @@ function sha256Hex(value: string): string {
 
 function rotr(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
+}
+
+// Strip boundary characters in one pass, without regex backtracking.
+function trimBoundaryCharacters(value: string, characters: string, trimStart = true): string {
+  let start = 0;
+  let end = value.length;
+  if (trimStart) while (start < end && characters.includes(value.charAt(start))) start++;
+  while (end > start && characters.includes(value.charAt(end - 1))) end--;
+  return value.slice(start, end);
 }

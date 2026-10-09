@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { pathError } from "./errors.js";
-import { isReservedDeviceBase } from "./internal.js";
+import { isReservedDeviceBase, trimBoundaryCharacters } from "./internal.js";
 
 export function sanitizeComponent(name: string, profile: "portable" | "win32" | "posix"): string {
   if (name === "") throw pathError("ERR_INVALID_COMPONENT", "component is empty");
   if (name.includes("\0")) throw pathError("ERR_NUL_BYTE", "component contains NUL");
-  let value = name.replace(/[\\/:\t\n\r]+/g, "-").replace(/^[ ._-]+|[ ._-]+$/g, "");
+  let value = trimBoundaryCharacters(name.replace(/[\\/:\t\n\r]+/g, "-"), " ._-");
   if (value === "") value = "component";
   if (profile === "win32") value = escapeReservedWin32Component(value);
   return value;
@@ -18,7 +18,7 @@ export function encodeComponent(name: string, profile: "portable" | "win32" | "p
 export function encodeGitRef(raw: string): string {
   if (raw === "") throw pathError("ERR_INVALID_COMPONENT", "git ref is empty");
   if (raw.includes("\0")) throw pathError("ERR_NUL_BYTE", "git ref contains NUL");
-  const slug = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "ref";
+  const slug = trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-") || "ref";
   const hash = createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 12);
   return `${slug}--${hash}`;
 }
