@@ -41,6 +41,7 @@ func TestTokenSourcesRejectSamples(t *testing.T) {
 	if err := os.WriteFile(file, []byte(token+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	protectTestTokenFile(t, file)
 	if got, err := readToken(file); err != nil || got != token {
 		t.Fatal("private token file rejected")
 	}

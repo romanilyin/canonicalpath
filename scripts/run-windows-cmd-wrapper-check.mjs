@@ -103,15 +103,20 @@ function runSmokeCheck(daemon) {
       const roundTrip = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat });
       if (roundTrip !== hostile || existsSync(marker)) throw new Error("CMD transport interpreted data as commands");
     }
-    const unusualDirectory = path.join(root, "tmp", `cmd-wrapper %PATH% & (probe) ${process.pid}`);
+    mkdirSync(path.join(root, "tmp"), { recursive: true });
+    const installation = mkdtempSync(path.join(root, "tmp", "cmd-install-"));
+    const unusualDirectory = path.join(installation, `cmd-wrapper %PATH% & (probe) ${process.pid}`);
     mkdirSync(unusualDirectory, { recursive: true });
     try {
       for (const file of ["canonicalfs.cmd", "canonicalpath.cmd", "canonicalfs.ps1"]) copyFileSync(path.join(path.dirname(wrapper), file), path.join(unusualDirectory, file));
+      const transportDirectory = path.join(installation, "powershell", "CanonicalPath");
+      mkdirSync(transportDirectory, { recursive: true });
+      copyFileSync(path.join(root, "packages/powershell/CanonicalPath/DaemonClient.cs"), path.join(transportDirectory, "DaemonClient.cs"));
       for (const compat of [false, true]) {
         const value = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat, wrapperDirectory: unusualDirectory });
         if (value !== hostile) throw new Error("CMD wrapper failed from a path containing shell metacharacters");
       }
-    } finally { rmSync(unusualDirectory, { recursive: true, force: true }); }
+    } finally { rmSync(installation, { recursive: true, force: true }); }
 
     const stat = JSON.parse(runWrapper(daemon, ["stat", projectId, "safe/file.txt"]));
     if (stat.is_directory || stat.size <= 0) throw new Error(`stat response mismatch: ${JSON.stringify(stat)}`);

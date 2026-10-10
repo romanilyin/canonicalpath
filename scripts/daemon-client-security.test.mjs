@@ -61,6 +61,34 @@ if (process.platform === "win32" || available("pwsh")) {
         assert.ok(!paths.includes('/redirect-target'));
       });
     });
+    test(`${shell}: CMD wrapper uses bounded transport and caps named requests before expansion`, { timeout: 60000 }, async () => {
+      await fixture(async (endpoint, headers, paths) => {
+        const wrapper = path.join(root, 'packages/windows-cmd-batch-wrapper/canonicalfs.ps1');
+        for (const mode of ['valid', 'fixed', 'chunked', 'gzip', 'error-large', 'headers', 'body', 'drip', 'error-body', 'redirect']) {
+          const started = Date.now();
+          const result = await run(shell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', wrapper, '-Operation', 'close-project', '-ProjectId', 'p'], {
+            env: { ...process.env, CANONICALFS_DAEMON_URL: endpoint + '/' + mode, CANONICALFS_DAEMON_TOKEN: 'security-test-dummy-bearer', CANONICALFS_MAX_RESPONSE_BYTES: '1024', CANONICALFS_TIMEOUT_MILLISECONDS: '500' }, timeout: 6000, windowsHide: true,
+          }).then(value => ({ ...value, code: 0 }), error => error);
+          if (mode === 'valid') assert.equal(result.code, 0, result.stderr);
+          else {
+            assert.notEqual(result.code, 0, mode);
+            assert.match(result.stderr, new RegExp(['fixed','chunked','gzip','error-large'].includes(mode) ? 'ERR_RESPONSE_TOO_LARGE' : 'ERR_DAEMON'));
+          }
+          assert.ok(Date.now() - started < 5500, mode);
+        }
+        for (const [length, accepted] of [[785000, true], [786432, false], [1048577, false]]) {
+          const script = `$text = 'a' * ${length}; & '${wrapper.replaceAll("'", "''")}' -Operation write-text -ProjectId p -Path a -Text $text`;
+          const result = await run(shell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+            env: { ...process.env, CANONICALFS_DAEMON_URL: endpoint + '/valid', CANONICALFS_DAEMON_TOKEN: 'security-test-dummy-bearer' }, timeout: 6000, windowsHide: true,
+          }).then(value => ({ ...value, code: 0 }), error => error);
+          assert.equal(result.code === 0, accepted, result.stderr);
+          if (!accepted) assert.match(result.stderr, /ERR_REQUEST_TOO_LARGE/);
+        }
+        assert.equal(paths.length, 11, 'oversized named requests must never reach the server');
+        assert.ok(!paths.includes('/redirect-target'));
+        assert.ok(headers.every(header => header === 'Bearer security-test-dummy-bearer'));
+      });
+    });
   }
 }
 if (process.platform !== "win32" && available("bash") && available("curl") && available("python3")) {

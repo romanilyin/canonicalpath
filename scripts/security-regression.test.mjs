@@ -5,11 +5,21 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { signingEnvironment } from "./pack-unity-signed.mjs";
+import { signingEnvironment, packUnitySigned, verifySignedTarball } from "./pack-unity-signed.mjs";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("disabled local Unity signer rejects every archive and never starts credential-bearing publication", () => {
+  for (const candidate of ['stale.tgz', 'marker-only.tgz', 'expansion-bomb.tgz', 'symlink.tgz']) {
+    assert.throws(() => verifySignedTarball(candidate), /no archive is accepted or decompressed/);
+  }
+  assert.throws(() => packUnitySigned({ envFile:'does-not-exist', destination:'stale' }), /disabled/);
+  const result = spawnSync(process.execPath, ['--', path.join(repo, 'scripts/publish-unity-signed.mjs'), '--env-file', 'does-not-exist', '--dry-run'], {encoding:'utf8'});
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /authenticated signature verification is unavailable/);
+});
 
 function metadataTarball(metadata) {
   const data = Buffer.from(JSON.stringify(metadata));

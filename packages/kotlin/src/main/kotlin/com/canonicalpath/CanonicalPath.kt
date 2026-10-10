@@ -245,6 +245,9 @@ object CanonicalPath {
         while (index < value.length) {
             if (value[index] != '%') {
                 val codePoint = value.codePointAt(index)
+                if (codePoint in 0xD800..0xDFFF) {
+                    throw pathError("ERR_INVALID_PERCENT_ENCODING", "URI contains malformed UTF-16")
+                }
                 val encoded = String(Character.toChars(codePoint)).toByteArray(StandardCharsets.UTF_8)
                 for (byte in encoded) bytes.add(byte)
                 index += Character.charCount(codePoint)

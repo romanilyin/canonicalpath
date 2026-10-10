@@ -16,6 +16,8 @@ const vectorFiles = [
   "component_cases.json",
   "git_cases.json",
   "equality_cases.json",
+  "git-ref-utf16-vectors.json",
+  "uri-utf16-vectors.json",
 ].map((name) => path.join(root, "spec", "testdata", name));
 
 const dart = resolveDart();
@@ -46,11 +48,14 @@ import '../../packages/dart/lib/canonicalpath.dart' as canonicalpath;
 const encodedCases = '${encodedCases}';
 
 String runCase(Map<String, dynamic> testCase) {
+  final raw = testCase.containsKey('rawUtf16')
+      ? String.fromCharCodes(List<int>.from(testCase['rawUtf16'] as List))
+      : (testCase['raw'] as String?) ?? '';
   final operation = testCase['operation'] as String;
   final options = Map<String, dynamic>.from((testCase['options'] as Map?) ?? const <String, dynamic>{});
   switch (operation) {
     case 'normalize':
-      return canonicalpath.normalize((testCase['raw'] as String?) ?? '', options);
+      return canonicalpath.normalize(raw, options);
     case 'relative':
       return canonicalpath.relative((testCase['root'] as String?) ?? '', (testCase['target'] as String?) ?? '');
     case 'join':
@@ -68,7 +73,7 @@ String runCase(Map<String, dynamic> testCase) {
     case 'encode-component':
       return canonicalpath.encodeComponent((testCase['raw'] as String?) ?? '', (testCase['profile'] as String?) ?? 'portable');
     case 'encode-git-ref':
-      return canonicalpath.encodeGitRef((testCase['raw'] as String?) ?? '');
+      return canonicalpath.encodeGitRef(raw);
     default:
       throw StateError('unsupported operation $operation');
   }

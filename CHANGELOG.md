@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- No unreleased changes; the client security remediation is included in 2026.10.10-2 below.
+- No unreleased changes; the latest security remediation is included in 2026.10.10-3 below.
+
+## 2026.10.10-3
+
+- Addressed all eight findings from scan `2026-10-10-3`; see `docs/security-review-2026-10-10-3.md`.
+- Required the same minimum 32-character randomly generated bearer for embedded Go RPC servers and CLI startup, and validated Windows token-file DACLs on the opened handle.
+- Required Go 1.25+ and pinned the Windows ACL dependency to patched `golang.org/x/sys v0.44.0`, avoiding the known `NewNTUnicodeString` overflow even though this daemon does not call that function.
+- Made GDScript `normalize`, `relative` and `join` return tagged dictionaries instead of silently substituting empty identities on errors.
+- Rejected malformed UTF-16 in Dart Git refs and Dart/Kotlin URI literals without replacing distinct inputs; added shared exact-code-unit regressions.
+- Enforced Unity health/body response caps and non-resettable network deadlines, and reused the bounded PowerShell transport for CMD with a common pre-expansion request ceiling.
+- Replaced the raw PowerShell example with the bounded client. Disabled unsafe optional local Unity signed packaging/publication until authentic signature verification exists; standard digest-verified GitHub/npm publication remains available.
 
 ## 2026.10.10-2
 

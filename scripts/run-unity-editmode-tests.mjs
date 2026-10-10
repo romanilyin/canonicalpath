@@ -1,3 +1,4 @@
+import { unityClientBudgetChecks } from "./unity-client-budget-checks.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -102,6 +103,7 @@ public static class CanonicalPathUnityEditModeRunner
             ScopedPathGuardMatchesRepresentativeScopeRules();
             ManagedTransportAddsBearerAuthAndParsesCapabilities();
             ManagedTransportSendsScopedPayloads();
+            UnityClientBudgetChecks.Run();
             UnityBridgeReadsUseBoundedScopedDaemon();
             BurstCompatibleSurfaceUsesUnmanagedCodeUnits();
             ManagedHotLoopHasBoundedEditorAllocations();
@@ -351,6 +353,7 @@ public static class CanonicalPathUnityEditModeRunner
         }
     }
 }
+${unityClientBudgetChecks}
 `;
 }
 

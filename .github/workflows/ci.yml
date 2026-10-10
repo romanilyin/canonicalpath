@@ -44,6 +44,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm ps:test -- --all-available
       - run: pnpm cmd:smoke
-      - run: go test ./packages/go/canonicalfs ./packages/go/canonicalfsrpc
+      - run: pnpm security:regressions
+      - run: go test ./packages/go/canonicalfs ./packages/go/canonicalfsrpc ./packages/go/cmd/canonicalfs-daemon
       - run: pnpm ps:alloc -- --all-available
       - run: pnpm ps:transport:alloc -- --all-available

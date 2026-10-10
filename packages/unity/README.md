@@ -39,22 +39,22 @@ Scoped registry use through npmjs:
     }
   ],
   "dependencies": {
-    "com.romanilyin.canonicalpath": "2026.10.10-2"
+    "com.romanilyin.canonicalpath": "2026.10.10-3"
   }
 }
 ```
 
 Release packaging:
 
-- Package version for the current Unity registry release candidate is `2026.10.10-2`.
-- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.10-2`.
-- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.10-2`.
+- Package version for the current Unity registry release candidate is `2026.10.10-3`.
+- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.10-3`.
+- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.10-3`.
 - The Unity package keeps committed Stinger license and notice files under
   `packages/unity`. npm `prepack` verifies that these files match the
   Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.
 - Default npm publication is currently unsigned: `pnpm unity:npm:publish`. Unity 6.3+ will show `Signature: Missing` for that artifact.
-- Optional Unity-signed publication uses `pnpm unity:pack:signed` and `pnpm unity:npm:publish:signed`, which run UPM CLI `upm pack`, verify `.attestation.p7m`, and publish the signed tarball from `tmp/unity-signed`.
-- Token-based npm publication uses a local ignored root `.env` file with `NPM_TOKEN`; optional signed publication also needs `UPM_ORGANIZATION_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`. Do not commit real tokens, service account credentials, or local `.npmrc` files.
+- Optional local Unity signed packing/publication commands are disabled until authentic signature verification is available. Use the normal digest-verified GitHub/npm release workflow.
+- Token-based npm publication uses a local ignored root `.env` file with `NPM_TOKEN`. Disabled signing helpers never load Unity credentials. Do not commit real tokens, service account credentials, or local `.npmrc` files.
 
 Implemented early bridge scope:
 

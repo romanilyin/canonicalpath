@@ -54,6 +54,8 @@ namespace CanonicalPath
         private readonly string capabilityToken;
         private readonly HttpClient http;
         private readonly bool ownsHttp;
+        private readonly int timeoutMilliseconds;
+        private readonly int maxResponseBytes;
 
         public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken)
             : this(endpoint, capabilityToken, null)
@@ -61,16 +63,28 @@ namespace CanonicalPath
         }
 
         public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken, HttpMessageHandler handler)
+            : this(endpoint, capabilityToken, handler, 30000, 24 * 1048576)
+        {
+        }
+
+        public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken, HttpMessageHandler handler, int timeoutMilliseconds, int maxResponseBytes)
         {
             if (endpoint == null) throw new ArgumentNullException("endpoint");
             if (string.IsNullOrEmpty(capabilityToken) || capabilityToken.Trim().Length == 0) throw new ArgumentException("capabilityToken is required.", "capabilityToken");
+            if (!endpoint.IsAbsoluteUri || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0)
+                throw new ArgumentException("endpoint must be an HTTP(S) URL without credentials, query or fragment.", "endpoint");
+            if (capabilityToken.IndexOf('\r') >= 0 || capabilityToken.IndexOf('\n') >= 0) throw new ArgumentException("bearer contains a line break.", "capabilityToken");
+            if (timeoutMilliseconds < 1 || timeoutMilliseconds > 30000 || maxResponseBytes < 1 || maxResponseBytes > 24 * 1048576)
+                throw new ArgumentOutOfRangeException("timeoutMilliseconds", "limits cannot exceed 30 seconds or 24 MiB.");
+            this.timeoutMilliseconds = timeoutMilliseconds;
+            this.maxResponseBytes = maxResponseBytes;
 
             string endpointValue = endpoint.ToString().TrimEnd('/') + "/";
             this.endpoint = new Uri(endpointValue, UriKind.Absolute);
             this.capabilityToken = capabilityToken.Trim();
             if (handler == null)
             {
-                this.http = new HttpClient();
+                this.http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate });
                 this.ownsHttp = true;
             }
             else
@@ -78,6 +92,7 @@ namespace CanonicalPath
                 this.http = new HttpClient(handler, false);
                 this.ownsHttp = true;
             }
+            this.http.Timeout = Timeout.InfiniteTimeSpan;
         }
 
         public async Task<bool> HealthAsync()
@@ -87,9 +102,16 @@ namespace CanonicalPath
 
         public async Task<bool> HealthAsync(CancellationToken cancellationToken)
         {
+            return await WithDeadlineAsync(HealthCoreAsync, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<bool> HealthCoreAsync(CancellationToken cancellationToken)
+        {
             using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, BuildUri("/healthz")))
-            using (HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false))
+            using (HttpResponseMessage response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            using (cancellationToken.Register(response.Dispose))
             {
+                await ReadBoundedResponseAsync(response, cancellationToken).ConfigureAwait(false);
                 return response.IsSuccessStatusCode;
             }
         }
@@ -369,6 +391,41 @@ namespace CanonicalPath
 
         private async Task<T> RequestAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken) where T : class, ITransportEnvelope
         {
+            return await WithDeadlineAsync(token => RequestCoreAsync<T>(method, path, body, token), cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<T> WithDeadlineAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken caller)
+        {
+            using (CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(caller))
+            {
+                deadline.CancelAfter(timeoutMilliseconds);
+                Task<T> operation = work(deadline.Token);
+                TaskCompletionSource<bool> expired = new TaskCompletionSource<bool>();
+                using (deadline.Token.Register(() => expired.TrySetResult(true)))
+                {
+                    try
+                    {
+                        if (await Task.WhenAny(operation, expired.Task).ConfigureAwait(false) != operation)
+                        {
+                            _ = operation.ContinueWith(t => { var ignored = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                            caller.ThrowIfCancellationRequested();
+                            throw new CanonicalFSDaemonException("ERR_DAEMON", "daemon request timed out");
+                        }
+                        return await operation.ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        caller.ThrowIfCancellationRequested();
+                        if (deadline.IsCancellationRequested) throw new CanonicalFSDaemonException("ERR_DAEMON", "daemon request timed out");
+                        throw;
+                    }
+                    finally { deadline.Cancel(); }
+                }
+            }
+        }
+
+        private async Task<T> RequestCoreAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken) where T : class, ITransportEnvelope
+        {
             using (HttpRequestMessage request = new HttpRequestMessage(method, BuildUri(path)))
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", capabilityToken);
@@ -378,6 +435,7 @@ namespace CanonicalPath
                 }
 
                 using (HttpResponseMessage response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+                using (cancellationToken.Register(response.Dispose))
                 {
                     string json = await ReadBoundedResponseAsync(response, cancellationToken).ConfigureAwait(false);
                     T payload;
@@ -399,9 +457,9 @@ namespace CanonicalPath
             }
         }
 
-        private static async Task<string> ReadBoundedResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        private async Task<string> ReadBoundedResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
         {
-            const int cap = 24 * 1048576;
+            int cap = maxResponseBytes;
             if (response.Content.Headers.ContentLength > cap) throw new CanonicalFSDaemonException("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds client cap");
             using (Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
             using (MemoryStream output = new MemoryStream())
@@ -413,7 +471,7 @@ namespace CanonicalPath
                     if (output.Length + count > cap) throw new CanonicalFSDaemonException("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds client cap");
                     output.Write(buffer, 0, count);
                 }
-                return Encoding.UTF8.GetString(output.ToArray());
+                return new UTF8Encoding(false, true).GetString(output.ToArray());
             }
         }
 

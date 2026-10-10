@@ -1,8 +1,8 @@
 # Release Process
 
-The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local helpers for unsigned or optional Unity-signed tarballs.
+The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local unsigned helpers. Optional local signed helpers fail closed until authentic signature verification exists.
 
-Current full release plan: `docs/release-2026.10.10-2.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
+Current full release plan: `docs/release-2026.10.10-3.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 
@@ -53,7 +53,7 @@ The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publi
 - CI, security baseline, and CodeQL workflows run on `pull_request`, `push` to `main`, and `workflow_dispatch` after the repository is public.
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:licenses`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - Run `pnpm ts:pack:dry-run`, `pnpm js:standalone:pack:dry-run`, and `pnpm unity:pack:dry-run` before npm publication.
-- Before optional signed Unity npmjs publication, run `pnpm unity:pack:signed` with UPM CLI credentials available; it must produce a `.tgz` containing `.attestation.p7m`.
+- Optional local `unity:pack:signed` and `unity:npm:publish:signed` commands are disabled; a `.attestation.p7m` filename cannot authenticate a package.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, npm pack dry-runs, and `scripts/run-scoped-daemon-smoke.mjs`.
 - Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
@@ -63,7 +63,7 @@ The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publi
 - A manual retry must run from `main` and must name an existing published non-prerelease GitHub Release. Matching packages already present on npm are skipped only when their registry and local tarball integrity values match.
 - The `codeql` workflow is enabled for `pull_request`, `push` to `main`, and `workflow_dispatch`.
 - The TypeScript package must build `dist` declarations and runnable ESM exports for `.`, `./canonicalpath`, `./canonicalfs`, and `./unity-gateway`.
-- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, committed package-local `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files with their Unity `.meta` files. Optional signed publication must also include Unity's `.attestation.p7m` signature file.
+- The Unity package tarball must include `Runtime`, `Tests`, `README.md`, `CHANGELOG.md`, committed package-local `LICENSE.md`, `LICENSE.ru.md`, and `NOTICE.md` files with their Unity `.meta` files.
 - The Go `canonicalfs` daemon remains the filesystem security boundary. `CanonicalPath` is lexical-only, and TypeScript/Unity helpers must not claim TOCTOU-proof filesystem security.
 
 ## npm Trusted Publishing
@@ -89,7 +89,7 @@ The workflow uses GitHub-hosted runners, pinned Node `24.18.0` and npm `11.16.0`
 
 ## Local Publishing Secrets
 
-Local fallback npm commands and optional Unity signing use a root `.env` file that is ignored by git. These credentials are not used by the GitHub Actions trusted-publishing workflow:
+Local fallback npm commands use a root `.env` file that is ignored by git. Disabled signed helpers never read this file. These credentials are not used by the GitHub Actions trusted-publishing workflow:
 
 ```text
 NPM_TOKEN=npm_...
@@ -101,7 +101,7 @@ UPM_SERVICE_ACCOUNT_KEY_SECRET=...
 
 Build and pack unsigned artifacts before invoking the local token wrapper: it disables all npm lifecycle scripts, removes publication/signing secrets from the npm child environment, and cleans its temporary userconfig on normal success and failure. Use `pnpm ts:build`, `pnpm js:standalone:build`, and `npm pack` in the selected package before publishing its tarball.
 
-The Unity service account must have the `Package Manager Package Signer` role for the selected Unity Cloud organization when using signed publication. Use the checked-in helpers so npm publication uses a temporary npm userconfig, and signed Unity publication signs the tarball before upload:
+Use the unsigned local helper only with prebuilt artifacts, or use the normal isolated GitHub release workflow. The signed commands below are retained as fail-closed compatibility entrypoints; they reject before credentials, UPM, archives or npm are accessed.
 
 ```sh
 pnpm unity:npm:ping
@@ -140,7 +140,7 @@ go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /
 
 Clients should call `/v1/projects/open` with a known `project_id` and then use project-relative `/v1/fs/*` or scope-relative `/v1/scoped/*` requests. Do not send arbitrary absolute paths as file-operation payloads.
 
-The daemon accepts `-token-file` or `CANONICALFS_DAEMON_TOKEN`, and requires at least 32 token characters. On Unix, token files must be owner-only; on Windows, restrict the file ACL to the daemon account. The `-token` flag has been removed so the capability cannot appear in process arguments. Loopback is reachable by other local processes and still requires an unpredictable bearer token.
+Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. The daemon accepts `-token-file` or `CANONICALFS_DAEMON_TOKEN`, and requires at least 32 token characters. The embedded RPC constructor enforces the same minimum and header safety policy. On Unix, token files must be owner-only. On Windows, the opened file must have a private DACL granting access only to the daemon account, SYSTEM or Administrators; other applicable grants and NULL DACLs are rejected. Provision a private empty file before writing a token. The `-token` flag has been removed so the capability cannot appear in process arguments. Loopback is reachable by other local processes and still requires an unpredictable bearer token.
 
 Non-loopback listeners require both `-tls-cert` and `-tls-key`. Allowed roots are opened once during trusted daemon bootstrap; requested descendants are opened relative to those handles. A moved allowed directory remains bound to its original handle. Registrations default to 128 retained roots, IDs are capped at 128 bytes, and idle leases expire after 30 minutes on the next request. Configure `-max-projects` and `-project-idle-timeout` if needed.
 
