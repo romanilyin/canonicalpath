@@ -2,7 +2,7 @@
 
 The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local helpers for unsigned or optional Unity-signed tarballs.
 
-Current full release plan: `docs/release-2026.10.10-1.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
+Current full release plan: `docs/release-2026.10.10-2.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.10.10-2
+
+- Reject malformed UTF-16 Git refs with `ERR_INVALID_COMPONENT`, preserving valid supplementary characters and existing directory encodings.
+- Verify the shared exact UTF-16 vectors in the installed Unity EditMode matrix.
+
 ## 2026.10.10-1
 
 - All bridge editor write commands now support dry-run only; non-dry-run calls throw until a root-confined executor is provided.

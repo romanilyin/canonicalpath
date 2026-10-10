@@ -11,7 +11,7 @@ Scope:
 - Provide shell entry points for common CanonicalFS calls.
 - Keep logic minimal: argument parsing + HTTP request forwarding.
 - No filesystem security logic; Go daemon remains the boundary.
-- Requires Bash, `curl`, and `python3` for JSON/base64 handling.
+- Requires Bash, `curl`, and `python3` for bounded transport and JSON/base64 handling. Install `canonicalfs_transport.py` alongside `canonicalfs.sh`.
 
 Local checks:
 
@@ -27,3 +27,5 @@ bash ./packages/bash-wrapper/canonicalfs.sh read-text project-1 safe/file.txt 10
 ```
 
 Supported commands: `health`, `caps`, `open-project`, `close-project`, `mkdir-all`, `write-text`, `read-text`, `stat`, `remove`, and `rename`.
+
+The local hard ceilings are 24 MiB of decoded response bytes and 30 seconds for the entire network request, including connection and body transfer. `CANONICALFS_MAX_RESPONSE_BYTES` and `CANONICALFS_TIMEOUT_SECONDS` may lower these limits but cannot raise or disable them. Fixed-length, chunked, compressed and error responses use the same byte boundary before JSON parsing. Redirects are rejected and response files are removed on errors or signals.

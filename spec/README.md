@@ -13,7 +13,7 @@ Rules:
 - Successful canonical path outputs use `/`, lowercase only the Windows drive letter, contain no NUL, and are lexically cleaned.
 - URI decoding happens exactly once. Encoded `/` and `\` are rejected when `uri.rejectEncodedSlash` is enabled.
 - WSL drive mapping is controlled by `options.wsl`; `/mnt/<drive>/...` is not treated as a universal truth unless that mapping is enabled.
-- Git ref directory encoding is `slug--shortHash`, where `shortHash` is the first 12 hex chars of `SHA-256(raw)`. The slug replaces runs outside `[A-Za-z0-9._-]` with `-` and trims leading/trailing `.`, `_`, and `-`.
+- Git ref directory encoding is `slug--shortHash`, where `shortHash` is the first 12 hex chars of `SHA-256(raw)` encoded as UTF-8. The slug replaces runs outside `[A-Za-z0-9._-]` with `-` and trims leading/trailing `.`, `_`, and `-`. UTF-16 ports reject unpaired surrogates with `ERR_INVALID_COMPONENT` before any replacement-based encoding. `testdata/git-ref-utf16-vectors.json` represents exact code units so JSON decoders cannot silently replace malformed test inputs; affected runtime gates and the Unity EditMode matrix consume it.
 - Every language target must declare at least one allocation-check plan before it can be tracked in the repo.
 
 Validation:

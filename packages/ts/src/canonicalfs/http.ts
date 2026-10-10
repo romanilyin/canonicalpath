@@ -1,7 +1,7 @@
 import { trimBoundaryCharacters } from "../canonicalpath/internal.js";
 import { Buffer } from "node:buffer";
 import type { CanonicalRelativePath } from "../canonicalpath/types.js";
-import { fsError } from "./errors.js";
+import { CanonicalFSError, fsError } from "./errors.js";
 import type { CanonicalFSDaemonCapabilities, CanonicalFSClient, FileStat } from "./types.js";
 
 interface TransportError {
@@ -31,17 +31,25 @@ interface CapsTransportResponse {
   error?: TransportError;
 }
 
-export type CanonicalFSFetch = (input: string, init: { method: "GET" | "POST"; headers: Record<string, string>; body?: string }) => Promise<Response>;
+export type CanonicalFSFetch = (input: string, init: { method: "GET" | "POST"; headers: Record<string, string>; body?: string; signal: AbortSignal; redirect: "error" }) => Promise<Response>;
+
+const MAX_RESPONSE_BYTES = 24 * 1024 * 1024;
+const TIMEOUT_MS = 30_000;
 
 export interface CanonicalFSHTTPClientOptions {
   capabilityToken: string;
   fetch?: CanonicalFSFetch;
+  /** May lower, but never disable or exceed, the local hard limits. */
+  maxResponseBytes?: number;
+  timeoutMs?: number;
 }
 
 export class CanonicalFSHTTPClient implements CanonicalFSClient {
   private readonly endpoint: string;
   private readonly capabilityToken: string;
   private readonly fetchImpl: CanonicalFSFetch;
+  private readonly maxResponseBytes: number;
+  private readonly timeoutMs: number;
 
   constructor(endpoint: string, options: CanonicalFSHTTPClientOptions) {
     const capabilityToken = options.capabilityToken.trim();
@@ -49,6 +57,8 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
     this.endpoint = trimBoundaryCharacters(endpoint, "/", false);
     this.capabilityToken = capabilityToken;
     this.fetchImpl = options.fetch ?? fetch;
+    this.maxResponseBytes = boundedOption(options.maxResponseBytes, MAX_RESPONSE_BYTES, "maxResponseBytes");
+    this.timeoutMs = boundedOption(options.timeoutMs, TIMEOUT_MS, "timeoutMs");
   }
 
   async openProject(projectId: string, hostRoot: string): Promise<void> {
@@ -107,20 +117,73 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
   private async request<T extends { error?: TransportError }>(method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<T> {
     const headers: Record<string, string> = { authorization: `Bearer ${this.capabilityToken}` };
     if (body) headers["content-type"] = "application/json";
-    const response = await this.fetchImpl(`${this.endpoint}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+    const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        void reader?.cancel().catch(() => {});
+        reject(fsError("ERR_DAEMON", "daemon request timed out"));
+      }, this.timeoutMs);
     });
-    let payload: T;
     try {
-      payload = (await response.json()) as T;
-    } catch {
-      throw fsError("ERR_DAEMON", "daemon response is not valid JSON");
+      return await Promise.race([deadline, (async () => {
+        const response = await this.fetchImpl(`${this.endpoint}${path}`, {
+          method, headers, body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal, redirect: "error",
+        });
+        if (controller.signal.aborted) {
+          void response.body?.cancel().catch(() => {});
+          throw fsError("ERR_DAEMON", "daemon request timed out");
+        }
+        const length = response.headers.get("content-length");
+        if (length && /^\d+$/.test(length) && Number(length) > this.maxResponseBytes) {
+          void response.body?.cancel().catch(() => {});
+          controller.abort();
+          throw fsError("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds local byte limit");
+        }
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        reader = response.body?.getReader();
+        try {
+          while (reader) {
+            const chunk = await reader.read();
+            if (controller.signal.aborted) throw fsError("ERR_DAEMON", "daemon request timed out");
+            if (chunk.done) break;
+            size += chunk.value.byteLength;
+            if (size > this.maxResponseBytes) {
+              void reader.cancel().catch(() => {});
+              controller.abort();
+              throw fsError("ERR_RESPONSE_TOO_LARGE", "daemon response exceeds local byte limit");
+            }
+            chunks.push(chunk.value);
+          }
+        } finally { reader?.releaseLock(); }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        let payload: T;
+        try {
+          payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as T;
+          if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("invalid envelope");
+        } catch { throw fsError("ERR_DAEMON", "daemon response is not valid JSON"); }
+        if (!response.ok || payload.error) throwTransportError(payload.error ?? { code: "ERR_DAEMON", message: response.statusText });
+        return payload;
+      })()]);
+    } catch (error) {
+      if (error instanceof CanonicalFSError) throw error;
+      throw fsError("ERR_DAEMON", "daemon transport request failed");
+    } finally {
+      clearTimeout(timer);
     }
-    if (!response.ok || payload.error) throwTransportError(payload.error ?? { code: "ERR_DAEMON", message: response.statusText });
-    return payload;
   }
+}
+
+function boundedOption(value: number | undefined, maximum: number, name: string): number {
+  if (value === undefined) return maximum;
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) throw fsError("ERR_DAEMON", `${name} must be an integer between 1 and ${maximum}`);
+  return value;
 }
 
 function throwTransportError(error: TransportError): never {
