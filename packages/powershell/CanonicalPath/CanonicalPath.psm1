@@ -132,7 +132,7 @@ function Split-CanonicalRoot {
     }
     if ($Value.StartsWith('//')) {
         $parts = $Value.Substring(2).Split('/')
-        if ($parts.Length -lt 2 -or $parts[0] -eq '' -or $parts[1] -eq '') {
+        if ($parts.Length -lt 2 -or $parts[0].Length -eq 0 -or $parts[1].Length -eq 0) {
             throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'UNC path requires server and share')
         }
         $prefix = '//' + $parts[0] + '/' + $parts[1]
@@ -149,38 +149,38 @@ function Split-CanonicalRoot {
 function ConvertTo-CleanCanonicalPath {
     param([Parameter(Mandatory = $true)][string] $Value)
 
-    if ($Value -eq '') { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
+    if ($Value.Length -eq 0) { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
     $split = Split-CanonicalRoot $Value
     $prefix = [string] $split.Prefix
     $parts = New-Object System.Collections.ArrayList
 
     foreach ($part in ([string] $split.Rest).Split('/')) {
-        if ($part -eq '' -or $part -eq '.') { continue }
-        if ($part -eq '..') {
+        if ($part.Length -eq 0 -or $part.Equals('.', [StringComparison]::Ordinal)) { continue }
+        if ($part.Equals('..', [StringComparison]::Ordinal)) {
             if ($parts.Count -gt 0) {
                 [void] $parts.RemoveAt($parts.Count - 1)
                 continue
             }
-            if ($prefix -ne '') { continue }
+            if ($prefix.Length -ne 0) { continue }
             throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'relative path escapes above its root')
         }
         [void] $parts.Add($part)
     }
 
     $joined = [string]::Join('/', [string[]] $parts.ToArray([string]))
-    if ($prefix -eq '') {
-        if ($joined -eq '') { return '.' }
+    if ($prefix.Length -eq 0) {
+        if ($joined.Length -eq 0) { return '.' }
         return $joined
     }
-    if ($prefix -eq '/') {
-        if ($joined -eq '') { return '/' }
+    if ($prefix.Equals('/', [StringComparison]::Ordinal)) {
+        if ($joined.Length -eq 0) { return '/' }
         return '/' + $joined
     }
     if ($prefix.EndsWith('/')) {
-        if ($joined -eq '') { return $prefix }
+        if ($joined.Length -eq 0) { return $prefix }
         return $prefix + $joined
     }
-    if ($joined -eq '') { return $prefix }
+    if ($joined.Length -eq 0) { return $prefix }
     return $prefix + '/' + $joined
 }
 
@@ -209,7 +209,7 @@ function Test-ReservedDeviceName {
 
     try { $rest = [string] (Split-CanonicalRoot $Value).Rest } catch { return $false }
     foreach ($part in $rest.Split('/')) {
-        if ($part -eq '' -or $part -eq '.' -or $part -eq '..') { continue }
+        if ($part.Length -eq 0 -or $part.Equals('.', [StringComparison]::Ordinal) -or $part.Equals('..', [StringComparison]::Ordinal)) { continue }
         $base = ($part -split '[.:]', 2)[0]
         if (Test-ReservedDeviceBase $base) { return $true }
     }
@@ -224,6 +224,20 @@ function Test-EncodedSeparator {
 function Test-InvalidPercentEncoding {
     param([string] $Value)
     return $Value -match '%($|[^0-9A-Fa-f]|.[^0-9A-Fa-f])'
+}
+
+function ConvertFrom-UriText {
+    param([string] $Value)
+    $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    $inputBytes = $utf8.GetBytes($Value)
+    $output = New-Object 'System.Collections.Generic.List[byte]'
+    for ($i = 0; $i -lt $inputBytes.Length; $i++) {
+        if ($inputBytes[$i] -ne 37) { $output.Add($inputBytes[$i]); continue }
+        $pair = [Text.Encoding]::ASCII.GetString($inputBytes, $i + 1, 2)
+        $output.Add([Convert]::ToByte($pair, 16))
+        $i += 2
+    }
+    return $utf8.GetString($output.ToArray())
 }
 
 function ConvertFrom-FileUriPath {
@@ -249,14 +263,14 @@ function ConvertFrom-FileUriPath {
     $authority = $rest.Substring(0, $slash)
     $pathPart = $rest.Substring($slash)
     try {
-        $decoded = [System.Uri]::UnescapeDataString($pathPart)
-        $decodedAuthority = [System.Uri]::UnescapeDataString($authority)
+        $decoded = ConvertFrom-UriText $pathPart
+        $decodedAuthority = ConvertFrom-UriText $authority
     } catch {
         throw (New-CanonicalPathError 'ERR_INVALID_PERCENT_ENCODING' 'URI percent encoding is invalid')
     }
     if ($decoded.IndexOf([char]0) -ge 0 -or $decodedAuthority.IndexOf([char]0) -ge 0) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'decoded URI contains NUL') }
-    if ($decoded -eq '') { throw (New-CanonicalPathError 'ERR_INVALID_URI' 'URI path is empty') }
-    if ($Prefix -eq 'file://' -and $decodedAuthority -ne '' -and $decodedAuthority.ToLowerInvariant() -ne 'localhost') {
+    if ($decoded.Length -eq 0) { throw (New-CanonicalPathError 'ERR_INVALID_URI' 'URI path is empty') }
+    if ($Prefix -eq 'file://' -and $decodedAuthority.Length -ne 0 -and -not $decodedAuthority.Equals('localhost', [StringComparison]::OrdinalIgnoreCase)) {
         return '//' + $decodedAuthority + $decoded
     }
     return $decoded
@@ -318,7 +332,7 @@ function ConvertTo-CanonicalPath {
 
     $value = $Path
     if ([bool] (Get-OptionValue $Options 'trimOuterWhitespace' $false)) { $value = $value.Trim() }
-    if ($value -eq '') { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
+    if ($value.Length -eq 0) { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
     if ($value.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
 
     $sourceHost = [string] (Get-OptionValue $Options 'sourceHost' '')
@@ -363,12 +377,12 @@ function Get-CanonicalParts {
 
     if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
     $split = Split-CanonicalRoot $Path
-    if ([string] $split.Prefix -eq '') { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'path must be canonical absolute') }
+    if (([string] $split.Prefix).Length -eq 0) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'path must be canonical absolute') }
 
     $parts = @()
-    if ([string] $split.Rest -ne '') { $parts = ([string] $split.Rest).Split('/') | Where-Object { $_ -ne '' } }
+    if (([string] $split.Rest).Length -ne 0) { $parts = ([string] $split.Rest).Split('/') | Where-Object { $_.Length -ne 0 } }
     foreach ($part in $parts) {
-        if ($part -eq '.' -or $part -eq '..') { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'path is not lexically cleaned') }
+        if ($part.Equals('.', [StringComparison]::Ordinal) -or $part.Equals('..', [StringComparison]::Ordinal)) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'path is not lexically cleaned') }
     }
     return @{ Prefix = [string] $split.Prefix; Parts = @($parts) }
 }
@@ -382,11 +396,11 @@ function Get-CanonicalRelativePath {
 
     $rootParts = Get-CanonicalParts $Root
     $targetParts = Get-CanonicalParts $Target
-    if ($rootParts.Prefix -ne $targetParts.Prefix -or $targetParts.Parts.Count -lt $rootParts.Parts.Count) {
+    if (-not $rootParts.Prefix.Equals($targetParts.Prefix, [StringComparison]::Ordinal) -or $targetParts.Parts.Count -lt $rootParts.Parts.Count) {
         throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root')
     }
     for ($index = 0; $index -lt $rootParts.Parts.Count; $index++) {
-        if ($targetParts.Parts[$index] -ne $rootParts.Parts[$index]) {
+        if (-not $targetParts.Parts[$index].Equals($rootParts.Parts[$index], [StringComparison]::Ordinal)) {
             throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root')
         }
     }
@@ -397,8 +411,8 @@ function Get-CanonicalRelativePath {
 function ConvertTo-CanonicalRelativePath {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Path)
 
-    if ($Path -eq '') { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'relative path is empty') }
-    if ($Path -eq '.') { return '.' }
+    if ($Path.Length -eq 0) { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'relative path is empty') }
+    if ($Path.Equals('.', [StringComparison]::Ordinal)) { return '.' }
     if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'relative path contains NUL') }
     if (Test-AbsolutePathLike $Path) { throw (New-CanonicalPathError 'ERR_ABSOLUTE_PATH' 'relative path must not be absolute') }
     if (Test-DriveRelative $Path) { throw (New-CanonicalPathError 'ERR_DRIVE_RELATIVE_PATH' 'drive-relative path is not allowed') }
@@ -406,8 +420,8 @@ function ConvertTo-CanonicalRelativePath {
 
     $parts = New-Object System.Collections.ArrayList
     foreach ($part in $Path.Split('/')) {
-        if ($part -eq '' -or $part -eq '.') { continue }
-        if ($part -eq '..') {
+        if ($part.Length -eq 0 -or $part.Equals('.', [StringComparison]::Ordinal)) { continue }
+        if ($part.Equals('..', [StringComparison]::Ordinal)) {
             if ($parts.Count -eq 0) { throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'relative path escapes root') }
             [void] $parts.RemoveAt($parts.Count - 1)
             continue
@@ -427,7 +441,7 @@ function Join-CanonicalPath {
 
     $cleanRelative = ConvertTo-CanonicalRelativePath $Relative
     if ($Root.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'root contains NUL') }
-    if ($cleanRelative -eq '.') { return $Root }
+    if ($cleanRelative.Equals('.', [StringComparison]::Ordinal)) { return $Root }
     if ($Root -eq '/' -or $Root.EndsWith('/')) { return $Root + $cleanRelative }
     return $Root + '/' + $cleanRelative
 }
@@ -466,7 +480,7 @@ function ConvertTo-CanonicalWSLPath {
     $mountRoot = $mountRoot -replace '/+$', ''
     $drive = $Path.Substring(0, 1).ToLowerInvariant()
     $rest = $Path.Substring(3)
-    if ($rest -eq '') { return $mountRoot + '/' + $drive }
+    if ($rest.Length -eq 0) { return $mountRoot + '/' + $drive }
     return $mountRoot + '/' + $drive + '/' + $rest
 }
 
@@ -502,11 +516,11 @@ function ConvertTo-CanonicalComponent {
         [Parameter(Mandatory = $true)][ValidateSet('portable', 'win32', 'posix')][string] $Profile
     )
 
-    if ($Name -eq '') { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'component is empty') }
+    if ($Name.Length -eq 0) { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'component is empty') }
     if ($Name.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'component contains NUL') }
     $value = $Name -replace '[\\/:\t\n\r]+', '-'
     $value = $value -replace '^[ ._-]+|[ ._-]+$', ''
-    if ($value -eq '') { $value = 'component' }
+    if ($value.Length -eq 0) { $value = 'component' }
     if ($Profile -eq 'win32') { $value = Escape-ReservedWin32Component $value }
     return $value
 }

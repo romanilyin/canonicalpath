@@ -1,10 +1,23 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BestEffortCanonicalFSRoot, canonicalFSLimitations, fsErrorCode } from "../src/canonicalfs";
 
 describe("canonicalfs TypeScript best-effort behavior", () => {
+  it.each(["", ".", "child/..", "././"])("preserves the configured root for destructive dot input %j", async (rel) => {
+    const hostRoot = await mkdtemp(path.join(os.tmpdir(), "canonicalfs-ts-root-"));
+    const root = new BestEffortCanonicalFSRoot("project-1", hostRoot);
+    try {
+      await root.writeFile("sentinel.txt", new TextEncoder().encode("preserved"));
+      await expectRejectCode(root.remove(rel), "ERR_OUTSIDE_ROOT");
+      await expectRejectCode(root.rename(rel, "renamed"), "ERR_OUTSIDE_ROOT");
+      await expectRejectCode(root.rename("sentinel.txt", rel), "ERR_OUTSIDE_ROOT");
+      await expect(readText(root, "sentinel.txt")).resolves.toBe("preserved");
+      await expect(root.stat(".")).resolves.toMatchObject({ isDirectory: true });
+    } finally { await rm(hostRoot, { recursive: true, force: true }); }
+  });
+
   it("reads, writes, stats, renames, and removes files under hostRoot", async () => {
     const hostRoot = await mkdtemp(path.join(os.tmpdir(), "canonicalfs-ts-"));
     const root = new BestEffortCanonicalFSRoot("project-1", hostRoot);

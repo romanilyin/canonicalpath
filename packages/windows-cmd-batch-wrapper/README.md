@@ -9,7 +9,6 @@ Use it when CMD/BAT automation needs to call CanonicalFS through the Go daemon. 
 ## Requirements
 
 - `cmd.exe`
-- `curl.exe`
 - `powershell.exe`
 - A running `canonicalfs-daemon`
 
@@ -22,21 +21,37 @@ set CANONICALFS_DAEMON_URL=http://127.0.0.1:8765
 set CANONICALFS_DAEMON_TOKEN=<capability-token>
 ```
 
-Then call the wrapper:
+Create a UTF-8 JSON request file (for example, `request.json` containing `{"op":"health"}`), then redirect it to the fixed wrapper:
 
 ```cmd
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd health
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd caps
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd open-project my-project C:\Work\Project
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd mkdir-all my-project safe
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd write-text my-project safe\file.txt "hello from cmd"
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd read-text my-project safe\file.txt 128
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd stat my-project safe\file.txt
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd remove my-project safe\file.txt
-packages\windows-cmd-batch-wrapper\canonicalfs.cmd close-project my-project
+packages\windows-cmd-batch-wrapper\canonicalfs.cmd < request.json
 ```
 
-`canonicalpath.cmd` is a compatibility forwarder to `canonicalfs.cmd` for the current transport wrapper surface.
+The wrapper accepts at most 1 MiB of UTF-8 JSON. Generate files with a JSON serializer; request values must never be assembled into a CMD command, `CALL`, `SET`, or `echo` expression. Positional arguments are no longer processed as of `2026.10.10-1`.
+
+| Operation | JSON request fields |
+| --- | --- |
+| `health`, `caps` | `op` |
+| `open-project` | `op`, `project_id`, `host_root` |
+| `close-project` | `op`, `project_id` |
+| `mkdir-all`, `remove`, `stat` | `op`, `project_id`, `path` |
+| `rename` | `op`, `project_id`, `path`, `target` |
+| `read-text` | `op`, `project_id`, `path`, optional `max_bytes` |
+| `write-text` | `op`, `project_id`, `path`, `text` |
+
+For example:
+
+```json
+{"op":"write-text","project_id":"my-project","path":"safe/file.txt","text":"hello from cmd"}
+```
+
+`canonicalpath.cmd` accepts the same JSON stdin interface. Both shims call the same fixed `canonicalfs.ps1` script. PowerShell callers can invoke that script directly with named parameters and variables:
+
+```powershell
+& ./packages/windows-cmd-batch-wrapper/canonicalfs.ps1 -Operation write-text -ProjectId my-project -Path safe/file.txt -Text $text
+```
+
+Requests have 30-second HTTP timeouts, reject redirects, and bound responses to 24 MiB. The bearer token is read from the environment and never forwarded in process arguments.
 
 ## Checks
 

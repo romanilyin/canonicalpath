@@ -255,7 +255,25 @@ class CanonicalPath {
       bytes.addByte((high << 4) | low);
       index += 3;
     }
-    return bytes.getBytes().toString();
+    var decoded = bytes.getBytes();
+    var i = 0;
+    while (i < decoded.length) {
+      var first = decoded.get(i++);
+      if (first < 0x80) continue;
+      var count: Int; var code: Int; var minimum: Int;
+      if (first >= 0xc2 && first <= 0xdf) { count = 1; code = first & 0x1f; minimum = 0x80; }
+      else if (first >= 0xe0 && first <= 0xef) { count = 2; code = first & 0x0f; minimum = 0x800; }
+      else if (first >= 0xf0 && first <= 0xf4) { count = 3; code = first & 0x07; minimum = 0x10000; }
+      else throw pathError("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8");
+      if (decoded.length - i < count) throw pathError("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8");
+      for (_ in 0...count) {
+        var next = decoded.get(i++);
+        if ((next & 0xc0) != 0x80) throw pathError("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8");
+        code = (code << 6) | (next & 0x3f);
+      }
+      if (code < minimum || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) throw pathError("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8");
+    }
+    return decoded.toString();
   }
 
   private static function hasEncodedSeparator(value: String): Bool {

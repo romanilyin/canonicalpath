@@ -73,6 +73,7 @@ type serverLimits struct {
 }
 
 type request struct {
+	scopedPath string
 	ProjectID  string `json:"project_id"`
 	HostRoot   string `json:"host_root,omitempty"`
 	Path       string `json:"path,omitempty"`
@@ -408,6 +409,7 @@ func (s *Server) handleScopedReadFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer root.Close()
 	maxBytes, err := s.readLimit(req.MaxBytes)
 	if err != nil {
 		writeHTTPError(w, http.StatusBadRequest, string(canonicalfs.ErrReadLimitExceeded), err.Error())
@@ -426,6 +428,7 @@ func (s *Server) handleScopedWriteFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer root.Close()
 	data, err := base64.StdEncoding.DecodeString(req.DataBase64)
 	if err != nil {
 		writeHTTPError(w, http.StatusBadRequest, "ERR_DAEMON", "data_base64 is invalid")
@@ -439,16 +442,17 @@ func (s *Server) handleScopedWriteFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScopedStat(w http.ResponseWriter, r *http.Request) {
-	_, root, rel, ok := s.decodeScopedRootRequest(w, r, "read")
+	req, root, rel, ok := s.decodeScopedRootRequest(w, r, "read")
 	if !ok {
 		return
 	}
+	defer root.Close()
 	info, err := root.Stat(rel)
 	if err != nil {
 		writeCanonicalError(w, err)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, response{Stat: &statResponse{Path: rel, Size: info.Size(), IsDirectory: info.IsDir()}})
+	s.writeJSON(w, http.StatusOK, response{Stat: &statResponse{Path: req.scopedPath, Size: info.Size(), IsDirectory: info.IsDir()}})
 }
 
 func (s *Server) handleScopedMkdirAll(w http.ResponseWriter, r *http.Request) {
@@ -456,6 +460,7 @@ func (s *Server) handleScopedMkdirAll(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer root.Close()
 	if err := root.MkdirAll(rel, 0o755); err != nil {
 		writeCanonicalError(w, err)
 		return
@@ -468,6 +473,7 @@ func (s *Server) handleScopedRemove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer root.Close()
 	if err := root.Remove(rel); err != nil {
 		writeCanonicalError(w, err)
 		return
@@ -510,7 +516,37 @@ func (s *Server) decodeScopedRootRequest(w http.ResponseWriter, r *http.Request,
 		writeHTTPError(w, http.StatusBadRequest, "ERR_UNSUPPORTED_OPERATION", "operation is not allowed for scoped path")
 		return request{}, nil, "", false
 	}
-	return req, root, string(result.Path), true
+	anchor, suffix := scopedAnchor(result.Scope, req.Path)
+	if result.Scope == canonicalpath.UnityMCPPathScopePackageManifest && requiredOperation != "read" && r.URL.Path != "/v1/scoped/writeFile" {
+		writeHTTPError(w, http.StatusBadRequest, "ERR_UNSUPPORTED_OPERATION", "package manifest scope accepts file read, write and stat only")
+		return request{}, nil, "", false
+	}
+	scopedRoot, err := root.OpenScopedRoot(anchor, requiredOperation == "write")
+	if err != nil {
+		writeCanonicalError(w, err)
+		return request{}, nil, "", false
+	}
+	req.scopedPath = string(result.Path)
+	return req, scopedRoot, suffix, true
+}
+
+// Lexical normalization has already validated exact scope components.
+// Filesystem resolution must use only the suffix below this dedicated handle.
+func scopedAnchor(scope canonicalpath.UnityMCPPathScope, raw string) (string, string) {
+	first, rest, found := strings.Cut(raw, "/")
+	if !found {
+		rest = "."
+	}
+	switch scope {
+	case canonicalpath.UnityMCPPathScopeKnowledge:
+		return "Assets/UnityMcpKnowledge", raw
+	case canonicalpath.UnityMCPPathScopeArtifact:
+		return "Library/SGGUnityMcp/" + first, rest
+	case canonicalpath.UnityMCPPathScopeTempSession:
+		return "Temp/SGGUnityMcp/" + first, rest
+	default: // unity_asset or exact package_manifest file
+		return first, rest
+	}
 }
 
 // openAuthorizedRoot compares only lexical components, then opens through

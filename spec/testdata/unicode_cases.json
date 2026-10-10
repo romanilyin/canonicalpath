@@ -2,6 +2,33 @@
   "version": 1,
   "cases": [
     {
+      "id": "unicode-replacement-relative-preserved",
+      "operation": "normalize",
+      "raw": "\ufffd",
+      "options": { "sourceHost": "posix", "targetProfile": "portable" },
+      "expected": "\ufffd"
+    },
+    {
+      "id": "unicode-replacement-relative-root",
+      "operation": "relative",
+      "root": "/repo/\ufffd",
+      "target": "/repo/\ufffd/file.txt",
+      "expected": "file.txt"
+    },
+    {
+      "id": "unicode-replacement-root-distinct",
+      "operation": "relative",
+      "root": "/repo/\ufffd",
+      "target": "/repo/file.txt",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unicode-replacement-wsl-preserved",
+      "operation": "to-wsl",
+      "raw": "c:/\ufffd",
+      "expected": "/mnt/c/\ufffd"
+    },
+    {
       "id": "unicode-preserved-nfc",
       "operation": "normalize",
       "raw": "/repo/caf\u00e9.txt",

@@ -53,7 +53,7 @@ $failures = New-Object System.Collections.ArrayList
 $count = 0
 
 foreach ($file in $files) {
-    $vectors = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+    $vectors = Get-Content -LiteralPath $file.FullName -Encoding UTF8 -Raw | ConvertFrom-Json
     foreach ($case in $vectors.cases) {
         $count++
         $status = 'ok'

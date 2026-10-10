@@ -246,6 +246,33 @@ static func _percent_decode(value: String) -> Dictionary:
             return _err("ERR_NUL_BYTE", "decoded URI contains NUL")
         bytes.append((high << 4) | low)
         index += 3
+    var i := 0
+    while i < bytes.size():
+        var first := bytes[i]
+        i += 1
+        if first < 0x80:
+            continue
+        var count: int
+        var code: int
+        var minimum: int
+        if first >= 0xc2 and first <= 0xdf:
+            count = 1; code = first & 0x1f; minimum = 0x80
+        elif first >= 0xe0 and first <= 0xef:
+            count = 2; code = first & 0x0f; minimum = 0x800
+        elif first >= 0xf0 and first <= 0xf4:
+            count = 3; code = first & 0x07; minimum = 0x10000
+        else:
+            return _err("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8")
+        if bytes.size() - i < count:
+            return _err("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8")
+        for _unused in range(count):
+            var next := bytes[i]
+            i += 1
+            if (next & 0xc0) != 0x80:
+                return _err("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8")
+            code = (code << 6) | (next & 0x3f)
+        if code < minimum or code > 0x10ffff or (code >= 0xd800 and code <= 0xdfff):
+            return _err("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8")
     return _ok(bytes.get_string_from_utf8())
 
 

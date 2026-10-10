@@ -774,8 +774,8 @@ namespace CanonicalPath
             {
                 ValidatePercentEncoding(pathPart);
                 ValidatePercentEncoding(authority);
-                string decoded = Uri.UnescapeDataString(pathPart);
-                string decodedAuthority = Uri.UnescapeDataString(authority);
+                string decoded = DecodeUriText(pathPart);
+                string decodedAuthority = DecodeUriText(authority);
                 if (decoded.IndexOf('\0') >= 0 || decodedAuthority.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "decoded URI contains NUL");
                 if (decoded.Length == 0) throw PathError("ERR_INVALID_URI", "URI path is empty");
                 if (prefix == "file://" && decodedAuthority.Length != 0 && !string.Equals(decodedAuthority, "localhost", StringComparison.OrdinalIgnoreCase))
@@ -792,6 +792,20 @@ namespace CanonicalPath
             {
                 throw PathError("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is invalid");
             }
+        }
+
+        private static string DecodeUriText(string value)
+        {
+            var utf8 = new UTF8Encoding(false, true);
+            byte[] input = utf8.GetBytes(value);
+            var output = new List<byte>(input.Length);
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (input[i] != (byte)'%') { output.Add(input[i]); continue; }
+                output.Add(Convert.ToByte(Encoding.ASCII.GetString(input, i + 1, 2), 16));
+                i += 2;
+            }
+            return utf8.GetString(output.ToArray());
         }
 
         private static void ValidatePercentEncoding(string value)

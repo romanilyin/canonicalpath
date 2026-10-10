@@ -5,6 +5,8 @@ import "os"
 // Root holds a root-bound filesystem handle.
 type Root struct {
 	root *os.Root
+	// Scoped file operations reject a final link as well as confining resolution.
+	rejectFileLinks bool
 }
 
 // OpenOptions controls root-bound OpenFile and WriteFile behavior.

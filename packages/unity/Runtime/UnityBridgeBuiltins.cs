@@ -174,8 +174,11 @@ namespace CanonicalPath
 
             string safeFileName = string.IsNullOrEmpty(generatedFileName) ? string.Empty : paths.MakeSafeFileName(generatedFileName, 128);
             bool performed = false;
-            string detail = "Write command validated by PathGuard; connect UnityEditor implementation to perform it.";
-            if (!dryRun) performed = TryPerformUnityEditorWrite(command, cleanUnityPath, out detail);
+            string detail = "Dry-run validated by PathGuard; editor effects require a root-confined executor.";
+            // UnityEditor APIs accept a pathname, not a root-bound handle. A
+            // check followed by SaveScene/ImportAsset cannot prevent link swaps.
+            // Until a confined editor executor exists, non-dry-run requests fail closed.
+            if (!dryRun) throw new NotSupportedException("Unity editor effects require a root-confined executor. The built-in bridge supports dry-run validation only.");
             return new UnityBridgeWriteResult
             {
                 Ok = true,
@@ -216,35 +219,5 @@ namespace CanonicalPath
             return command != "assets.refresh";
         }
 
-        private static bool TryPerformUnityEditorWrite(string command, string cleanUnityPath, out string detail)
-        {
-#if UNITY_EDITOR
-            if (command == "assets.refresh")
-            {
-                UnityEditor.AssetDatabase.Refresh();
-                detail = "AssetDatabase.Refresh executed.";
-                return true;
-            }
-            if (command == "asset.import")
-            {
-                UnityEditor.AssetDatabase.ImportAsset(cleanUnityPath);
-                detail = "AssetDatabase.ImportAsset executed.";
-                return true;
-            }
-            if (command == "scene.save")
-            {
-                UnityEngine.SceneManagement.Scene scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-                if (!scene.IsValid()) throw new InvalidOperationException("No active scene is available to save.");
-                if (!UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene, cleanUnityPath)) throw new InvalidOperationException("Unity failed to save the active scene.");
-                detail = "EditorSceneManager.SaveScene executed.";
-                return true;
-            }
-            detail = "Command validated; prefab/module creation requires a bridge-specific implementation.";
-            return false;
-#else
-            detail = "Command validated; UnityEditor write execution is available only inside the Unity Editor.";
-            return false;
-#endif
-        }
     }
 }

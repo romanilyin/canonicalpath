@@ -155,6 +155,27 @@ static int cp_hex_value(char value) {
   return -1;
 }
 
+static int cp_valid_utf8(const char *value, size_t len) {
+  size_t i = 0;
+  while (i < len) {
+    unsigned int first = (unsigned char)value[i++];
+    if (first < 0x80) continue;
+    unsigned int count, code, minimum;
+    if (first >= 0xc2 && first <= 0xdf) { count = 1; code = first & 0x1f; minimum = 0x80; }
+    else if (first >= 0xe0 && first <= 0xef) { count = 2; code = first & 0x0f; minimum = 0x800; }
+    else if (first >= 0xf0 && first <= 0xf4) { count = 3; code = first & 0x07; minimum = 0x10000; }
+    else return 0;
+    if (len - i < count) return 0;
+    while (count-- > 0) {
+      unsigned int next = (unsigned char)value[i++];
+      if ((next & 0xc0) != 0x80) return 0;
+      code = (code << 6) | (next & 0x3f);
+    }
+    if (code < minimum || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return 0;
+  }
+  return 1;
+}
+
 static const char *cp_percent_decode(const char *value, size_t len, cp_string *out) {
   char *result = (char *)malloc(len + 1);
   if (result == NULL) abort();
@@ -179,6 +200,7 @@ static const char *cp_percent_decode(const char *value, size_t len, cp_string *o
     read += 2;
   }
   result[write] = '\0';
+  if (!cp_valid_utf8(result, write)) { free(result); return "ERR_INVALID_PERCENT_ENCODING"; }
   out->data = result;
   out->len = write;
   return NULL;

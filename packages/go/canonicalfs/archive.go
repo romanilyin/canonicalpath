@@ -56,7 +56,7 @@ func (r *Root) ExtractZip(zipRel string, destRel string) error {
 }
 
 // ExtractZipWithLimits confines all members to the opened destination. Existing
-// destination symlinks and non-regular archive entries are rejected. On error,
+// destination symlinks, special input files and non-regular archive entries are rejected. On error,
 // earlier complete entries may remain; the incomplete output file is removed.
 func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string, limits ZipLimits) error {
 	limits, err := defaultZipLimits(limits)
@@ -73,7 +73,10 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 	if err != nil {
 		return err
 	}
-	archiveFile, err := r.Open(zipClean)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	archiveFile, err := r.openRegularFile(zipClean, os.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}
@@ -165,6 +168,27 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 // openZipDestination walks through pinned directory handles and rejects
 // pre-existing symlinks. Each open remains confined to its current parent.
 func (r *Root) openZipDestination(rel string) (*Root, error) {
+	return r.openPinnedDirectory(rel, true, ErrArchiveTraversal)
+}
+
+// OpenScopedRoot pins an exact scope anchor, rejecting links and replacement
+// races in every component. The returned handle must be closed by the caller.
+func (r *Root) OpenScopedRoot(rel string, create bool) (*Root, error) {
+	clean, err := cleanRelative(rel)
+	if err != nil {
+		return nil, err
+	}
+	if clean == "." {
+		return nil, newError(ErrOutsideRoot, "scope must be narrower than the project root")
+	}
+	child, err := r.openPinnedDirectory(clean, create, ErrSymlinkEscape)
+	if err == nil {
+		child.rejectFileLinks = true
+	}
+	return child, err
+}
+
+func (r *Root) openPinnedDirectory(rel string, create bool, code ErrorCode) (*Root, error) {
 	current, err := r.OpenRoot(".")
 	if err != nil {
 		return nil, err
@@ -174,14 +198,16 @@ func (r *Root) openZipDestination(rel string) (*Root, error) {
 	}
 	for _, part := range strings.Split(rel, "/") {
 		handle, _ := current.rootHandle()
-		if err := handle.Mkdir(part, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
-			_ = current.Close()
-			return nil, err
+		if create {
+			if err := handle.Mkdir(part, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+				_ = current.Close()
+				return nil, err
+			}
 		}
 		info, err := handle.Lstat(part)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			_ = current.Close()
-			return nil, newError(ErrArchiveTraversal, "ZIP destination contains a link or non-directory")
+			return nil, newError(code, "directory anchor contains a link or non-directory")
 		}
 		child, err := current.OpenRoot(part)
 		_ = current.Close()
@@ -191,7 +217,7 @@ func (r *Root) openZipDestination(rel string) (*Root, error) {
 		opened, statErr := child.Stat(".")
 		if statErr != nil || !os.SameFile(info, opened) {
 			_ = child.Close()
-			return nil, newError(ErrArchiveTraversal, "ZIP destination changed during opening")
+			return nil, newError(code, "directory anchor changed during opening")
 		}
 		current = child
 	}

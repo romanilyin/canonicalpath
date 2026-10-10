@@ -102,6 +102,10 @@ namespace CanonicalPath.Tests
             Assert.Throws<ArgumentException>(() => bridge.ExecuteWriteCommand("scene.save", "Assets/../ProjectSettings/Tags.asset", null, true));
             Assert.Throws<ArgumentException>(() => bridge.ExecuteWriteCommand("unsupported", "Assets/App.cs", null, true));
             Assert.Throws<ArgumentException>(() => bridge.ExecuteWriteCommand("asset.import", null, null, true));
+            foreach (string command in new[] { "scene.save", "asset.import", "assets.refresh", "prefab.create", "module.create" })
+            {
+                Assert.Throws<NotSupportedException>(() => bridge.ExecuteWriteCommand(command, command == "assets.refresh" ? null : "Assets/Linked/target.unity", null, false));
+            }
         }
 
         [Test]

@@ -92,6 +92,7 @@ public static class CanonicalPathUnityEditModeRunner
             ManagedCanonicalPathMatchesRepresentativeSharedVectors();
             ManagedCanonicalPathRejectsSecurityCases();
             PathGuardMatchesBridgePayloadRules();
+            UnityBridgeEditorEffectsFailClosed();
             ScopedPathGuardMatchesRepresentativeScopeRules();
             ManagedTransportAddsBearerAuthAndParsesCapabilities();
             ManagedTransportSendsScopedPayloads();
@@ -133,6 +134,20 @@ public static class CanonicalPathUnityEditModeRunner
         Equal("CON-.txt", PathGuard.MakeSafeFileName("CON.txt", 128));
         Throws(delegate { PathGuard.NormalizeUnityPath("ProjectSettings/TagManager.asset"); });
         Throws(delegate { PathGuard.NormalizeUnityPath("Assets/../ProjectSettings/TagManager.asset"); });
+    }
+
+    private static void UnityBridgeEditorEffectsFailClosed()
+    {
+        UnityBridgeBuiltins bridge = new UnityBridgeBuiltins("project-1", new CanonicalPathValue("/repo/Game"), "Game", "test");
+        foreach (string command in new[] { "scene.save", "asset.import", "assets.refresh", "prefab.create", "module.create" })
+        {
+            bool rejected = false;
+            try { bridge.ExecuteWriteCommand(command, command == "assets.refresh" ? null : "Assets/Linked/target.unity", null, false); }
+            catch (NotSupportedException) { rejected = true; }
+            if (!rejected) throw new InvalidOperationException("unconfined editor effect was accepted: " + command);
+        }
+        UnityBridgeWriteResult dry = bridge.ExecuteWriteCommand("scene.save", "Assets/Safe.unity", null, true);
+        if (!dry.Ok || dry.Performed) throw new InvalidOperationException("dry-run behavior changed");
     }
 
     private static void ScopedPathGuardMatchesRepresentativeScopeRules()
