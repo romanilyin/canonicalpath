@@ -1,0 +1,12 @@
+# Security review remediation: 2026-10-10-4
+
+Scan `cd5b3324-a827-418c-bd48-8dc92263b902` reviewed main revision `989afa9cab7bdaba2490b98ea1618416fcb8aac9`. The SHA-256 digests of both canonical artifacts match the scan manifest. Both findings apply: one medium and one low, each requiring the deployment/integration conditions described in the report.
+
+| Finding | Resolution | Regression evidence |
+| --- | --- | --- |
+| `csf_5d2092def9ba8c10ef1f1a9a`: TypeScript client serializes the daemon bearer | Store the token in an ECMAScript `#private` field. JSON and Node custom inspection return only the client type, without caller-supplied transport state. Request construction continues to use the private credential. | JSON including nested clients, object spread, entries, property descriptors, ordinary/hidden Node inspection and inspection without custom hooks reveal no bearer; a live request still carries the correct Authorization header. |
+| `csf_42cbab352ef13cb8994e0adf`: Unix accepts attacker-owned private token files | Compare the opened file's UID with the daemon's effective UID before reading the same descriptor. Retain owner-only mode/type/size checks. Reject unavailable metadata and unsupported non-Windows ownership platforms. No implicit root or other-UID exception. | Descriptor metadata tests reject foreign and unknown ownership and group-readable same-owner files. A root-run integration test rejects an actual foreign-owned mode-0600 file, then accepts it after ownership is corrected to the daemon UID. |
+
+Migration: provision Unix token files as the service account with mode 0600; a root-owned file read by a non-root service must be changed to the service account. Keep the configured path and its parent directories controlled by trusted administrators/service accounts. This change validates the opened file rather than the parent namespace or symlink origin. Windows private-DACL validation remains in place. Unsupported ownership platforms can use the environment-token bootstrap option.
+
+If an older TypeScript client was serialized into logs/telemetry, or a deployment loaded attacker-controlled token bytes, rotate the bearer and remove exposed copies. Constructor options and custom transports can still contain or receive the bearer by design and must be treated as credentials. This is protection against accidental object diagnostics, not isolation from code already authorized to make requests through a client.

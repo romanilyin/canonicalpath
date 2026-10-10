@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-- No unreleased changes; the latest security remediation is included in 2026.10.10-3 below.
+- No unreleased changes; the latest security remediation is included in 2026.10.10-4 below.
+
+## 2026.10.10-4
+
+- Fixed both findings from scan `2026-10-10-4`; see `docs/security-review-2026-10-10-4.md`.
+- Kept the TypeScript daemon bearer in an ECMAScript private field; JSON and Node diagnostics expose only the client type, and generic enumeration cannot read the token.
+- Required Unix token files to belong to the daemon's effective UID, checking descriptor metadata before reading secret bytes; rejected unknown ownership and unsupported ownership platforms.
+- Added credential-disclosure regressions and Unix ownership tests, including a privileged daemon rejecting another user's mode-0600 file.
 
 ## 2026.10.10-3
 

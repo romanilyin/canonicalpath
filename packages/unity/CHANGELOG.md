@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.10-4
+
+- Published with the combined security release fixing TypeScript client credential exposure and Unix daemon token-file ownership validation. Unity runtime behavior remains as in 2026.10.10-3.
+
 ## 2026.10.10-3
 
 - Bound health and authenticated responses to 24 MiB decoded bytes and a 30-second total deadline; caller cancellation remains supported, and custom handlers cannot extend the deadline by ignoring cancellation.

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { Buffer } from "node:buffer";
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { CanonicalFSHTTPClient, fsErrorCode } from "../src/canonicalfs";
 import type { CanonicalRelativePath } from "../src/canonicalpath";
@@ -17,6 +18,28 @@ afterEach(async () => {
 });
 
 describe("canonicalfs HTTP client", () => {
+  it("keeps bearer credentials out of serialization and inspection while authenticating requests", async () => {
+    const token = "private-daemon-capability-for-regression-3847";
+    const requests: RequestRecord[] = [];
+    const endpoint = await startServer(requests, () => ({}));
+    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: ` ${token} ` });
+
+    expect(JSON.parse(JSON.stringify(client))).toEqual({ type: "CanonicalFSHTTPClient" });
+    for (const diagnostic of [
+      JSON.stringify({ client }),
+      JSON.stringify({ ...client }),
+      JSON.stringify(Object.entries(client)),
+      inspect(Object.getOwnPropertyDescriptors(client), { depth: null, showHidden: true }),
+      inspect(client),
+      inspect(client, { depth: null, showHidden: true }),
+      inspect(client, { depth: null, showHidden: true, customInspect: false }),
+    ]) expect(diagnostic).not.toContain(token);
+    expect(Reflect.ownKeys(client)).not.toContain("capabilityToken");
+
+    await client.openProject("project-1", "/tmp/project");
+    expect(requests[0]?.authorization).toBe(`Bearer ${token}`);
+  });
+
   it("sends daemon transport requests and decodes responses", async () => {
     const requests: RequestRecord[] = [];
     const endpoint = await startServer(requests, (url) => {

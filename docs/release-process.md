@@ -2,7 +2,7 @@
 
 The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. Published non-prerelease GitHub Releases can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local unsigned helpers. Optional local signed helpers fail closed until authentic signature verification exists.
 
-Current full release plan: `docs/release-2026.10.10-3.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
+Current full release plan: `docs/release-2026.10.10-4.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 
@@ -140,7 +140,7 @@ go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /
 
 Clients should call `/v1/projects/open` with a known `project_id` and then use project-relative `/v1/fs/*` or scope-relative `/v1/scoped/*` requests. Do not send arbitrary absolute paths as file-operation payloads.
 
-Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. The daemon accepts `-token-file` or `CANONICALFS_DAEMON_TOKEN`, and requires at least 32 token characters. The embedded RPC constructor enforces the same minimum and header safety policy. On Unix, token files must be owner-only. On Windows, the opened file must have a private DACL granting access only to the daemon account, SYSTEM or Administrators; other applicable grants and NULL DACLs are rejected. Provision a private empty file before writing a token. The `-token` flag has been removed so the capability cannot appear in process arguments. Loopback is reachable by other local processes and still requires an unpredictable bearer token.
+Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. The daemon accepts `-token-file` or `CANONICALFS_DAEMON_TOKEN`, and requires at least 32 token characters. The embedded RPC constructor enforces the same minimum and header safety policy. On Unix, token files must be owner-only and owned by the daemon's effective UID; unknown ownership is rejected. A root daemon does not trust a different UID merely because its file is mode 0600. Provision the token as the service account, and keep the configured path and parent directories under trusted administrator/service control. Ownership and mode are read from the same opened descriptor used for token bytes; parent-directory and symlink-origin checks are not performed. Other non-Windows platforms without supported ownership metadata reject token files; the environment-token option remains available. On Windows, the opened file must have a private DACL granting access only to the daemon account, SYSTEM or Administrators; other applicable grants and NULL DACLs are rejected. Provision a private empty file before writing a token. The `-token` flag has been removed so the capability cannot appear in process arguments. Loopback is reachable by other local processes and still requires an unpredictable bearer token.
 
 Non-loopback listeners require both `-tls-cert` and `-tls-key`. Allowed roots are opened once during trusted daemon bootstrap; requested descendants are opened relative to those handles. A moved allowed directory remains bound to its original handle. Registrations default to 128 retained roots, IDs are capped at 128 bytes, and idle leases expire after 30 minutes on the next request. Configure `-max-projects` and `-project-idle-timeout` if needed.
 

@@ -46,7 +46,7 @@ export interface CanonicalFSHTTPClientOptions {
 
 export class CanonicalFSHTTPClient implements CanonicalFSClient {
   private readonly endpoint: string;
-  private readonly capabilityToken: string;
+  readonly #capabilityToken: string;
   private readonly fetchImpl: CanonicalFSFetch;
   private readonly maxResponseBytes: number;
   private readonly timeoutMs: number;
@@ -55,10 +55,19 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
     const capabilityToken = options.capabilityToken.trim();
     if (capabilityToken === "") throw fsError("ERR_DAEMON", "capabilityToken is required");
     this.endpoint = trimBoundaryCharacters(endpoint, "/", false);
-    this.capabilityToken = capabilityToken;
+    this.#capabilityToken = capabilityToken;
     this.fetchImpl = options.fetch ?? fetch;
     this.maxResponseBytes = boundedOption(options.maxResponseBytes, MAX_RESPONSE_BYTES, "maxResponseBytes");
     this.timeoutMs = boundedOption(options.timeoutMs, TIMEOUT_MS, "timeoutMs");
+  }
+
+  /** Diagnostics expose no credentials or caller-supplied transport state. */
+  toJSON(): { type: string } {
+    return { type: "CanonicalFSHTTPClient" };
+  }
+
+  [Symbol.for("nodejs.util.inspect.custom")](): { type: string } {
+    return this.toJSON();
   }
 
   async openProject(projectId: string, hostRoot: string): Promise<void> {
@@ -115,7 +124,7 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
   }
 
   private async request<T extends { error?: TransportError }>(method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<T> {
-    const headers: Record<string, string> = { authorization: `Bearer ${this.capabilityToken}` };
+    const headers: Record<string, string> = { authorization: `Bearer ${this.#capabilityToken}` };
     if (body) headers["content-type"] = "application/json";
     const controller = new AbortController();
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;

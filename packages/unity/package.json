@@ -1,6 +1,6 @@
 {
   "name": "com.romanilyin.canonicalpath",
-  "version": "2026.10.10-3",
+  "version": "2026.10.10-4",
   "displayName": "CanonicalPath",
   "description": "CanonicalPath lexical identity, scoped PathGuard validation, and daemon transport for Unity editor/tooling integrations.",
   "license": "LicenseRef-Stinger-Royalty-Free-EULA-1.0",
