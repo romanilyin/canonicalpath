@@ -11,6 +11,7 @@ Use it when CMD/BAT automation needs to call CanonicalFS through the Go daemon. 
 - `cmd.exe`
 - `powershell.exe`
 - A running `canonicalfs-daemon`
+- The sibling `packages/powershell/CanonicalPath/DaemonClient.cs` transport source; preserve this directory layout when installing the wrapper.
 
 ## Usage
 
@@ -51,7 +52,7 @@ For example:
 & ./packages/windows-cmd-batch-wrapper/canonicalfs.ps1 -Operation write-text -ProjectId my-project -Path safe/file.txt -Text $text
 ```
 
-Requests have 30-second HTTP timeouts, reject redirects, and bound responses to 24 MiB. The bearer token is read from the environment and never forwarded in process arguments.
+Requests have a non-resettable 30-second total deadline covering connection, upload, headers and the entire body, reject redirects, and bound decoded responses to 24 MiB. `CANONICALFS_TIMEOUT_MILLISECONDS` and `CANONICALFS_MAX_RESPONSE_BYTES` can lower these limits. Both JSON stdin and named parameters enforce the 1 MiB serialized request ceiling before base64 allocation. The bearer token is read from the environment and never forwarded in process arguments.
 
 ## Checks
 

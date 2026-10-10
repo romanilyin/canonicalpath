@@ -11,7 +11,7 @@
 [Security](./SECURITY.md)
 
 <p>
-  <a href="./packages/go"><img src="./docs/assets/readme/cards/go.svg" alt="Go: Go 1.24+, Path+FS" height="62"></a>
+  <a href="./packages/go"><img src="./docs/assets/readme/cards/go.svg" alt="Go: Go 1.25+, Path+FS" height="62"></a>
   <a href="./packages/ts"><img src="./docs/assets/readme/cards/typescript.svg" alt="TypeScript: TS 6 and Node 22, Path+Client" height="62"></a>
   <a href="./packages/javascript-standalone"><img src="./docs/assets/readme/cards/javascript.svg" alt="JavaScript: ESM/browser, Path only" height="62"></a>
   <a href="./packages/unity"><img src="./docs/assets/readme/cards/unity.svg" alt="Unity: Unity 2022.3+, Path+Client" height="62"></a>
@@ -108,8 +108,8 @@ Use the root-bound filesystem layer:
 - JavaScript standalone npm package: `@romanilyin/canonicalpath-standalone`.
 - Go module: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
-- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.10.10-2`.
-- Release version: `2026.10.10-2`.
+- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.10.10-3`.
+- Release version: `2026.10.10-3`.
 - License model:
   - Repository default: `MIT`.
   - `@romanilyin/canonicalpath`: `MIT`.
@@ -123,7 +123,7 @@ The earlier full source release plan is tracked in `docs/release-2026.5.18-2.md`
 
 - Planned language targets and allocation-check gates are tracked in `spec/language-targets.json` and summarized in `docs/language-targets.md`.
 - Planned package directories are skeleton/not implemented placeholders unless listed as supported or as an early bridge target.
-- Go `canonicalfs.Rename` is intentionally unsupported on Go 1.24 because `os.Root` does not expose a root-bound rename method there. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
+- Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. `canonicalfs.Rename` uses the root-bound implementation on Go 1.26+ and remains unsupported on older runtimes. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
 
 ## Quick verification
 

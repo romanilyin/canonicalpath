@@ -41,6 +41,15 @@ try {
     } else {
         $requestData = [pscustomobject]@{ op=$Operation; project_id=$ProjectId; host_root=$HostRoot; path=$Path; target=$Target; text=$Text; max_bytes=$MaxBytes }
     }
+    # Bound every invocation mode before JSON escaping or base64 expansion.
+    $utf8 = New-Object Text.UTF8Encoding($false, $true)
+    $inputBytes = 0L
+    foreach ($property in $requestData.PSObject.Properties) {
+        if ($property.Value -is [string]) {
+            $inputBytes += $utf8.GetByteCount($property.Value)
+            if ($inputBytes -gt 1048576) { throw 'ERR_REQUEST_TOO_LARGE: request fields exceed 1 MiB.' }
+        }
+    }
     $op = Require-Field $requestData 'op'
     $method = 'POST'
     $mode = 'none'
@@ -62,51 +71,48 @@ try {
             $endpoint='/v1/fs/writeFile'; $body.path=Require-Field $requestData 'path'
             $textProperty=$requestData.PSObject.Properties['text']
             if ($null -eq $textProperty -or $textProperty.Value -isnot [string]) { throw 'Required string field: text' }
-            $body.data_base64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($textProperty.Value))
+            $body.data_base64=''
+            $writeText=$textProperty.Value
         }
         default { throw 'Unsupported transport operation.' }
     }
     if ($method -eq 'POST') { $body.project_id=Require-Field $requestData 'project_id' }
+    $json = $null
+    if ($method -eq 'POST') {
+        $json = $body | ConvertTo-Json -Compress
+        if ($op -eq 'write-text') {
+            $base64Bytes = 4L * [long][Math]::Ceiling($utf8.GetByteCount($writeText) / 3.0)
+            if ($utf8.GetByteCount($json) + $base64Bytes -gt 1048576) { throw 'ERR_REQUEST_TOO_LARGE: encoded JSON request exceeds 1 MiB.' }
+            $body.data_base64=[Convert]::ToBase64String($utf8.GetBytes($writeText))
+            $json = $body | ConvertTo-Json -Compress
+        }
+        if ($utf8.GetByteCount($json) -gt 1048576) { throw 'ERR_REQUEST_TOO_LARGE: encoded JSON request exceeds 1 MiB.' }
+    }
     $base=$env:CANONICALFS_DAEMON_URL
     if ([string]::IsNullOrEmpty($base)) { $base='http://127.0.0.1:8765' }
-    $url = New-Object Uri($base.TrimEnd('/') + $endpoint)
-    if ($url.Scheme -notin @('http','https') -or $url.UserInfo -or $url.Query -or $url.Fragment) { throw 'Invalid daemon URL.' }
-    $http=[Net.HttpWebRequest]::Create($url)
-    $http.Method=$method; $http.Accept='application/json'; $http.AllowAutoRedirect=$false
-    $http.Timeout=30000; $http.ReadWriteTimeout=30000
-    if ($endpoint -ne '/healthz') {
-        if ([string]::IsNullOrEmpty($env:CANONICALFS_DAEMON_TOKEN)) { throw 'CANONICALFS_DAEMON_TOKEN is required for this operation.' }
-        $http.Headers['Authorization']='Bearer ' + $env:CANONICALFS_DAEMON_TOKEN
+    if (-not ('CanonicalPath.PowerShell.DaemonClient' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot '../powershell/CanonicalPath/DaemonClient.cs') -IgnoreWarnings
     }
-    if ($method -eq 'POST') {
-        $bytes=[Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Compress))
-        $http.ContentType='application/json'; $http.ContentLength=$bytes.Length
-        $stream=$http.GetRequestStream()
-        try { $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
+    $timeout = 30000
+    $cap = 25165824
+    if ($env:CANONICALFS_TIMEOUT_MILLISECONDS) { $timeout = [int]$env:CANONICALFS_TIMEOUT_MILLISECONDS }
+    if ($env:CANONICALFS_MAX_RESPONSE_BYTES) { $cap = [int]$env:CANONICALFS_MAX_RESPONSE_BYTES }
+    $client = New-Object CanonicalPath.PowerShell.DaemonClient($base, $env:CANONICALFS_DAEMON_TOKEN, $timeout, $cap)
+    $response = $client.Send($method, $endpoint, $json, ($endpoint -eq '/healthz'))
+    $data = $response.Json | ConvertFrom-Json
+    if ($data.error) { throw ($data.error.code + ': ' + $data.error.message) }
+    if ([int]$response.StatusCode -lt 200 -or [int]$response.StatusCode -ge 300) { throw ('ERR_DAEMON: HTTP ' + [int]$response.StatusCode) }
+    switch ($mode) {
+        'json' { $data | ConvertTo-Json -Compress -Depth 8 }
+        'stat' { $data.stat | ConvertTo-Json -Compress -Depth 8 }
+        'text' { [Console]::Out.Write([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($data.data_base64))) }
     }
-    try { $response=$http.GetResponse() }
-    catch [Net.WebException] { $response=$_.Exception.Response; if ($null -eq $response) { throw 'Daemon request failed.' } }
-    try {
-        $output=New-Object IO.MemoryStream
-        $stream=$response.GetResponseStream()
-        $buffer=New-Object byte[] 8192
-        try {
-            while (($count=$stream.Read($buffer,0,$buffer.Length)) -gt 0) {
-                if ($output.Length + $count -gt 25165824) { throw 'Daemon response exceeds 24 MiB.' }
-                $output.Write($buffer,0,$count)
-            }
-            $data=[Text.Encoding]::UTF8.GetString($output.ToArray()) | ConvertFrom-Json
-        } finally { $stream.Dispose(); $output.Dispose() }
-        if ($data.error) { throw ($data.error.code + ': ' + $data.error.message) }
-        if ([int]$response.StatusCode -ge 400) { throw ('ERR_DAEMON: HTTP ' + [int]$response.StatusCode) }
-        switch ($mode) {
-            'json' { $data | ConvertTo-Json -Compress -Depth 8 }
-            'stat' { $data.stat | ConvertTo-Json -Compress -Depth 8 }
-            'text' { [Console]::Out.Write([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($data.data_base64))) }
-        }
-    } finally { $response.Dispose() }
     exit 0
 } catch {
-    [Console]::Error.WriteLine($_.Exception.Message)
+    $failure = $_.Exception
+    while ($null -ne $failure.InnerException) { $failure = $failure.InnerException }
+    $codeProperty = $failure.PSObject.Properties['Code']
+    if ($null -ne $codeProperty) { [Console]::Error.WriteLine($codeProperty.Value + ': ' + $failure.Message) }
+    else { [Console]::Error.WriteLine($failure.Message) }
     exit 1
 }

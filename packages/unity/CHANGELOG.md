@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.10-3
+
+- Bound health and authenticated responses to 24 MiB decoded bytes and a 30-second total deadline; caller cancellation remains supported, and custom handlers cannot extend the deadline by ignoring cancellation.
+- Disabled redirects in the default HTTP handler and strictly decoded UTF-8 responses.
+- Disabled optional local signed publication until signatures can be authenticated and bound to package contents. Standard GitHub/npm publication verifies source and artifact digests.
+- Tested hostile responses in the .NET transport smoke and every installed Unity EditMode lane.
+
 ## 2026.10.10-2
 
 - Reject malformed UTF-16 Git refs with `ERR_INVALID_COMPONENT`, preserving valid supplementary characters and existing directory encodings.

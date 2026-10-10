@@ -10,6 +10,7 @@ Current scope:
 
 - Lexical `canonicalpath` API aligned to shared vectors (`normalize`, `relative`, `join`, equality, serialization, component sanitization, and Git ref encoding).
 - Result-returning methods expose exact error codes because GDScript does not have normal exceptions.
+- As of `2026.10.10-3`, `normalize`, `relative`, and `join` return the same tagged `Dictionary` as their `_result` aliases. Check `result.ok` before reading `result.value`; errors have `result.error` and no `value`. They no longer silently return an empty string.
 - No filesystem security boundary in this script package.
 
 Planned scope:

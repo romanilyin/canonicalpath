@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -145,8 +144,8 @@ func readToken(file string) (string, error) {
 		if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
 			return "", errors.New("token file must be a small regular file")
 		}
-		if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-			return "", errors.New("token file must only be accessible to its owner")
+		if err := validateTokenFileAccess(handle, info); err != nil {
+			return "", err
 		}
 		data := make([]byte, info.Size())
 		if _, err := handle.ReadAt(data, 0); err != nil {
@@ -155,8 +154,8 @@ func readToken(file string) (string, error) {
 		token = string(data)
 	}
 	token = strings.TrimSpace(token)
-	if len(token) < 32 || strings.ContainsAny(token, "\r\n") {
-		return "", errors.New("provide a randomly generated bearer token of at least 32 characters through -token-file or CANONICALFS_DAEMON_TOKEN")
+	if err := canonicalfsrpc.ValidateCapabilityToken(token); err != nil {
+		return "", err
 	}
 	return token, nil
 }

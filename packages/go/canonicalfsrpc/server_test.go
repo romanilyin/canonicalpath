@@ -13,7 +13,16 @@ import (
 	"testing"
 )
 
-const testCapabilityToken = "test-token"
+const testCapabilityToken = "test-token-for-regressions-only-32-bytes"
+
+func TestEmbeddedServerRejectsWeakTokens(t *testing.T) {
+	for _, token := range []string{"", "x", "test-token", strings.Repeat("x", 31), strings.Repeat("x", 32) + "\nx"} {
+		if server, err := NewServer(ServerOptions{CapabilityToken: token, AllowedRoots: []string{t.TempDir()}}); err == nil {
+			server.Close()
+			t.Fatal("weak or header-unsafe token accepted")
+		}
+	}
+}
 
 func TestServerFileOperations(t *testing.T) {
 	project := t.TempDir()

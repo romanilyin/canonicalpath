@@ -117,8 +117,8 @@ type errorResponse struct {
 // NewServer creates a canonicalfs JSON transport server.
 func NewServer(options ServerOptions) (*Server, error) {
 	capabilityToken := strings.TrimSpace(options.CapabilityToken)
-	if capabilityToken == "" {
-		return nil, errors.New("canonicalfsrpc: capability token is required")
+	if err := ValidateCapabilityToken(capabilityToken); err != nil {
+		return nil, err
 	}
 	allowedRoots, err := cleanAllowedRoots(options.AllowedRoots)
 	if err != nil {
@@ -163,6 +163,15 @@ func NewServer(options ServerOptions) (*Server, error) {
 		maxReadBytes:       limits.maxReadBytes,
 		maxResponseBytes:   limits.maxResponseBytes,
 	}, nil
+}
+
+// ValidateCapabilityToken applies the same bearer policy to embedded servers and
+// the CLI. Length is a minimum; operators must generate tokens using a CSPRNG.
+func ValidateCapabilityToken(token string) error {
+	if len(token) < 32 || strings.ContainsAny(token, "\r\n") || strings.TrimSpace(token) != token {
+		return errors.New("canonicalfsrpc: provide a randomly generated bearer token of at least 32 characters without whitespace padding or line breaks")
+	}
+	return nil
 }
 
 // Handler returns an HTTP handler for the transport API.

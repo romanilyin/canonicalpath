@@ -150,11 +150,11 @@ function operationExpression(testCase, optionsName) {
   }
   switch (testCase.operation) {
     case "normalize":
-      return `CanonicalPath.normalize_result(s(${gdscriptBytes(testCase.raw)}), ${optionsName}())`;
+      return `CanonicalPath.normalize(s(${gdscriptBytes(testCase.raw)}), ${optionsName}())`;
     case "relative":
-      return `CanonicalPath.relative_result(s(${gdscriptBytes(testCase.root)}), s(${gdscriptBytes(testCase.target)}))`;
+      return `CanonicalPath.relative(s(${gdscriptBytes(testCase.root)}), s(${gdscriptBytes(testCase.target)}))`;
     case "join":
-      return `CanonicalPath.join_result(s(${gdscriptBytes(testCase.root)}), s(${gdscriptBytes(testCase.relative)}))`;
+      return `CanonicalPath.join(s(${gdscriptBytes(testCase.root)}), s(${gdscriptBytes(testCase.relative)}))`;
     case "is-equal":
       return `_bool_result(CanonicalPath.is_equal_result(s(${gdscriptBytes(testCase.root)}), s(${gdscriptBytes(testCase.target)}), ${optionsName}()))`;
     case "to-win32":

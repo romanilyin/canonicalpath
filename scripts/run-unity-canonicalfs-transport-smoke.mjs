@@ -1,3 +1,4 @@
+import { unityClientBudgetChecks } from "./unity-client-budget-checks.mjs";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -84,6 +85,8 @@ function projectFile() {
 function programFile() {
   return String.raw`using System;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using CanonicalPath;
@@ -99,6 +102,7 @@ internal static class Program
     private static async Task Run(string[] args)
     {
         if (args.Length != 3) throw new ArgumentException("Expected endpoint, token, and hostRoot.");
+        UnityClientBudgetChecks.Run();
         string endpoint = args[0];
         string token = args[1];
         string hostRoot = args[2];
@@ -175,6 +179,7 @@ internal static class Program
         throw new InvalidOperationException("expected " + code + " error");
     }
 }
+${unityClientBudgetChecks}
 `;
 }
 

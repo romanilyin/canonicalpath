@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "uri-utf16-high-a",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        55296
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-high-b",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        55297
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-low",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        56320
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-reversed",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        56320,
+        55296
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-high-ascii",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        55296,
+        97
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-authority",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        104,
+        111,
+        115,
+        116,
+        55296,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        97
+      ],
+      "error": "ERR_INVALID_PERCENT_ENCODING",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-replacement",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        65533
+      ],
+      "expected": "/repo/�",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    },
+    {
+      "id": "uri-utf16-emoji",
+      "operation": "normalize",
+      "rawUtf16": [
+        102,
+        105,
+        108,
+        101,
+        58,
+        47,
+        47,
+        47,
+        114,
+        101,
+        112,
+        111,
+        47,
+        55357,
+        56832
+      ],
+      "expected": "/repo/😀",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      }
+    }
+  ]
+}

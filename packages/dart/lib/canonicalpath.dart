@@ -202,6 +202,7 @@ String encodeGitRef(String raw) {
   if (raw.isEmpty)
     throw _pathError('ERR_INVALID_COMPONENT', 'git ref is empty');
   if (_hasNul(raw)) throw _pathError('ERR_NUL_BYTE', 'git ref contains NUL');
+  _validateUtf16(raw, 'ERR_INVALID_COMPONENT');
   final slug = raw
       .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
       .replaceAll(RegExp(r'^[._-]+|[._-]+$'), '');
@@ -284,6 +285,7 @@ String _unwrapWindowsExtendedPrefix(String value) {
 }
 
 String _percentDecode(String value) {
+  _validateUtf16(value, 'ERR_INVALID_PERCENT_ENCODING');
   final input = utf8.encode(value);
   final bytes = <int>[];
   var index = 0;
@@ -316,6 +318,19 @@ String _percentDecode(String value) {
       'ERR_INVALID_PERCENT_ENCODING',
       'URI percent encoding is invalid',
     );
+  }
+}
+
+void _validateUtf16(String value, String code) {
+  for (var i = 0; i < value.length; i++) {
+    final unit = value.codeUnitAt(i);
+    if (unit >= 0xD800 && unit <= 0xDBFF) {
+      if (++i >= value.length || value.codeUnitAt(i) < 0xDC00 || value.codeUnitAt(i) > 0xDFFF) {
+        throw _pathError(code, 'input contains malformed UTF-16');
+      }
+    } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+      throw _pathError(code, 'input contains malformed UTF-16');
+    }
   }
 }
 

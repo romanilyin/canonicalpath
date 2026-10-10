@@ -22,6 +22,7 @@ const vectorFiles = [
   "component_cases.json",
   "git_cases.json",
   "git-ref-utf16-vectors.json",
+  "uri-utf16-vectors.json",
   "equality_cases.json",
 ].map((name) => path.join(root, "spec", "testdata", name));
 
@@ -151,6 +152,7 @@ function usesOptions(operation) {
 function operationExpression(testCase, optionsName) {
   switch (testCase.operation) {
     case "normalize":
+      if (testCase.rawUtf16) return `CanonicalPath.normalize(String(charArrayOf(${testCase.rawUtf16.map(code => `${code}.toChar()`).join(", ")})), ${optionsName}())`;
       return `CanonicalPath.normalize(s(${kotlinBytes(testCase.raw)}), ${optionsName}())`;
     case "relative":
       return `CanonicalPath.relative(s(${kotlinBytes(testCase.root)}), s(${kotlinBytes(testCase.target)}))`;

@@ -1,15 +1,15 @@
 class_name CanonicalPath
 
-static func normalize(raw: String, options: Dictionary = {}) -> String:
-    return normalize_result(raw, options).get("value", "")
+static func normalize(raw: String, options: Dictionary = {}) -> Dictionary:
+    return normalize_result(raw, options)
 
 
-static func relative(root: String, target: String) -> String:
-    return relative_result(root, target).get("value", "")
+static func relative(root: String, target: String) -> Dictionary:
+    return relative_result(root, target)
 
 
-static func join(root: String, relative_path: String) -> String:
-    return join_result(root, relative_path).get("value", "")
+static func join(root: String, relative_path: String) -> Dictionary:
+    return join_result(root, relative_path)
 
 
 static func normalize_result(raw: String, options: Dictionary = {}) -> Dictionary:
