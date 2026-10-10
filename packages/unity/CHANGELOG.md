@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.10-1
+
+- All bridge editor write commands now support dry-run only; non-dry-run calls throw until a root-confined executor is provided.
+- Scoped daemon operations use pinned scope roots and reject cross-scope links and anchor replacements.
+- Reject malformed UTF-8 URI escapes while preserving valid Unicode and exactly-once decoding.
+- Harden npm registry selection and validate package identity before trusted publication.
+
 ## 2026.10.9-1
 
 - Text reads now require a registered scoped Go CanonicalFS daemon client, with a 4 MiB byte cap and 1,048,576 character cap.

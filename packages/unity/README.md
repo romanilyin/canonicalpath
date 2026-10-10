@@ -39,16 +39,16 @@ Scoped registry use through npmjs:
     }
   ],
   "dependencies": {
-    "com.romanilyin.canonicalpath": "2026.10.9-1"
+    "com.romanilyin.canonicalpath": "2026.10.10-1"
   }
 }
 ```
 
 Release packaging:
 
-- Package version for the current Unity registry release candidate is `2026.10.9-1`.
-- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.9-1`.
-- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.9-1`.
+- Package version for the current Unity registry release candidate is `2026.10.10-1`.
+- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.10-1`.
+- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.10-1`.
 - The Unity package keeps committed Stinger license and notice files under
   `packages/unity`. npm `prepack` verifies that these files match the
   Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.
@@ -104,7 +104,7 @@ public interface ICanonicalPathService
 - Assert candidate paths stay inside the Unity project root.
 - Sanitize generated filenames.
 
-`UnityBridgeBuiltins` validates every write command with `PathGuard`. Inside the Unity Editor it can execute `assets.refresh`, `asset.import`, and `scene.save`; prefab/module creation remains a validated command contract until a bridge-specific implementation is added.
+`UnityBridgeBuiltins` validates every write command with `PathGuard`. All commands (`assets.refresh`, `asset.import`, `scene.save`, `prefab.create`, and `module.create`) support dry-run validation only. Passing `dryRun: false` throws `NotSupportedException`: Unity's path-based editor APIs cannot guarantee root-confined effects when symlinks or reparse points change. Integrations must supply a separately reviewed root-confined executor before enabling editor effects. A lexical guard or a preflight symlink check is insufficient.
 
 Full package scope:
 

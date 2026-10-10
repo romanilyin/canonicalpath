@@ -29,12 +29,15 @@ export class BestEffortCanonicalFSRoot {
   }
 
   async remove(rel: string): Promise<void> {
-    await rm(this.resolveBestEffort(rel), { recursive: true, force: false });
+    const clean = validateRelativePath(rel);
+    if (clean === ".") throw fsError("ERR_OUTSIDE_ROOT", "removing the configured root is not allowed");
+    await rm(this.resolveCleanBestEffort(clean), { recursive: true, force: false });
   }
 
   async rename(oldRel: string, newRel: string): Promise<void> {
     const oldClean = validateRelativePath(oldRel);
     const newClean = validateRelativePath(newRel);
+    if (oldClean === "." || newClean === ".") throw fsError("ERR_OUTSIDE_ROOT", "renaming the configured root is not allowed");
     await fsRename(this.resolveCleanBestEffort(oldClean), this.resolveCleanBestEffort(newClean));
   }
 

@@ -100,6 +100,27 @@ int hex_value(char value) {
   return -1;
 }
 
+bool valid_utf8(std::string_view value) {
+  std::size_t i = 0;
+  while (i < value.size()) {
+    unsigned int first = static_cast<unsigned char>(value[i++]);
+    if (first < 0x80) continue;
+    unsigned int count, code, minimum;
+    if (first >= 0xc2 && first <= 0xdf) { count = 1; code = first & 0x1f; minimum = 0x80; }
+    else if (first >= 0xe0 && first <= 0xef) { count = 2; code = first & 0x0f; minimum = 0x800; }
+    else if (first >= 0xf0 && first <= 0xf4) { count = 3; code = first & 0x07; minimum = 0x10000; }
+    else return false;
+    if (value.size() - i < count) return false;
+    while (count-- > 0) {
+      unsigned int next = static_cast<unsigned char>(value[i++]);
+      if ((next & 0xc0) != 0x80) return false;
+      code = (code << 6) | (next & 0x3f);
+    }
+    if (code < minimum || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return false;
+  }
+  return true;
+}
+
 std::string percent_decode(std::string_view value) {
   std::string result;
   result.reserve(value.size());
@@ -116,6 +137,7 @@ std::string percent_decode(std::string_view value) {
     i += 2;
   }
   if (result.find('\0') != std::string::npos) throw path_error("ERR_NUL_BYTE", "decoded URI contains NUL");
+  if (!valid_utf8(result)) throw path_error("ERR_INVALID_PERCENT_ENCODING", "URI percent encoding is not valid UTF-8");
   return result;
 }
 

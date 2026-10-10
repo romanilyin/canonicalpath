@@ -43,5 +43,7 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm ps:test -- --all-available
+      - run: pnpm cmd:smoke
+      - run: go test ./packages/go/canonicalfs ./packages/go/canonicalfsrpc
       - run: pnpm ps:alloc -- --all-available
       - run: pnpm ps:transport:alloc -- --all-available

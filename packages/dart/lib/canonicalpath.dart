@@ -284,22 +284,22 @@ String _unwrapWindowsExtendedPrefix(String value) {
 }
 
 String _percentDecode(String value) {
+  final input = utf8.encode(value);
   final bytes = <int>[];
   var index = 0;
-  while (index < value.length) {
-    final char = value[index];
-    if (char != '%') {
-      bytes.addAll(utf8.encode(char));
+  while (index < input.length) {
+    if (input[index] != 37) {
+      bytes.add(input[index]);
       index += 1;
       continue;
     }
-    if (index + 2 >= value.length) {
+    if (index + 2 >= input.length) {
       throw _pathError(
         'ERR_INVALID_PERCENT_ENCODING',
         'URI percent encoding is invalid',
       );
     }
-    final pair = value.substring(index + 1, index + 3);
+    final pair = String.fromCharCodes(input.getRange(index + 1, index + 3));
     if (!RegExp(r'^[0-9A-Fa-f]{2}$').hasMatch(pair)) {
       throw _pathError(
         'ERR_INVALID_PERCENT_ENCODING',

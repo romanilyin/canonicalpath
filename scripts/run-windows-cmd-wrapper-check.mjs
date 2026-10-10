@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
@@ -13,10 +13,6 @@ const allocationMode = process.argv.includes("--allocation");
 
 if (!commandExists("cmd.exe", ["/c", "ver"])) {
   console.log("cmd.exe not found; skipping Windows CMD wrapper check");
-  process.exit(0);
-}
-if (!commandExists("cmd.exe", ["/c", "curl.exe", "--version"])) {
-  console.log("Windows curl.exe not found; skipping Windows CMD wrapper check");
   process.exit(0);
 }
 if (!commandExists("cmd.exe", ["/c", "powershell.exe", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"])) {
@@ -52,15 +48,26 @@ function wslpathIfAvailable(value) {
 }
 
 function wrapperEnv(daemon, token = daemon.token) {
-  return {
-    url: daemon.endpoint,
-    token,
-    powershell: "powershell.exe",
+  return { ...process.env,
+    CANONICALFS_DAEMON_URL: daemon.endpoint,
+    CANONICALFS_DAEMON_TOKEN: token ?? "",
+    WSLENV: [process.env.WSLENV, "CANONICALFS_DAEMON_URL/w", "CANONICALFS_DAEMON_TOKEN/w"].filter(Boolean).join(":"),
   };
 }
 
 function runWrapper(daemon, args, options = {}) {
-  const result = runCmdScript(wrapperScript(daemon, args, options.token));
+  const payload = { op: args[0] };
+  if (args[1] !== undefined) payload.project_id = args[1];
+  if (args[0] === "open-project") payload.host_root = args[2];
+  else if (args[2] !== undefined) payload.path = args[2];
+  if (args[0] === "write-text") payload.text = args[3];
+  if (args[0] === "read-text" && args[3] !== undefined) payload.max_bytes = Number(args[3]);
+  if (args[0] === "rename") payload.target = args[3];
+  const selectedWrapper = options.compat ? "canonicalpath.cmd" : "canonicalfs.cmd";
+  const result = spawnSync("cmd.exe", ["/d", "/c", selectedWrapper], {
+    cwd: options.wrapperDirectory ?? path.dirname(wrapper), input: JSON.stringify(payload), encoding: "utf8", timeout: 45000,
+    env: wrapperEnv(daemon, options.token),
+  });
   if (result.error) throw result.error;
   if (options.expectFailure) {
     if ((result.status ?? 1) === 0) throw new Error(`expected Windows CMD wrapper command to fail: ${args.join(" ")}`);
@@ -70,17 +77,6 @@ function runWrapper(daemon, args, options = {}) {
     throw new Error(`Windows CMD wrapper command failed: ${args.join(" ")}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
   }
   return result.stdout;
-}
-
-function wrapperScript(daemon, args, token = daemon.token) {
-  const env = wrapperEnv(daemon, token);
-  return cmdScript([
-    cmdSet("CANONICALFS_DAEMON_URL", env.url),
-    cmdSet("POWERSHELL", env.powershell),
-    cmdSet("CANONICALFS_DAEMON_TOKEN", env.token ?? ""),
-    `call ${cmdCommandPath(wrapperForWindows)} ${args.map(cmdArgument).join(" ")}`,
-    "exit /b %ERRORLEVEL%",
-  ]);
 }
 
 function runSmokeCheck(daemon) {
@@ -100,6 +96,22 @@ function runSmokeCheck(daemon) {
     runWrapper(daemon, ["write-text", projectId, "safe/file.txt", "hello from cmd wrapper"]);
     const text = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "128"]);
     if (text !== "hello from cmd wrapper") throw new Error(`read text mismatch: ${text}`);
+    const marker = path.join(root, "tmp", `cmd-injection-${process.pid}.txt`);
+    const hostile = `Привет 😀 %PATH% !value! ^ & | < > ( ) " & echo INJECTED>${wslpathIfAvailable(marker)} & rem "`;
+    for (const compat of [false, true]) {
+      runWrapper(daemon, ["write-text", projectId, "safe/file.txt", hostile], { compat });
+      const roundTrip = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat });
+      if (roundTrip !== hostile || existsSync(marker)) throw new Error("CMD transport interpreted data as commands");
+    }
+    const unusualDirectory = path.join(root, "tmp", `cmd-wrapper %PATH% & (probe) ${process.pid}`);
+    mkdirSync(unusualDirectory, { recursive: true });
+    try {
+      for (const file of ["canonicalfs.cmd", "canonicalpath.cmd", "canonicalfs.ps1"]) copyFileSync(path.join(path.dirname(wrapper), file), path.join(unusualDirectory, file));
+      for (const compat of [false, true]) {
+        const value = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat, wrapperDirectory: unusualDirectory });
+        if (value !== hostile) throw new Error("CMD wrapper failed from a path containing shell metacharacters");
+      }
+    } finally { rmSync(unusualDirectory, { recursive: true, force: true }); }
 
     const stat = JSON.parse(runWrapper(daemon, ["stat", projectId, "safe/file.txt"]));
     if (stat.is_directory || stat.size <= 0) throw new Error(`stat response mismatch: ${JSON.stringify(stat)}`);
@@ -131,7 +143,9 @@ function runAllocationCheck(daemon) {
     runWrapper(daemon, ["write-text", projectId, "safe/file.txt", "hello from cmd allocation check"]);
 
     writeFileSync(scriptPath, allocationScript(iterations, budgetBytes, wrapperForWindows, projectId), "utf8");
-    const result = runCmdScript(allocationCommandScript(daemon, scriptPath));
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wslpathIfAvailable(scriptPath)], {
+      cwd: root, encoding: "utf8", env: wrapperEnv(daemon),
+    });
     if (result.error) throw result.error;
     if ((result.status ?? 1) !== 0) {
       throw new Error(`Windows CMD wrapper allocation loop failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
@@ -151,8 +165,16 @@ function allocationScript(iterations, budgetBytes, wrapperPath, projectId) {
 $ErrorActionPreference = 'Stop'
 function Invoke-LocalGC { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect() }
 function Invoke-Wrapper([string[]]$Arguments) {
-  & cmd.exe /c ${psString(wrapperPath)} @Arguments | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw ('wrapper command failed: ' + ($Arguments -join ' ')) }
+  $payload = [ordered]@{ op=$Arguments[0] }
+  if ($Arguments.Length -gt 1) { $payload.project_id=$Arguments[1] }
+  if ($Arguments.Length -gt 2) { $payload.path=$Arguments[2] }
+  if ($Arguments.Length -gt 3) { $payload.max_bytes=[long]$Arguments[3] }
+  $OutputEncoding = New-Object Text.UTF8Encoding($false)
+  Push-Location -LiteralPath ${psString(path.win32.dirname(wrapperPath))}
+  try {
+    ($payload | ConvertTo-Json -Compress) | & cmd.exe /d /c canonicalfs.cmd | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ('wrapper command failed: ' + ($Arguments -join ' ')) }
+  } finally { Pop-Location }
 }
 Write-Host ('Windows CMD wrapper allocation check running: ' + ${iterations} + ' iterations')
 
@@ -179,57 +201,8 @@ Write-Host ('Windows CMD wrapper allocation check passed: private bytes delta ' 
 `;
 }
 
-function allocationCommandScript(daemon, scriptPath) {
-  const env = wrapperEnv(daemon, daemon.token);
-  return cmdScript([
-    cmdSet("CANONICALFS_DAEMON_URL", env.url),
-    cmdSet("POWERSHELL", env.powershell),
-    cmdSet("CANONICALFS_DAEMON_TOKEN", env.token),
-    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ${cmdCommandPath(wslpathIfAvailable(scriptPath))}`,
-    "exit /b %ERRORLEVEL%",
-  ]);
-}
-
 function psString(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
-}
-
-function cmdQuote(value) {
-  return `"${String(value).replaceAll('"', '""')}"`;
-}
-
-function cmdCommandPath(value) {
-  const text = String(value);
-  return /\s/.test(text) ? cmdQuote(text) : text;
-}
-
-function cmdArgument(value) {
-  const text = String(value);
-  return /[\s&()<>|^]/.test(text) ? cmdQuote(text) : text;
-}
-
-function cmdSet(name, value) {
-  return `set "${name}=${String(value).replaceAll('"', '""')}"`;
-}
-
-function cmdScript(lines) {
-  return `@echo off\r\n${lines.join("\r\n")}\r\n`;
-}
-
-function runCmdScript(contents) {
-  const tempParent = path.join(root, "tmp");
-  mkdirSync(tempParent, { recursive: true });
-  const tempRoot = mkdtempSync(path.join(tempParent, "windows-cmd-wrapper-invoke-"));
-  const scriptPath = path.join(tempRoot, "invoke.cmd");
-  writeFileSync(scriptPath, contents, "utf8");
-  try {
-    return spawnSync("cmd.exe", ["/d", "/c", wslpathIfAvailable(scriptPath)], {
-      cwd: root,
-      encoding: "utf8",
-    });
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
 }
 
 async function startDaemon() {

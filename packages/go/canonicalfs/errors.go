@@ -24,8 +24,8 @@ const (
 	ErrSymlinkEscape ErrorCode = "ERR_SYMLINK_ESCAPE"
 )
 
-// ErrUnsupportedOperation indicates an operation unsupported by the active Go runtime.
-var ErrUnsupportedOperation = errors.New("canonicalfs: operation is not supported by Go 1.24 os.Root")
+// ErrUnsupportedOperation indicates an unsupported operation or filesystem object.
+var ErrUnsupportedOperation = errors.New("canonicalfs: operation or filesystem object is not supported")
 
 // Error is a canonicalfs error with a stable code and human-readable message.
 type Error struct {

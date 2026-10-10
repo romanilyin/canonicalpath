@@ -197,6 +197,7 @@ jobs:
       RELEASE_KIND: ${{ needs.build.outputs.kind }}
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
       MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -210,13 +211,20 @@ jobs:
 
       - name: Verify artifact manifest and tarball digests
         run: |
+          umask 077
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npm-publisher.npmrc"
+          export NPM_CONFIG_GLOBALCONFIG="$RUNNER_TEMP/npm-publisher-global.npmrc"
+          printf 'NPM_CONFIG_USERCONFIG=%s\nNPM_CONFIG_GLOBALCONFIG=%s\n' "$NPM_CONFIG_USERCONFIG" "$NPM_CONFIG_GLOBALCONFIG" >> "$GITHUB_ENV"
+          : > "$NPM_CONFIG_USERCONFIG"
+          : > "$NPM_CONFIG_GLOBALCONFIG"
           test "$(node --version)" = "v$NODE_VERSION"
           test "$(npm --version)" = "$NPM_VERSION"
           cd "$RUNNER_TEMP/npm-packages"
           printf '%s  manifest.tsv\n' "$MANIFEST_SHA256" | sha256sum --check --strict
           node --input-type=module <<'JS'
-          import { readFileSync } from 'node:fs';
+          import { readFileSync, statSync } from 'node:fs';
           import { createHash } from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
           const expected = new Set(process.env.RELEASE_KIND === 'full'
             ? ['@romanilyin/canonicalpath', '@romanilyin/canonicalpath-standalone', 'com.romanilyin.canonicalpath']
             : ['com.romanilyin.canonicalpath']);
@@ -226,8 +234,20 @@ jobs:
             const [name, version, integrity, filename, extra] = row.split('\t');
             if (!expected.delete(name) || version !== process.env.RELEASE_VERSION || extra !== undefined
               || !/^[A-Za-z0-9_.-]+\.tgz$/.test(filename) || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity)) throw new Error('Invalid artifact manifest');
+            if (!statSync(filename).isFile() || statSync(filename).size > 64 * 1024 * 1024) throw new Error('Artifact size or type is invalid');
             const actual = 'sha512-' + createHash('sha512').update(readFileSync(filename)).digest('base64');
             if (actual !== integrity) throw new Error('Artifact integrity mismatch');
+            // Read metadata only, with no OIDC variables in the tar subprocess.
+            const metadata = JSON.parse(execFileSync('tar', ['--extract', '--to-stdout', '--gzip', '--file', filename, '--', 'package/package.json'], {
+              encoding: 'utf8', maxBuffer: 64 * 1024, timeout: 10000,
+              env: { PATH: process.env.PATH, LANG: 'C' },
+            }));
+            if (metadata.name !== name || metadata.version !== version || metadata.private === true) throw new Error('Artifact package identity is invalid');
+            const config = metadata.publishConfig;
+            if (!config || Array.isArray(config) || typeof config !== 'object'
+              || Object.keys(config).some(key => !['registry', 'access'].includes(key))
+              || !['https://registry.npmjs.org', 'https://registry.npmjs.org/'].includes(config.registry)
+              || config.access !== 'public') throw new Error('Artifact publishConfig must select HTTPS npmjs and public access only');
           }
           JS
 
@@ -242,7 +262,7 @@ jobs:
             view_json="$PACK_DIR/view-$(basename "$tarball").json"
             view_error="$PACK_DIR/view-$(basename "$tarball").error"
 
-            if npm view "$name@$version" dist.integrity --json > "$view_json" 2> "$view_error"; then
+            if npm view "$name@$version" dist.integrity --json --registry=https://registry.npmjs.org/ --strict-ssl=true > "$view_json" 2> "$view_error"; then
               published_integrity="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$view_json")"
               if [[ "$published_integrity" != "$integrity" ]]; then
                 echo "$name@$version is already published with different contents" >&2
@@ -250,7 +270,7 @@ jobs:
               fi
 
               latest_json="$PACK_DIR/latest-$(basename "$tarball").json"
-              npm view "$name" dist-tags.latest --json > "$latest_json"
+              npm view "$name" dist-tags.latest --json --registry=https://registry.npmjs.org/ --strict-ssl=true > "$latest_json"
               latest_version="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$latest_json")"
               if [[ "$latest_version" != "$version" ]]; then
                 echo "$name@$version is published, but the latest dist-tag points to $latest_version" >&2
@@ -309,5 +329,5 @@ jobs:
 
           while IFS=$'\t' read -r name version _ tarball; do
             echo "Publishing $name@$version"
-            npm publish "$tarball" --ignore-scripts=true --access public --tag latest
+            npm publish "$tarball" --ignore-scripts=true --access public --tag latest --registry=https://registry.npmjs.org/ --strict-ssl=true
           done < "$PENDING"

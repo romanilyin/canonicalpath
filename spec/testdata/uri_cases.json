@@ -155,6 +155,18 @@
         }
       },
       "expected": "/repo/a%00b"
-    }
+    },
+    { "id": "uri-invalid-utf8-ff", "operation": "normalize", "raw": "file:///tmp/%FF", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-continuation", "operation": "normalize", "raw": "file:///tmp/%80", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-truncated", "operation": "normalize", "raw": "file:///tmp/%C3", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-overlong", "operation": "normalize", "raw": "file:///tmp/%C0%AF", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-surrogate", "operation": "normalize", "raw": "file:///tmp/%ED%A0%80", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-out-of-range", "operation": "normalize", "raw": "file:///tmp/%F4%90%80%80", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-authority", "operation": "normalize", "raw": "file://server%FF/share/a", "options": { "uri": { "allowFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-invalid-utf8-vscode-authority", "operation": "normalize", "raw": "vscode-file://app%C3/tmp/a", "options": { "uri": { "allowVSCodeFileUri": true } }, "error": "ERR_INVALID_PERCENT_ENCODING" },
+    { "id": "uri-valid-utf8-multibyte", "operation": "normalize", "raw": "file:///tmp/%C3%A9%F0%9F%98%80", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/é😀" },
+    { "id": "uri-valid-utf8-mixed-literal-escaped", "operation": "normalize", "raw": "file:///tmp/é%20😀", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/é 😀" },
+    { "id": "uri-valid-replacement-character", "operation": "normalize", "raw": "file:///tmp/%EF%BF%BD", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/�" },
+    { "id": "uri-invalid-byte-double-encoded-preserved", "operation": "normalize", "raw": "file:///tmp/%25FF", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/%FF" }
   ]
 }

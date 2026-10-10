@@ -1,6 +1,9 @@
 package canonicalfs
 
-import "io/fs"
+import (
+	"io/fs"
+	"os"
+)
 
 // WalkFunc is called for each entry visited by Walk.
 type WalkFunc func(path string, info fs.FileInfo, err error) error
@@ -15,7 +18,24 @@ func (r *Root) Stat(rel string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return root.Stat(clean)
+	if !r.rejectFileLinks {
+		return root.Stat(clean)
+	}
+	before, err := root.Lstat(clean)
+	if err != nil {
+		return nil, err
+	}
+	if before.Mode()&os.ModeSymlink != 0 {
+		return nil, newError(ErrSymlinkEscape, "scoped stat cannot follow a file link")
+	}
+	info, err := root.Stat(clean)
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(before, info) {
+		return nil, newError(ErrRaceDetected, "scoped path changed during stat")
+	}
+	return info, nil
 }
 
 // Walk traverses a tree relative to the root.

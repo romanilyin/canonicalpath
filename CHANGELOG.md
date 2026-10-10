@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-- No unreleased changes; the security remediation batch is included in 2026.10.9-1 below.
+- No unreleased changes; the security remediation batch is included in 2026.10.10-1 below.
+
+## 2026.10.10-1
+
+- Fixed all seven findings from the 2026-10-10 security review; see `docs/security-review-2026-10-10.md` for controls and regression evidence.
+- Confined scoped daemon operations to pinned scope handles and rejected linked file leaves before reads, metadata access, or writes.
+- Rejected FIFO/device/socket inputs in high-level Go file and ZIP APIs without blocking on FIFO opens or truncating special files.
+- Rejected malformed UTF-8 URI escapes across lexical ports and preserved U+FFFD identity in PowerShell 5.1.
+- Prevented TypeScript root removal and root rename after lexical normalization.
+- Replaced CMD positional arguments with bounded UTF-8 JSON stdin and a PowerShell transport; migrate scripts using the wrapper README.
+- Restricted Unity bridge editor write commands to dry-run until a root-confined executor exists.
+- Pinned npm publication to HTTPS npmjs, isolated npm configuration, and validated artifact identity and publish configuration before OIDC is used.
 
 ## 2026.10.9-1
 

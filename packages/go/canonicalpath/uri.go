@@ -3,6 +3,7 @@ package canonicalpath
 import (
 	"net/url"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParseFileURI unwraps an allowed file-like URI into a path string.
@@ -48,6 +49,9 @@ func parseHierarchicalURIPath(raw string, prefix string, opts Options) (string, 
 	decodedAuthority, err := url.PathUnescape(authority)
 	if err != nil {
 		return "", newError(ErrInvalidPercentEncoding, "URI authority percent encoding is invalid")
+	}
+	if !utf8.ValidString(decoded) || !utf8.ValidString(decodedAuthority) {
+		return "", newError(ErrInvalidPercentEncoding, "URI percent encoding is not valid UTF-8")
 	}
 	if strings.ContainsRune(decoded, '\x00') || strings.ContainsRune(decodedAuthority, '\x00') {
 		return "", newError(ErrNULByte, "decoded URI contains NUL")

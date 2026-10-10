@@ -1,0 +1,23 @@
+# Security remediation: 2026-10-10
+
+Reviewed all seven findings from scan `e28f74b4-de83-4552-8252-7a28da576e23`, which scanned `561f7c1fbe4414f3fe16fd951dc3e3e5aac9dfed`. This follow-up batch ships together in `2026.10.10-1`.
+
+| Finding | Fix | Regression evidence |
+| --- | --- | --- |
+| `csf_f90480d7b57e5ec41ac6563e` CMD argument injection | Both CMD shims invoke a fixed PowerShell script without forwarding arguments. Requests are bounded UTF-8 JSON on stdin; no data is reparsed by CMD/CALL. | Both shims round-trip quotes, shell metacharacters, percent/environment syntax and Unicode without creating a command marker; transport and allocation smoke. |
+| `csf_a2c19bf3de0221ece6f1d49d` Unity editor writes escape project | Direct path-based editor effects are disabled. All non-dry-run write commands throw; dry-run remains lexical validation only. | EditMode tests and installed-editor runner assert all five commands fail closed; managed bridge vectors. |
+| `csf_ca6d4e2de1b1f99d8fdc4831` daemon scope link bypass | Each request opens a dedicated scope root through pinned parent handles, rejects linked anchor components and checks opened identity. File operations reject linked leaves and validate the opened descriptor before reading or truncation. Package manifest scope accepts exact file operations only. | Real relative in-project link fixtures cover all five scopes and endpoints; file-swap race, anchor link/replacement fixtures and native Windows junction coverage. |
+| `csf_5b552786b77334587263f2af` artifact-selected npm registry | Publisher pins HTTPS npmjs and strict TLS, uses isolated empty user/global configs, checks regular bounded tarballs, exact package identity, and an allowlist of `publishConfig` keys (`registry`, `access`). | Actual workflow validator runs against valid artifacts and malicious registry/HTTP/scoped-registry/proxy/TLS/auth/identity metadata. |
+| `csf_c9c8bd0ae7b5c0a3146e38e8` special-file blocking | High-level reads, writes and ZIP input open nonblocking on Unix, check the opened file is regular and apply truncation only after validation. Unsupported platforms fail closed. | Subprocess FIFO probes for read, write and ZIP input have an external deadline and must return an error promptly. |
+| `csf_53abfc49f8bfae2f800f6a17` invalid UTF-8 URI identity | Reject malformed decoded UTF-8 in URI paths and authorities across permissive ports. Strict percent decoding preserves literal Unicode and decoding once. PowerShell compares identity components ordinally. | Shared vectors cover invalid leading/continuation, truncated, overlong, surrogate and out-of-range encodings, valid Unicode/U+FFFD and escaped percent. |
+| `csf_1be8501fd7c204c6e8e967fb` TypeScript root removal | Reject destructive remove and either rename operand when normalized relative path is `.`. | Empty/dot/cancelled-component aliases leave a root sentinel and root metadata intact. |
+
+The npm report's general claim of replaying an npmjs-audience token to an arbitrary hostname is broader than npm 11.16.0 behavior: its OIDC audience includes the chosen registry hostname. However, HTTP on the same npmjs hostname and configuration-controlled registry/auth/proxy/TLS settings still warranted the implemented fail-closed controls. No compromise of previously published artifacts was observed.
+
+Scope confinement remains within the exact opened scope directory when an anchor is renamed. It does not revoke a handle already opened before a rename. Low-level Go `Open`/`OpenFile` intentionally retain their explicit primitive behavior; bounded high-level APIs require regular files. CanonicalPath and Unity lexical guards remain identity/payload validation only; TypeScript filesystem helpers remain best-effort.
+
+Release validation requires the full cross-language gate, Go race tests, native Windows filesystem/CMD tests, PowerShell 5.1/7, installed Unity EditMode matrix (including 7000 alpha), package/license/changelog checks, dependency audit, govulncheck and GitHub CI/security/CodeQL checks.
+
+Local validation on 2026-10-10 passed: `pnpm verify` with a separate complete Unity matrix, Go race tests, all 112 lexical vectors across ports, native Windows Go filesystem/RPC tests, PowerShell 5.1 and 7 lexical/daemon smokes, CMD transport/allocation checks, changed-port allocation checks, all three package dry-runs, license/changelog checks, actionlint and `git diff --check`. npm audit and govulncheck found no known vulnerabilities.
+
+Unity EditMode passed on all nine installed editors: 2022.3.62f3, 6000.1.17f1, 6000.2.15f1, 6000.3.20f1, 6000.5.9f1, 6000.6.2f1, 6000.6.4f1, 6000.7.0b3 and 7000.0.0a7. The Burst-compatible surface smoke also passed; no Burst implementation changed in this batch.
