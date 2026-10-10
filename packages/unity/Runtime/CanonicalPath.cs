@@ -711,9 +711,10 @@ namespace CanonicalPath
         {
             if (string.IsNullOrEmpty(raw)) throw PathError("ERR_INVALID_COMPONENT", "git ref is empty");
             if (raw.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "git ref contains NUL");
+            string hash = ShortSha256(raw, 12);
             string slug = SlugGitRef(raw).Trim('.', '_', '-');
             if (slug.Length == 0) slug = "ref";
-            return slug + "--" + ShortSha256(raw, 12);
+            return slug + "--" + hash;
         }
 
         private static string NormalizeRelativePath(string raw)
@@ -1001,7 +1002,10 @@ namespace CanonicalPath
         {
             using (SHA256 sha = SHA256.Create())
             {
-                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(input));
+                byte[] encoded;
+                try { encoded = new UTF8Encoding(false, true).GetBytes(input); }
+                catch (EncoderFallbackException) { throw PathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode"); }
+                byte[] bytes = sha.ComputeHash(encoded);
                 StringBuilder builder = new StringBuilder(hexLength);
                 int byteCount = (hexLength + 1) / 2;
                 for (int i = 0; i < byteCount; i++) builder.Append(bytes[i].ToString("x2"));

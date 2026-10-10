@@ -16,6 +16,7 @@ const vectorFiles = [
   "security_cases.json",
   "component_cases.json",
   "git_cases.json",
+  "git-ref-utf16-vectors.json",
   "equality_cases.json",
 ].map((name) => path.join(root, "spec", "testdata", name));
 
@@ -178,6 +179,7 @@ internal static class Program
         }
         if (testCase.operation == "encode-git-ref")
         {
+            if (testCase.rawUtf16 != null) return CP.EncodeGitRef(new string(Array.ConvertAll(testCase.rawUtf16, code => (char)code)));
             return CP.EncodeGitRef(Required(testCase.raw, testCase, "raw"));
         }
         throw new InvalidOperationException(testCase.id + ": unsupported operation " + testCase.operation);
@@ -250,6 +252,7 @@ public sealed class CanonicalPathVectorCase
     public string id { get; set; }
     public string operation { get; set; }
     public string raw { get; set; }
+    public int[] rawUtf16 { get; set; }
     public string root { get; set; }
     public string target { get; set; }
     public string relative { get; set; }

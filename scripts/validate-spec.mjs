@@ -546,6 +546,7 @@ const languageTargetStats = validateLanguageTargets(readJSON(path.join(specDir, 
 const commandDescriptorFragmentStats = validateCommandDescriptorFragments(readJSON(path.join(specDir, "command-descriptors.schema.json")), "spec/command-descriptors.schema.json");
 
 const allCaseIds = new Map();
+readJSON(path.join(specDir, "git-ref-utf16.schema.json"));
 let caseCount = 0;
 let fixtureCount = 0;
 let unityBridgeCaseCount = 0;
@@ -561,6 +562,27 @@ for (const entry of readdirSync(testdataDir).filter((name) => name.endsWith(".js
   if (Array.isArray(data.cases)) {
     assert(entry !== "fs_fixtures_manifest.json", `${label}: fs fixture manifest must use fixtures, not cases`);
     const ids = new Set();
+    if (entry === "git-ref-utf16-vectors.json") {
+      assertOnlyKeys(data, new Set(["version", "cases"]), label);
+      for (const testCase of data.cases) {
+        assertOnlyKeys(testCase, new Set(["id", "operation", "rawUtf16", "expected", "error"]), label);
+        assert(idPattern.test(testCase.id) && !allCaseIds.has(testCase.id), `${label}: invalid or duplicate id`);
+        allCaseIds.set(testCase.id, label);
+        assert(testCase.operation === "encode-git-ref", `${label}: only encode-git-ref is supported`);
+        assert(Array.isArray(testCase.rawUtf16) && testCase.rawUtf16.every(code => Number.isInteger(code) && code >= 0 && code <= 65535), `${label}: invalid UTF-16 code units`);
+        assert((typeof testCase.expected === "string") !== (typeof testCase.error === "string"), `${label}: expected or error is required`);
+        const raw = String.fromCharCode(...testCase.rawUtf16);
+        const malformed = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(raw);
+        if (raw.includes("\0")) assert(testCase.error === "ERR_NUL_BYTE", `${label}: NUL error mismatch`);
+        else if (!raw || malformed) assert(testCase.error === "ERR_INVALID_COMPONENT", `${label}: malformed Unicode error mismatch`);
+        else {
+          const slug = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "ref";
+          const expected = `${slug}--${createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 12)}`;
+          assert(testCase.expected === expected && testCase.error === undefined, `${label}: valid Unicode encoding mismatch`);
+        }
+      }
+      continue;
+    }
     if (entry === "unity_bridge_vectors.json") {
       for (const testCase of data.cases) {
         validateUnityBridgeCase(testCase, label, ids);

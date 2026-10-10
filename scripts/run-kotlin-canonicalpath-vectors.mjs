@@ -21,6 +21,7 @@ const vectorFiles = [
   "security_cases.json",
   "component_cases.json",
   "git_cases.json",
+  "git-ref-utf16-vectors.json",
   "equality_cases.json",
 ].map((name) => path.join(root, "spec", "testdata", name));
 
@@ -168,6 +169,7 @@ function operationExpression(testCase, optionsName) {
     case "encode-component":
       return `CanonicalPath.encodeComponent(s(${kotlinBytes(testCase.raw)}), s(${kotlinBytes(testCase.profile)}))`;
     case "encode-git-ref":
+      if (testCase.rawUtf16) return `CanonicalPath.encodeGitRef(String(charArrayOf(${testCase.rawUtf16.map(code => `${code}.toChar()`).join(", ")})))`;
       return `CanonicalPath.encodeGitRef(s(${kotlinBytes(testCase.raw)}))`;
     default:
       throw new Error(`unsupported operation ${testCase.operation}`);

@@ -1,5 +1,7 @@
 # API Compatibility
 
+Since `2026.10.10-2`, TypeScript, PowerShell and Bash daemon clients enforce local hard limits of 24 MiB of decoded response bytes and a 30-second overall network deadline. Options can lower these limits. PowerShell helpers require the sealed client returned by `New-CanonicalFSDaemonClient`; its bearer is private and serialization contains diagnostics only. Git-ref encoders on UTF-16 runtimes reject unpaired surrogates with `ERR_INVALID_COMPONENT`, preserving valid Unicode encodings.
+
 The repository is still pre-1.0, but the MVP contract is intentionally narrow so downstream integrations can start testing without depending on unstable behavior.
 
 ## Stable For MVP

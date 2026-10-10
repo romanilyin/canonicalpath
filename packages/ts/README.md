@@ -11,6 +11,10 @@ Use this package when a path leaves TypeScript and must stay aligned with Go, Un
 
 Security-sensitive filesystem I/O must delegate to the Go `canonicalfs` daemon unless a separately reviewed native root-bound implementation is used.
 
+`CanonicalFSHTTPClient` enforces local hard ceilings of 24 MiB of decoded response bytes and a 30-second overall network deadline, including error bodies. Constructor options `maxResponseBytes` and `timeoutMs` can lower these limits. Custom `fetch` implementations receive an AbortSignal and must honor cancellation to stop their own network work; the client independently enforces completion deadlines. Responses are streamed before JSON parsing and redirects are rejected.
+
+`encodeGitRef` rejects unpaired UTF-16 surrogates with `ERR_INVALID_COMPONENT`; valid Unicode keeps its existing encoding.
+
 ## License
 
 `@romanilyin/canonicalpath` is licensed under the MIT License.

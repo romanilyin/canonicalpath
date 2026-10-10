@@ -9,7 +9,7 @@ The lexical helpers only implement deterministic path identity and serialization
 ## Daemon Client
 
 ```powershell
-$Client = New-CanonicalFSDaemonClient -Endpoint 'http://127.0.0.1:8765' -Token 'dev-token'
+$Client = New-CanonicalFSDaemonClient -Endpoint 'http://127.0.0.1:8765' -Token $env:CANONICALFS_DAEMON_TOKEN
 Get-CanonicalFSDaemonHealth -Client $Client
 Get-CanonicalFSDaemonCapabilities -Client $Client
 Open-CanonicalFSProject -Client $Client -ProjectId 'project-1' -HostRoot 'C:\Users\Alice\Repo'
@@ -17,6 +17,10 @@ Read-CanonicalFSText -Client $Client -ProjectId 'project-1' -Path 'README.md' -M
 ```
 
 Supported daemon operations are health, capabilities, project open/close, read/write file or UTF-8 text, stat, mkdirAll, remove, and rename. All non-health calls send `Authorization: Bearer <token>`.
+
+Clients must be created with `New-CanonicalFSDaemonClient`. The sealed client keeps the bearer private; ordinary display, JSON and CLIXML serialization omit it. Public `Token` properties and arbitrary client property bags are no longer supported. Serialization produces diagnostics, not a credential-bearing client that can be restored for requests.
+
+Every response, including errors, is counted after gzip/deflate decoding before JSON parsing. The local hard ceilings are 24 MiB and a 30-second overall network deadline. `-MaxResponseBytes` and `-TimeoutMilliseconds` can lower those limits, but cannot raise or disable them. Redirects are rejected.
 
 ## Test
 

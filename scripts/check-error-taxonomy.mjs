@@ -138,6 +138,7 @@ assertSubset("PowerShell literals", errorLiterals("packages/powershell/Canonical
   ...canonicalFsAll,
   ...taxonomy.clientLocal,
 ]);
+assertSubset("PowerShell managed transport literals", errorLiterals("packages/powershell/CanonicalPath/DaemonClient.cs"), [...canonicalFsAll, ...taxonomy.clientLocal]);
 
 const docs = read("docs/api-compatibility.md");
 for (const code of uniqueSorted(documentedCodes)) {

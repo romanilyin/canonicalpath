@@ -1,5 +1,9 @@
 Set-StrictMode -Version 2.0
 
+if ($null -eq ('CanonicalPath.PowerShell.DaemonClient' -as [type])) {
+    Add-Type -Path (Join-Path $PSScriptRoot 'DaemonClient.cs') -IgnoreWarnings -WarningAction SilentlyContinue
+}
+
 class CanonicalPathException : System.Exception {
     [string] $Code
 
@@ -529,27 +533,12 @@ function New-CanonicalFSDaemonClient {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string] $Endpoint,
-        [string] $Token = ''
+        [string] $Token = '',
+        [ValidateRange(1, 30000)][int] $TimeoutMilliseconds = 30000,
+        [ValidateRange(1, 25165824)][int] $MaxResponseBytes = 25165824
     )
 
-    $endpointValue = $Endpoint.TrimEnd('/')
-    if ($endpointValue -eq '') { throw (New-CanonicalFSDaemonError 'ERR_DAEMON_CLIENT' 'endpoint is empty') }
-    return [pscustomobject] @{
-        PSTypeName = 'CanonicalPath.CanonicalFSDaemonClient'
-        Endpoint = $endpointValue
-        Token = $Token
-    }
-}
-
-function Get-CanonicalFSDaemonClientValue {
-    param(
-        [Parameter(Mandatory = $true)] $Client,
-        [Parameter(Mandatory = $true)][string] $Name
-    )
-
-    $property = $Client.PSObject.Properties[$Name]
-    if ($null -eq $property) { throw (New-CanonicalFSDaemonError 'ERR_DAEMON_CLIENT' ('client is missing ' + $Name)) }
-    return [string] $property.Value
+    return [CanonicalPath.PowerShell.DaemonClient]::new($Endpoint, $Token, $TimeoutMilliseconds, $MaxResponseBytes)
 }
 
 function Invoke-CanonicalFSDaemonRequest {
@@ -561,61 +550,27 @@ function Invoke-CanonicalFSDaemonRequest {
         [switch] $NoAuth
     )
 
-    $endpoint = Get-CanonicalFSDaemonClientValue $Client 'Endpoint'
-    $uri = $endpoint + $Path
-    $headers = @{}
-    $token = Get-CanonicalFSDaemonClientValue $Client 'Token'
-    if (-not $NoAuth) {
-        if ($token -eq '') { throw (New-CanonicalFSDaemonError 'ERR_DAEMON_CLIENT' 'bearer token is required for this daemon endpoint') }
-        $headers['Authorization'] = 'Bearer ' + $token
+    if ($Client -isnot [CanonicalPath.PowerShell.DaemonClient]) {
+        throw (New-CanonicalFSDaemonError 'ERR_DAEMON_CLIENT' 'client must be created by New-CanonicalFSDaemonClient')
     }
-
-    $parameters = @{
-        Method = $Method
-        Uri = $uri
-        Headers = $headers
-    }
+    $json = $null
     if ($null -ne $Body) {
-        $parameters['ContentType'] = 'application/json'
-        $parameters['Body'] = ($Body | ConvertTo-Json -Depth 8)
+        $json = $Body | ConvertTo-Json -Depth 8 -Compress
     }
 
     try {
-        $response = Invoke-RestMethod @parameters
+        $transport = $Client.Send($Method, $Path, $json, [bool] $NoAuth)
     } catch {
-        $statusCode = 0
-        $message = $_.Exception.Message
-        $code = 'ERR_DAEMON'
-        $raw = ''
-        if ($null -ne $_.ErrorDetails -and $_.ErrorDetails.Message -ne '') {
-            $raw = [string] $_.ErrorDetails.Message
-        }
-        $httpResponse = $_.Exception.Response
-        if ($null -ne $httpResponse) {
-            try { $statusCode = [int] $httpResponse.StatusCode } catch { $statusCode = 0 }
-            if ($raw -eq '') { try {
-                $stream = $httpResponse.GetResponseStream()
-                if ($null -ne $stream) {
-                    $reader = New-Object System.IO.StreamReader($stream)
-                    try { $raw = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                }
-            } catch {} }
-        }
-        if ($raw -ne '') {
-            try {
-                $parsed = $raw | ConvertFrom-Json
-                if ($null -ne $parsed.error) {
-                    $code = [string] $parsed.error.code
-                    $message = [string] $parsed.error.message
-                }
-            } catch {}
-        }
-        throw (New-CanonicalFSDaemonError $code $message $statusCode)
+        $code = Get-CanonicalErrorCode $_
+        if ($code -notin @('ERR_DAEMON_CLIENT', 'ERR_RESPONSE_TOO_LARGE')) { $code = 'ERR_DAEMON' }
+        throw (New-CanonicalFSDaemonError $code 'daemon transport request failed or timed out' 0)
     }
-
+    try { $response = $transport.Json | ConvertFrom-Json }
+    catch { throw (New-CanonicalFSDaemonError 'ERR_DAEMON' 'daemon response is not valid JSON' $transport.StatusCode) }
     if ($null -ne $response -and $null -ne $response.PSObject.Properties['error'] -and $null -ne $response.error) {
-        throw (New-CanonicalFSDaemonError ([string] $response.error.code) ([string] $response.error.message) 0)
+        throw (New-CanonicalFSDaemonError ([string] $response.error.code) ([string] $response.error.message) $transport.StatusCode)
     }
+    if ($transport.StatusCode -ge 300) { throw (New-CanonicalFSDaemonError 'ERR_DAEMON' 'daemon returned a non-success HTTP status' $transport.StatusCode) }
     return $response
 }
 
@@ -761,15 +716,16 @@ function ConvertTo-CanonicalGitRef {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Ref)
 
-    if ($Ref -eq '') { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'git ref is empty') }
+    if ($Ref.Length -eq 0) { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'git ref is empty') }
     if ($Ref.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'git ref contains NUL') }
+    try { $bytes = [System.Text.UTF8Encoding]::new($false, $true).GetBytes($Ref) }
+    catch { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'git ref contains invalid Unicode') }
     $slug = $Ref -replace '[^A-Za-z0-9._-]+', '-'
     $slug = $slug -replace '^[._-]+|[._-]+$', ''
     if ($slug -eq '') { $slug = 'ref' }
 
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Ref)
         $hashBytes = $sha.ComputeHash($bytes)
     } finally {
         if ($sha -ne $null) { $sha.Dispose() }

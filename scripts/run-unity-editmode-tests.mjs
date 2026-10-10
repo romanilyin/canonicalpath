@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -73,6 +73,11 @@ function localUnityPackagePath() {
 }
 
 function runnerSource() {
+  const gitRefs = JSON.parse(readFileSync(path.join(root, "spec/testdata/git-ref-utf16-vectors.json"), "utf8")).cases;
+  const gitRefChecks = gitRefs.map(vector => {
+    const input = `new string(new char[] { ${vector.rawUtf16.map(code => `(char)${code}`).join(", ")} })`;
+    return vector.error ? `PathError("${vector.error}", delegate { CP.EncodeGitRef(${input}); });` : `Equal("${vector.expected}", CP.EncodeGitRef(${input}));`;
+  }).join("\n            ");
   return String.raw`using System;
 using System.Net;
 using System.Net.Http;
@@ -91,6 +96,7 @@ public static class CanonicalPathUnityEditModeRunner
         {
             ManagedCanonicalPathMatchesRepresentativeSharedVectors();
             ManagedCanonicalPathRejectsSecurityCases();
+            ${gitRefChecks}
             PathGuardMatchesBridgePayloadRules();
             UnityBridgeEditorEffectsFailClosed();
             ScopedPathGuardMatchesRepresentativeScopeRules();

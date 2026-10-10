@@ -92,7 +92,7 @@
     "vectors:js-standalone": "VECTOR_RESULTS_OUT=../../tmp/vector-results/js-standalone.json pnpm -C packages/javascript-standalone exec vitest run test/vectors.test.ts",
     "vectors:compare": "node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/ts.json && node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/js-standalone.json",
     "ps:test": "node scripts/run-powershell-tests.mjs",
-    "security:regressions": "node --test scripts/security-regression.test.mjs"
+    "security:regressions": "node --test scripts/security-regression.test.mjs scripts/daemon-client-security.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

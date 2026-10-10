@@ -39,16 +39,16 @@ Scoped registry use through npmjs:
     }
   ],
   "dependencies": {
-    "com.romanilyin.canonicalpath": "2026.10.10-1"
+    "com.romanilyin.canonicalpath": "2026.10.10-2"
   }
 }
 ```
 
 Release packaging:
 
-- Package version for the current Unity registry release candidate is `2026.10.10-1`.
-- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.10-1`.
-- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.10-1`.
+- Package version for the current Unity registry release candidate is `2026.10.10-2`.
+- npmjs package coordinate: `com.romanilyin.canonicalpath@2026.10.10-2`.
+- Git UPM by repository tag: `https://github.com/romanilyin/canonicalpath.git?path=/packages/unity#2026.10.10-2`.
 - The Unity package keeps committed Stinger license and notice files under
   `packages/unity`. npm `prepack` verifies that these files match the
   Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.

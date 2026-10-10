@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-- No unreleased changes; the security remediation batch is included in 2026.10.10-1 below.
+- No unreleased changes; the client security remediation is included in 2026.10.10-2 below.
+
+## 2026.10.10-2
+
+- Fixed all three findings from scan `2026-10-10-2`; see `docs/security-review-2026-10-10-2.md`.
+- Enforced local 24 MiB decoded-response ceilings and 30-second overall request deadlines in TypeScript, PowerShell and Bash, including error bodies and compressed/chunked responses.
+- Stored PowerShell bearer credentials in a sealed client with private state and safe display/serialization; construct clients with `New-CanonicalFSDaemonClient` instead of property bags.
+- Rejected malformed UTF-16 Git-ref strings with `ERR_INVALID_COMPONENT` across TypeScript, standalone JavaScript, C#, Unity, Kotlin and PowerShell while preserving valid Unicode encodings.
+- Added shared exact-code-unit vectors and hostile-server regression tests, including interrupted Bash response-file cleanup.
 
 ## 2026.10.10-1
 

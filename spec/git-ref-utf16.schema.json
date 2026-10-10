@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Git-ref inputs represented as exact UTF-16 code units",
+  "type": "object",
+  "required": ["version", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "operation", "rawUtf16"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "operation": { "const": "encode-git-ref" },
+          "rawUtf16": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 65535 } },
+          "expected": { "type": "string" },
+          "error": { "enum": ["ERR_INVALID_COMPONENT", "ERR_NUL_BYTE"] }
+        },
+        "oneOf": [
+          { "required": ["expected"], "not": { "required": ["error"] } },
+          { "required": ["error"], "not": { "required": ["expected"] } }
+        ]
+      }
+    }
+  }
+}

@@ -150,6 +150,13 @@ export function encodeComponent(name: string, profile: "portable" | "win32" | "p
 export function encodeGitRef(raw: string): string {
   if (raw === "") throw pathError("ERR_INVALID_COMPONENT", "git ref is empty");
   if (raw.includes("\0")) throw pathError("ERR_NUL_BYTE", "git ref contains NUL");
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = raw.charCodeAt(++i);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+    } else if (code >= 0xdc00 && code <= 0xdfff) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+  }
   const slug = trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-") || "ref";
   return `${slug}--${sha256Hex(raw).slice(0, 12)}`;
 }

@@ -1,6 +1,8 @@
 package com.canonicalpath
 
 import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -195,10 +197,11 @@ object CanonicalPath {
     fun encodeGitRef(raw: String): String {
         if (raw.isEmpty()) throw pathError("ERR_INVALID_COMPONENT", "git ref is empty")
         if (hasNul(raw)) throw pathError("ERR_NUL_BYTE", "git ref contains NUL")
+        val hash = sha256Hex(raw).substring(0, 12)
         var slug = slugGitRef(raw)
         slug = trimComponentEdges(slug)
         if (slug.isEmpty()) slug = "ref"
-        return "$slug--${sha256Hex(raw).substring(0, 12)}"
+        return "$slug--$hash"
     }
 
     private fun parseFileUri(uri: String, options: CanonicalPathNormalizeOptions): String {
@@ -514,7 +517,13 @@ object CanonicalPath {
     private fun pathError(code: String, message: String): CanonicalPathException = CanonicalPathException(code, message)
 
     private fun sha256Hex(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(StandardCharsets.UTF_8))
+        val bytes = try {
+            StandardCharsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT).encode(CharBuffer.wrap(input))
+        } catch (_: CharacterCodingException) { throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode") }
+        val sha = MessageDigest.getInstance("SHA-256")
+        sha.update(bytes)
+        val digest = sha.digest()
         return digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 }

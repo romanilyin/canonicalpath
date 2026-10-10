@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "git-utf16-empty", "operation": "encode-git-ref", "rawUtf16": [], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-high-first", "operation": "encode-git-ref", "rawUtf16": [55296], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-high-second", "operation": "encode-git-ref", "rawUtf16": [55297], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-high-last", "operation": "encode-git-ref", "rawUtf16": [56319], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-low-first", "operation": "encode-git-ref", "rawUtf16": [56320], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-low-last", "operation": "encode-git-ref", "rawUtf16": [57343], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-reversed-pair", "operation": "encode-git-ref", "rawUtf16": [56832, 55357], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-two-high", "operation": "encode-git-ref", "rawUtf16": [55296, 55297], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-high-before-ascii", "operation": "encode-git-ref", "rawUtf16": [55296, 97], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-low-after-ascii", "operation": "encode-git-ref", "rawUtf16": [97, 56320], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-pair-then-high", "operation": "encode-git-ref", "rawUtf16": [55357, 56832, 55296], "error": "ERR_INVALID_COMPONENT" },
+    { "id": "git-utf16-nul", "operation": "encode-git-ref", "rawUtf16": [0], "error": "ERR_NUL_BYTE" },
+    { "id": "git-utf16-valid-emoji", "operation": "encode-git-ref", "rawUtf16": [55357, 56832], "expected": "ref--f0443a342c5e" },
+    { "id": "git-utf16-valid-first-pair", "operation": "encode-git-ref", "rawUtf16": [55296, 56320], "expected": "ref--31237b174ba6" },
+    { "id": "git-utf16-valid-last-pair", "operation": "encode-git-ref", "rawUtf16": [56319, 57343], "expected": "ref--708b8add9f6b" },
+    { "id": "git-utf16-valid-replacement-character", "operation": "encode-git-ref", "rawUtf16": [65533], "expected": "ref--83d544ccc223" },
+    { "id": "git-utf16-valid-prefixed-emoji", "operation": "encode-git-ref", "rawUtf16": [102, 47, 55357, 56832], "expected": "f--b04b805d12aa" }
+  ]
+}

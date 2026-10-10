@@ -5,6 +5,12 @@ BASE_URL="${CANONICALFS_DAEMON_URL:-http://127.0.0.1:8765}"
 BASE_URL="${BASE_URL%/}"
 TOKEN="${CANONICALFS_DAEMON_TOKEN:-}"
 PYTHON_BIN="${PYTHON:-python3}"
+TRANSPORT_HELPER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/canonicalfs_transport.py"
+# Wait for the request subshell's EXIT cleanup before the CLI exits on a
+# process-group signal. Otherwise the caller can observe a leftover file while
+# that child is still completing its signal handler.
+trap 'wait; exit 130' INT
+trap 'wait; exit 143' TERM HUP
 
 usage() {
   cat >&2 <<'USAGE'
@@ -93,7 +99,7 @@ if error:
     message = error.get("message", "daemon error")
     print(f"{code}: {message}", file=sys.stderr)
     raise SystemExit(1)
-if status >= 400:
+if status < 200 or status >= 300:
     print(f"ERR_DAEMON: HTTP {status}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -111,15 +117,13 @@ else:
 PY
 }
 
-request() {
+request() (
   local method="$1"
   local path="$2"
   local mode="$3"
   local body="${4:-}"
   local tmp status parse_status config=""
-  tmp="$(mktemp)"
-
-  local curl_args=(-sS -o "$tmp" -w "%{http_code}" -H "Accept: application/json")
+  local curl_args=(-H "Accept: application/json")
   if [[ "$path" != "/healthz" ]]; then
     require_token
     [[ "$TOKEN" != *$'\n'* && "$TOKEN" != *$'\r'* ]] || die "token contains a line break"
@@ -130,18 +134,20 @@ request() {
   if [[ "$method" == "POST" ]]; then
     curl_args+=(-X POST -H "Content-Type: application/json" --data "$body")
   fi
-  curl_args+=("$BASE_URL$path")
+  curl_args+=(--url "$BASE_URL$path")
+  tmp="$(mktemp)"
+  trap 'rm -f -- "$tmp"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
 
-  if ! status="$(printf '%s' "$config" | curl --config - "${curl_args[@]}")"; then
-    rm -f "$tmp"
+  if ! status="$(printf '%s' "$config" | "$PYTHON_BIN" "$TRANSPORT_HELPER" "$tmp" "${curl_args[@]}")"; then
     die "daemon request failed: $method $path"
   fi
 
   parse_status=0
   parse_response "$mode" "$status" "$tmp" || parse_status=$?
-  rm -f "$tmp"
   return "$parse_status"
-}
+)
 
 need_command curl
 need_command "$PYTHON_BIN"

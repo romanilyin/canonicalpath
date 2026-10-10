@@ -48,13 +48,18 @@ function Invoke-VectorCase {
 }
 
 $testdataDir = Join-Path $RepoRoot 'spec/testdata'
-$files = Get-ChildItem -Path $testdataDir -Filter '*_cases.json' | Sort-Object Name
+$files = @(Get-ChildItem -Path $testdataDir -Filter '*_cases.json' | Sort-Object Name) + @(Get-Item -LiteralPath (Join-Path $testdataDir 'git-ref-utf16-vectors.json'))
 $failures = New-Object System.Collections.ArrayList
 $count = 0
 
 foreach ($file in $files) {
     $vectors = Get-Content -LiteralPath $file.FullName -Encoding UTF8 -Raw | ConvertFrom-Json
     foreach ($case in $vectors.cases) {
+        if (Has-Property $case 'rawUtf16') {
+            $raw = New-Object System.Text.StringBuilder
+            foreach ($code in $case.rawUtf16) { [void] $raw.Append([char][int]$code) }
+            $case | Add-Member -NotePropertyName 'raw' -NotePropertyValue $raw.ToString()
+        }
         $count++
         $status = 'ok'
         $value = $null
