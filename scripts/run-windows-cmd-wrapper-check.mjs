@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
@@ -63,9 +63,9 @@ function runWrapper(daemon, args, options = {}) {
   if (args[0] === "write-text") payload.text = args[3];
   if (args[0] === "read-text" && args[3] !== undefined) payload.max_bytes = Number(args[3]);
   if (args[0] === "rename") payload.target = args[3];
-  const selectedWrapper = options.compat ? wrapperForWindows.replace(/canonicalfs\.cmd$/, "canonicalpath.cmd") : wrapperForWindows;
+  const selectedWrapper = options.compat ? "canonicalpath.cmd" : "canonicalfs.cmd";
   const result = spawnSync("cmd.exe", ["/d", "/c", selectedWrapper], {
-    cwd: root, input: JSON.stringify(payload), encoding: "utf8", timeout: 45000,
+    cwd: options.wrapperDirectory ?? path.dirname(wrapper), input: JSON.stringify(payload), encoding: "utf8", timeout: 45000,
     env: wrapperEnv(daemon, options.token),
   });
   if (result.error) throw result.error;
@@ -103,6 +103,15 @@ function runSmokeCheck(daemon) {
       const roundTrip = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat });
       if (roundTrip !== hostile || existsSync(marker)) throw new Error("CMD transport interpreted data as commands");
     }
+    const unusualDirectory = path.join(root, "tmp", `cmd-wrapper %PATH% & (probe) ${process.pid}`);
+    mkdirSync(unusualDirectory, { recursive: true });
+    try {
+      for (const file of ["canonicalfs.cmd", "canonicalpath.cmd", "canonicalfs.ps1"]) copyFileSync(path.join(path.dirname(wrapper), file), path.join(unusualDirectory, file));
+      for (const compat of [false, true]) {
+        const value = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat, wrapperDirectory: unusualDirectory });
+        if (value !== hostile) throw new Error("CMD wrapper failed from a path containing shell metacharacters");
+      }
+    } finally { rmSync(unusualDirectory, { recursive: true, force: true }); }
 
     const stat = JSON.parse(runWrapper(daemon, ["stat", projectId, "safe/file.txt"]));
     if (stat.is_directory || stat.size <= 0) throw new Error(`stat response mismatch: ${JSON.stringify(stat)}`);
@@ -161,8 +170,11 @@ function Invoke-Wrapper([string[]]$Arguments) {
   if ($Arguments.Length -gt 2) { $payload.path=$Arguments[2] }
   if ($Arguments.Length -gt 3) { $payload.max_bytes=[long]$Arguments[3] }
   $OutputEncoding = New-Object Text.UTF8Encoding($false)
-  ($payload | ConvertTo-Json -Compress) | & cmd.exe /d /c ${psString(wrapperPath)} | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw ('wrapper command failed: ' + ($Arguments -join ' ')) }
+  Push-Location -LiteralPath ${psString(path.win32.dirname(wrapperPath))}
+  try {
+    ($payload | ConvertTo-Json -Compress) | & cmd.exe /d /c canonicalfs.cmd | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ('wrapper command failed: ' + ($Arguments -join ' ')) }
+  } finally { Pop-Location }
 }
 Write-Host ('Windows CMD wrapper allocation check running: ' + ${iterations} + ' iterations')
 
