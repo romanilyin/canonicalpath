@@ -13,6 +13,12 @@ import (
 
 func TestRegistrationPreservesTrustedBootstrapAlias(t *testing.T) {
 	trusted, outside := t.TempDir(), t.TempDir()
+	// Match the resolved target name recorded at trusted bootstrap. On Windows
+	// TempDir may use an 8.3 profile spelling while EvalSymlinks returns its long name.
+	trusted, err := filepath.EvalSymlinks(trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for dir, value := range map[string]string{trusted: "trusted", outside: "outside"} {
 		if err := os.WriteFile(filepath.Join(dir, "identity"), []byte(value), 0600); err != nil {
 			t.Fatal(err)
