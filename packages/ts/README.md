@@ -13,6 +13,8 @@ Security-sensitive filesystem I/O must delegate to the Go `canonicalfs` daemon u
 
 `CanonicalFSHTTPClient` enforces local hard ceilings of 24 MiB of decoded response bytes and a 30-second overall network deadline, including error bodies. Constructor options `maxResponseBytes` and `timeoutMs` can lower these limits. Custom `fetch` implementations receive an AbortSignal and must honor cancellation to stop their own network work; the client independently enforces completion deadlines. Responses are streamed before JSON parsing and redirects are rejected.
 
+The bearer is stored in an ECMAScript private field and is absent from object enumeration, spreading, JSON serialization and Node inspection. JSON and default Node diagnostics expose only the client type. Keep the constructor options and any custom transport that receives Authorization headers out of logs. If an older client instance entered logs or telemetry, rotate the daemon token and remove exposed copies.
+
 `encodeGitRef` rejects unpaired UTF-16 surrogates with `ERR_INVALID_COMPONENT`; valid Unicode keeps its existing encoding.
 
 ## License

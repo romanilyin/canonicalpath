@@ -108,8 +108,8 @@ Use the root-bound filesystem layer:
 - JavaScript standalone npm package: `@romanilyin/canonicalpath-standalone`.
 - Go module: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
-- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.10.10-3`.
-- Release version: `2026.10.10-3`.
+- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.10.10-4`.
+- Release version: `2026.10.10-4`.
 - License model:
   - Repository default: `MIT`.
   - `@romanilyin/canonicalpath`: `MIT`.

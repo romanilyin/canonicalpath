@@ -13,8 +13,8 @@ const npmPackageName = "@romanilyin/canonicalpath";
 const standalonePackageName = "@romanilyin/canonicalpath-standalone";
 const unityPackageName = "com.romanilyin.canonicalpath";
 const goModulePath = "github.com/romanilyin/canonicalpath/packages/go";
-const releaseVersion = "2026.10.10-3";
-const unityReleaseVersion = "2026.10.10-3";
+const releaseVersion = "2026.10.10-4";
+const unityReleaseVersion = "2026.10.10-4";
 const unityMcpErrors = [
   "ERR_ABSOLUTE_PATH",
   "ERR_DRIVE_RELATIVE_PATH",
