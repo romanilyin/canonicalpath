@@ -103,6 +103,7 @@ function runSmokeCheck(daemon) {
       const roundTrip = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "4096"], { compat });
       if (roundTrip !== hostile || existsSync(marker)) throw new Error("CMD transport interpreted data as commands");
     }
+    mkdirSync(path.join(root, "tmp"), { recursive: true });
     const installation = mkdtempSync(path.join(root, "tmp", "cmd-install-"));
     const unusualDirectory = path.join(installation, `cmd-wrapper %PATH% & (probe) ${process.pid}`);
     mkdirSync(unusualDirectory, { recursive: true });
