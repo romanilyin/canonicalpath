@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- No unreleased changes; the latest security remediation is included in 2026.10.10-4 below.
+- Updated Vite to 8.3.4, Vitest to 5.0.5 and Node types to 26.6.5, reconciling their shared lockfile.
+- Updated setup-node, artifact upload/download actions and all CodeQL steps to compatible pinned revisions; grouped coupled Dependabot updates to prevent mixed CodeQL versions.
+- Added a small CI artifact transfer check for the new upload/download pair, without package publication. Kept Go 1.25 support and the current x/sys dependency; the proposed x/sys 0.49.0 requires Go 1.26.
 
 ## 2026.10.10-4
 
