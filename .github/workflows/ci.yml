@@ -27,6 +27,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm go:race
+      - name: Prepare release artifact transfer fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-artifact-transfer/upload"
+          cd "$RUNNER_TEMP/release-artifact-transfer/upload"
+          for package in ts standalone unity; do
+            printf '{"name":"transport-fixture-%s"}\n' "$package" > package.json
+            tar -czf "$package.tgz" package.json
+          done
+          sha256sum -- *.tgz > manifest.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-artifact-transfer
+          archive: true
+          path: |
+            ${{ runner.temp }}/release-artifact-transfer/upload/*.tgz
+            ${{ runner.temp }}/release-artifact-transfer/upload/manifest.sha256
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-artifact-transfer
+          path: ${{ runner.temp }}/release-artifact-transfer/download
+          digest-mismatch: error
+      - name: Verify release artifact transfer
+        run: |
+          cd "$RUNNER_TEMP/release-artifact-transfer/download"
+          cmp manifest.sha256 "$RUNNER_TEMP/release-artifact-transfer/upload/manifest.sha256"
+          sha256sum --check --strict manifest.sha256
 
   windows-powershell:
     name: Windows PowerShell module smoke

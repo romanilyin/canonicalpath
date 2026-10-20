@@ -176,6 +176,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # immutable release artifacts
         with:
           name: npm-packages
+          archive: true
           path: |
             ${{ runner.temp }}/npm-packages/*.tgz
             ${{ runner.temp }}/npm-packages/manifest.tsv
@@ -208,6 +209,7 @@ jobs:
         with:
           name: npm-packages
           path: ${{ runner.temp }}/npm-packages
+          digest-mismatch: error
 
       - name: Verify artifact manifest and tarball digests
         run: |
