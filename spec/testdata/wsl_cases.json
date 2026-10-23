@@ -5,63 +5,119 @@
       "id": "wsl-mnt-c",
       "operation": "normalize",
       "raw": "/mnt/c/Users/Alice/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "c:/Users/Alice/Repo"
     },
     {
       "id": "wsl-uppercase-drive-letter",
       "operation": "normalize",
       "raw": "/mnt/C/Users/Alice/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "c:/Users/Alice/Repo"
     },
     {
       "id": "wsl-custom-mount-root",
       "operation": "normalize",
       "raw": "/drives/d/Work/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/drives" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/drives"
+        }
+      },
       "expected": "d:/Work/Repo"
     },
     {
       "id": "wsl-mapping-disabled",
       "operation": "normalize",
       "raw": "/mnt/c/Users/Alice/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": false } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": false
+        }
+      },
       "expected": "/mnt/c/Users/Alice/Repo"
     },
     {
       "id": "wsl-target-posix-keeps-drive-mount",
       "operation": "normalize",
       "raw": "/mnt/c/Users/Alice/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "/mnt/c/Users/Alice/Repo"
     },
     {
       "id": "wsl-non-drive-mount-stays-posix",
       "operation": "normalize",
       "raw": "/mnt/project/repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "posix", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "/mnt/project/repo"
     },
     {
       "id": "wsl-dotdot-after-drive-mapping",
       "operation": "normalize",
       "raw": "/mnt/c/Users/Alice/Repo/src/../README.md",
-      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "c:/Users/Alice/Repo/README.md"
     },
     {
       "id": "to-wsl-default-mount",
       "operation": "to-wsl",
       "raw": "c:/Users/Alice/Repo",
-      "options": { "wsl": { "mountRoot": "/mnt" } },
+      "options": {
+        "wsl": {
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "/mnt/c/Users/Alice/Repo"
     },
     {
       "id": "to-wsl-custom-mount",
       "operation": "to-wsl",
       "raw": "d:/Work/Repo",
-      "options": { "wsl": { "mountRoot": "/drives" } },
+      "options": {
+        "wsl": {
+          "mountRoot": "/drives"
+        }
+      },
       "expected": "/drives/d/Work/Repo"
     },
     {
@@ -69,6 +125,332 @@
       "operation": "to-wsl",
       "raw": "/home/alice/repo",
       "expected": "/home/alice/repo"
+    },
+    {
+      "id": "wsl-identity-cross-drive",
+      "operation": "normalize",
+      "raw": "/mnt/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "d:/repo"
+    },
+    {
+      "id": "wsl-identity-distinct-nested",
+      "operation": "normalize",
+      "raw": "/mnt/c/d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "c:/d/repo"
+    },
+    {
+      "id": "wsl-identity-leave-mount",
+      "operation": "normalize",
+      "raw": "/mnt/c/../../repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/repo"
+    },
+    {
+      "id": "wsl-identity-leave-mount-win32",
+      "operation": "normalize",
+      "raw": "/mnt/c/../../repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "wsl-identity-custom-cross-drive",
+      "operation": "normalize",
+      "raw": "/drives/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/drives"
+        }
+      },
+      "expected": "d:/repo"
+    },
+    {
+      "id": "wsl-identity-repeated-separators",
+      "operation": "normalize",
+      "raw": "/mnt//c//repo/./src/../file",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "c:/repo/file"
+    },
+    {
+      "id": "wsl-identity-custom-repeated-separators",
+      "operation": "normalize",
+      "raw": "/mount///x/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mount///x///"
+        }
+      },
+      "expected": "d:/repo"
+    },
+    {
+      "id": "wsl-identity-disabled-cross-drive",
+      "operation": "normalize",
+      "raw": "/mnt/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": false,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/mnt/d/repo"
+    },
+    {
+      "id": "wsl-identity-posix-cross-drive",
+      "operation": "normalize",
+      "raw": "/mnt/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/mnt/d/repo"
+    },
+    {
+      "id": "wsl-identity-prefix-sibling",
+      "operation": "normalize",
+      "raw": "/mnt-evil/c/../d/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/mnt-evil/d/repo"
+    },
+    {
+      "id": "wsl-identity-drive-prefix-sibling",
+      "operation": "normalize",
+      "raw": "/mnt/cd/../c/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "wsl-identity-non-drive-component",
+      "operation": "normalize",
+      "raw": "/mnt/cd/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/mnt/cd/repo"
+    },
+    {
+      "id": "wsl-identity-file-uri-drive-root",
+      "operation": "normalize",
+      "raw": "file:///C:/../repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        },
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "wsl-identity-unicode-mount-exact",
+      "operation": "normalize",
+      "raw": "/café/c/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/café"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "wsl-identity-unicode-mount-distinct",
+      "operation": "normalize",
+      "raw": "/café/c/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/café"
+        }
+      },
+      "expected": "/café/c/repo"
+    },
+    {
+      "id": "wsl-identity-unicode-mount-distinct-reverse",
+      "operation": "normalize",
+      "raw": "/café/c/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "portable",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/café"
+        }
+      },
+      "expected": "/café/c/repo"
+    },
+    {
+      "id": "wsl-reject-removed-ads",
+      "operation": "normalize",
+      "raw": "/mnt/c/file:stream/../repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        },
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "wsl-reject-removed-device",
+      "operation": "normalize",
+      "raw": "/mnt/c/CON/../repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        },
+        "windows": {
+          "rejectDeviceNames": true
+        }
+      },
+      "error": "ERR_RESERVED_DEVICE_NAME"
+    },
+    {
+      "id": "wsl-relative-input-never-drive-mapped",
+      "operation": "normalize",
+      "raw": "drives/c/../d/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/drives"
+        }
+      },
+      "expected": "drives/d/repo"
+    },
+    {
+      "id": "wsl-native-drive-never-remapped",
+      "operation": "normalize",
+      "raw": "c:/d/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "c:/d/repo"
+    },
+    {
+      "id": "wsl-unicode-letter-not-drive",
+      "operation": "normalize",
+      "raw": "/mnt/K/repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "/mnt/K/repo"
+    },
+    {
+      "id": "wsl-mount-prepend-before-trailing-slash",
+      "operation": "normalize",
+      "raw": "/mnt\u0600/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0600/"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "wsl-mount-prepend-remains-distinct",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0600/"
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "wsl-to-mount-prepend-preserved",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0600///"
+        }
+      },
+      "expected": "/mnt\u0600/c/repo"
     }
   ]
 }

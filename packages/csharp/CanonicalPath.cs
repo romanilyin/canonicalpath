@@ -62,8 +62,14 @@ public static class CanonicalPath
         if (!PreserveExtendedLength(options)) value = UnwrapWindowsExtendedPrefix(value);
         value = value.Replace('\\', '/');
 
-        if (OptionTargetProfile(options) != "posix")
+        if (OptionTargetProfile(options) != "posix" && value.StartsWith("/", StringComparison.Ordinal) && !value.StartsWith("//", StringComparison.Ordinal))
         {
+            if (options?.WSL?.Enabled == true && !IsUriWindowsDrivePath(value))
+            {
+                if (RejectADS(options) && HasWindowsADS(value)) throw PathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+                if (RejectDeviceNames(options) && HasReservedDeviceName(value)) throw PathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+                value = CleanCanonical(value);
+            }
             string? mapped = MapWSLDrive(value, options?.WSL);
             if (mapped != null) value = mapped;
         }
@@ -175,10 +181,11 @@ public static class CanonicalPath
     {
         if (string.IsNullOrEmpty(raw)) throw PathError("ERR_INVALID_COMPONENT", "git ref is empty");
         if (raw.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "git ref contains NUL");
-        string hash = ShortSha256(raw, 12);
+        string hash = ShortSha256(raw, 64);
         string slug = SlugGitRef(raw).Trim('.', '_', '-');
+        if (slug.Length > 80) slug = slug.Substring(0, 80).Trim('.', '_', '-');
         if (slug.Length == 0) slug = "ref";
-        return slug + "--" + hash;
+        return "v2-" + slug + "--" + hash;
     }
 
     private static string CleanCanonical(string raw)
@@ -374,7 +381,7 @@ public static class CanonicalPath
         if (options == null || !options.Enabled) return null;
         string mountRoot = string.IsNullOrEmpty(options.MountRoot) ? "/mnt" : options.MountRoot;
         mountRoot = mountRoot.TrimEnd('/');
-        string prefix = mountRoot + "/";
+        string prefix = System.Text.RegularExpressions.Regex.Replace(mountRoot, "/+", "/") + "/";
         if (!value.StartsWith(prefix, StringComparison.Ordinal)) return null;
 
         string rest = value.Substring(prefix.Length);

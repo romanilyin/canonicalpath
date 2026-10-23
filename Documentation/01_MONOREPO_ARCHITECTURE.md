@@ -333,7 +333,7 @@ Option contract:
 - `file://` and `vscode-file://` are unwrapped only when `allowFileUri` or `allowVSCodeFileUri` is explicitly true.
 - Accepted URI inputs are percent-decoded exactly once; encoded `/` and `\` are rejected unless `rejectEncodedSlash: false` is explicitly set.
 - `targetProfile` validates absolute root families: `portable` accepts POSIX, drive, UNC, and relative paths; `posix` rejects drive/UNC roots; `win32-drive` rejects POSIX/UNC roots while relative paths stay portable.
-- WSL drive mapping runs only when `wsl.enabled` is true and `targetProfile` is not `posix`.
+- WSL drive mapping applies only to absolute POSIX candidates when `wsl.enabled` is true and `targetProfile` is not `posix`. Clean POSIX dot segments before selecting a drive; relative inputs and native Windows/UNC roots are not WSL candidates.
 - UNC roots are preserved as `//server/share/...`; the MVP has no `deUNC` option.
 
 Pipeline:
@@ -343,10 +343,13 @@ Pipeline:
 3. URI unwrap: allowed `file://` / `vscode-file://`, with mandatory one-pass percent decoding.
 4. Windows extended prefix handling: `\\?\C:\x` -> `c:/x`, `\\?\UNC\server\share` -> `//server/share` or structured UNC.
 5. Separator normalization: `\` -> `/`.
-6. WSL mount mapping: `/mnt/c/x` -> `c:/x`, если enabled и `targetProfile` не `posix`.
-7. Drive letter normalization: `C:/x` -> `c:/x`.
-8. Lexical clean: `.` and `..`, duplicate `/`, trailing slash policy.
-9. Validate canonical grammar and `targetProfile`.
+6. Для включённого WSL mapping сначала проверить настроенные ADS/device-name ограничения и выполнить POSIX lexical clean кандидата. `/mnt/c/../d/repo` становится `/mnt/d/repo` до выбора диска. Windows drive, file-URI drive и UNC корни сохраняют собственную семантику.
+7. WSL mount mapping очищенного POSIX пути: `/mnt/d/repo` -> `d:/repo`, если enabled и `targetProfile` не `posix`. Повторные `/` в настроенном mount root учитываются при сопоставлении; `/mnt/c/../../repo` остаётся `/repo`.
+8. File-URI drive-root handling и drive letter normalization: `/C:/x` -> `c:/x`. Проверить drive-relative, ADS и device-name ограничения.
+9. Lexical clean итогового семейства корня: `.` and `..`, duplicate `/`, trailing slash policy.
+10. Validate canonical grammar and `targetProfile`; например, `/repo` отвергается профилем `win32-drive`.
+
+`isEqual`, `relative` и prefix matching mount root используют точную последовательность UTF-8/code units без Unicode canonical equivalence. См. [Identity v2 migration](IDENTITY_V2_MIGRATION.md) перед переиспользованием project/cache identities.
 
 ### Правила canonical grammar
 

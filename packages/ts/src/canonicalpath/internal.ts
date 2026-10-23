@@ -38,7 +38,7 @@ export function unwrapWindowsExtendedPrefix(value: string): string {
 export function mapWSLDrive(value: string, options: WSLOptions | undefined): string | undefined {
   if (!options?.enabled) return undefined;
   const mountRoot = trimBoundaryCharacters(options.mountRoot ?? "/mnt", "/", false);
-  const prefix = `${mountRoot}/`;
+  const prefix = `${mountRoot.replace(/\/+/g, "/")}/`;
   if (!value.startsWith(prefix)) return undefined;
 
   const rest = value.slice(prefix.length);

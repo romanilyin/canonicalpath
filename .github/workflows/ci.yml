@@ -70,9 +70,45 @@ jobs:
           cache-dependency-path: packages/go/go.mod
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm ps:test -- --all-available
+      - run: pnpm ps:test -- --shell pwsh --shell powershell.exe --allow-windows-powershell
       - run: pnpm cmd:smoke
       - run: pnpm security:regressions
       - run: go test ./packages/go/canonicalfs ./packages/go/canonicalfsrpc ./packages/go/cmd/canonicalfs-daemon
-      - run: pnpm ps:alloc -- --all-available
-      - run: pnpm ps:transport:alloc -- --all-available
+      - name: Windows bootstrap private-DACL tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SystemDrive -notmatch '^[A-Za-z]:$') { throw 'Expected a local system drive' }
+          $testRoot = Join-Path ($env:SystemDrive + '\') ('canonicalfs-bootstrap-ci-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $testRoot) { throw 'Private test path already exists' }
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          try { $userSid = $identity.User.Value } finally { $identity.Dispose() }
+          $security = [Security.AccessControl.DirectorySecurity]::new()
+          $security.SetSecurityDescriptorSddlForm("O:${userSid}D:P(A;OICI;FA;;;${userSid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+          $previousTemp = $env:TEMP
+          $previousTmp = $env:TMP
+          $ownsTestRoot = $false
+          $testExitCode = 1
+          try {
+            $directory = [IO.DirectoryInfo]::new($testRoot)
+            [IO.FileSystemAclExtensions]::Create($directory, $security)
+            $directory.Refresh()
+            $actualSecurity = [IO.FileSystemAclExtensions]::GetAccessControl($directory)
+            if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                -not $actualSecurity.AreAccessRulesProtected -or
+                $actualSecurity.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $userSid) {
+              throw 'New test root must be owned by the current user with a protected DACL and no reparse point'
+            }
+            $ownsTestRoot = $true
+            $env:TEMP = $testRoot
+            $env:TMP = $testRoot
+            go test -count=1 ./packages/go/cmd/canonicalfs-bootstrap
+            $testExitCode = $LASTEXITCODE
+          } finally {
+            $env:TEMP = $previousTemp
+            $env:TMP = $previousTmp
+            if ($ownsTestRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+          }
+          exit $testExitCode
+      - run: pnpm ps:alloc -- --shell pwsh --shell powershell.exe --allow-windows-powershell
+      - run: pnpm ps:transport:alloc -- --shell pwsh --shell powershell.exe --allow-windows-powershell

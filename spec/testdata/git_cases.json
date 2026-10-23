@@ -5,35 +5,116 @@
       "id": "branch-dir-slash-name",
       "operation": "encode-git-ref",
       "raw": "feature/auth",
-      "expected": "feature-auth--fc659bd73585",
-      "notes": "Git ref directory encoding uses slug plus first 12 hex chars of SHA-256(raw)."
+      "expected": "v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6",
+      "notes": "Version 2: ASCII slug up to 80 bytes and full SHA-256 of the exact raw UTF-8 input; at most 149 ASCII bytes."
     },
     {
       "id": "branch-dir-slash-collision",
       "operation": "encode-git-ref",
       "raw": "feature-auth",
-      "expected": "feature-auth--473f3d0e8078",
+      "expected": "v2-feature-auth--473f3d0e807867c2452edc63a8c20f348ddb1bf5fdac7a2647d79e120e2c5256",
       "notes": "This must not collide with feature/auth."
     },
     {
       "id": "branch-dir-space-name",
       "operation": "encode-git-ref",
       "raw": "bugfix/JIRA-123 fix",
-      "expected": "bugfix-JIRA-123-fix--d4e224c55ec0"
+      "expected": "v2-bugfix-JIRA-123-fix--d4e224c55ec0360fb57560d5e03e2ff247dfb0acade990115b1c6498d7f9c4dd"
     },
     {
       "id": "branch-dir-release-name",
       "operation": "encode-git-ref",
       "raw": "release/v1.0.0",
-      "expected": "release-v1.0.0--19d11b42323b"
+      "expected": "v2-release-v1.0.0--19d11b42323b624793ac6990f155bec50d2fcee95d00804ccbbb0aea9fe9f2bd"
     },
     {
       "id": "prefix-bypass-fixture",
       "operation": "normalize",
       "raw": "c:/project-evil/file.txt",
-      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
       "expected": "c:/project-evil/file.txt",
       "notes": "Used by relative(root,target) tests to ensure c:/project is not a prefix match for c:/project-evil."
+    },
+    {
+      "id": "git-v2-unicode-nfc",
+      "operation": "encode-git-ref",
+      "raw": "café",
+      "expected": "v2-caf--850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e"
+    },
+    {
+      "id": "git-v2-unicode-nfd",
+      "operation": "encode-git-ref",
+      "raw": "café",
+      "expected": "v2-cafe--81ef060bcd98adc7824eb5c1ada83c32491b16018e11e79f00ab9d09e04b015a"
+    },
+    {
+      "id": "git-v2-unicode-emoji",
+      "operation": "encode-git-ref",
+      "raw": "feature/🚀",
+      "expected": "v2-feature--3ba9467e8561557653e3df95f7521695d49d42437dee9da7de13f5e3446ddf5e"
+    },
+    {
+      "id": "git-v2-unicode-replacement",
+      "operation": "encode-git-ref",
+      "raw": "�",
+      "expected": "v2-ref--83d544ccc223c057d2bf80d3f2a32982c32c3c0db8e2674820da5064783fb097"
+    },
+    {
+      "id": "git-v2-bounded-slug-a",
+      "operation": "encode-git-ref",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/one",
+      "expected": "v2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--9c3bb57d8c2e757bf299d1f162ea73dd8e17e5703ab2cf45d42ecda0c83189da"
+    },
+    {
+      "id": "git-v2-bounded-slug-b",
+      "operation": "encode-git-ref",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/two",
+      "expected": "v2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--eebd38af673a1f902438bf8ba695cb173772e58246a56f182d339d398ef5d1ed"
+    },
+    {
+      "id": "git-v2-bounded-trailing-punctuation",
+      "operation": "encode-git-ref",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected": "v2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--52ae1be05d449d2a74504766ef6c7e1699c70e35b958758c31f20837b494774f"
+    },
+    {
+      "id": "git-v2-empty-slug",
+      "operation": "encode-git-ref",
+      "raw": "...___---",
+      "expected": "v2-ref--f52ad4d0b5e0ff543e8d289d110aa45098121ddf589c447651ba801bc7f16422"
+    },
+    {
+      "id": "git-v2-reserved-name",
+      "operation": "encode-git-ref",
+      "raw": "CON.txt",
+      "expected": "v2-CON.txt--09c8cc7edcae01ac7fc6771a5ceef1643a411ff8b484bb0c1b80c56c33b74efb"
+    },
+    {
+      "id": "git-v2-raw-whitespace",
+      "operation": "encode-git-ref",
+      "raw": " feature/auth ",
+      "expected": "v2-feature-auth--26a36dd7a7c21d901b1c0a4ced98daec46f7d74a6bd2e944775b158d68cb72b0"
+    },
+    {
+      "id": "git-v2-empty-rejected",
+      "operation": "encode-git-ref",
+      "raw": "",
+      "error": "ERR_INVALID_COMPONENT"
+    },
+    {
+      "id": "git-v2-nul-rejected",
+      "operation": "encode-git-ref",
+      "raw": "ref\u0000x",
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "git-v2-slug-strict-ascii",
+      "operation": "encode-git-ref",
+      "raw": "xKİſy",
+      "expected": "v2-x-y--41c664e0948fafcebb37535a1e50b4feefab4356689453f2ada98762c6b49c9e"
     }
   ]
 }

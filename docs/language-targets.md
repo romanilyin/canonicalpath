@@ -26,7 +26,7 @@ Read “supported” together with the security level. In this repository, `cano
 - PowerShell 7: supported through the experimental lexical module and typed JSON HTTP client transport to the Go daemon.
 - PowerShell module 5.1 + 7: experimental lexical `CanonicalPath` surface and typed daemon HTTP client helpers exist and are checked by shared-vector and daemon smoke tests locally and by a manual Windows workflow job.
 - Bash wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls; no filesystem security boundary claims.
-- Windows CMD/BAT wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTP calls via `curl.exe` and `powershell.exe`; no filesystem security boundary claims.
+- Windows CMD/BAT wrapper: supported experimental CLI transport wrapper for authenticated Go daemon HTTPS calls through the bounded managed client launched by PowerShell 7 (`pwsh.exe`); no filesystem security boundary claims.
 - Python: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm python:vectors`; no filesystem operations or daemon transport yet.
 - Dart / Flutter: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm dart:vectors`; no filesystem operations or daemon transport yet.
 - C# / .NET: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm csharp:vectors`; no filesystem operations or daemon transport yet.
@@ -59,6 +59,8 @@ Unless a target appears under Current Support or Early Bridge Targets, package d
 - Kotlin daemon HTTP transport remains planned; filesystem security must delegate to Go or a separately reviewed native root-bound design.
 - Haxe daemon HTTP transport remains planned; filesystem security must delegate to Go or a separately reviewed native/root-bound design.
 - GDScript / Godot daemon HTTP transport remains planned; filesystem security must delegate to Go or engine-native abstractions reviewed separately.
+
+Local shell discovery selects PowerShell 7/Core only, including the explicit Windows installation path. Historical Windows PowerShell 5.1 checks require `--allow-windows-powershell --shell powershell.exe` in their dedicated CI lane; they are never probed as a local fallback. All daemon client targets now require HTTPS and out-of-band pin configuration; see [TLS bootstrap](daemon-tls-bootstrap.md).
 
 ## Allocation Checks
 

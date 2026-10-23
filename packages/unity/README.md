@@ -21,6 +21,58 @@ Unity local matrix coverage is active for these editor/runtime lanes:
 - Unity `6000.4` managed C# local EditMode coverage.
 - Unity `6000.4` Burst-compatible C# local allocation coverage.
 
+## Authenticated daemon transport
+
+`CanonicalFSDaemonHttpClient` requires HTTPS and explicit trusted
+`CanonicalFSTlsOptions`, including on loopback. Migrate callers of the old
+constructors: the overloads without trust settings are obsolete and fail when
+used. Obtain the following values from the trusted launcher's protected
+per-launch `connection.json`:
+
+| Bootstrap field | Unity constructor input |
+| --- | --- |
+| `endpoint` | `new Uri(endpoint)` |
+| `token` | `capabilityToken` |
+| `certificate_sha256` | `CanonicalFSTlsOptions(certificateSha256, ...)` |
+| `ca_certificate_pem` | Optional `caCertificatePem` constructor argument; needed for the private bootstrap CA |
+
+For example, after the trusted launcher supplies these variables:
+
+```csharp
+CanonicalFSTlsOptions tls = new CanonicalFSTlsOptions(certificateSha256, caCertificatePem);
+using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(
+    new Uri(endpoint), capabilityToken, tls))
+{
+    bool healthy = await client.HealthAsync();
+}
+```
+
+The certificate pin is exactly 64 hexadecimal characters representing SHA-256
+of the leaf certificate DER. It is distinct from Bash/curl's `public_key_pin`
+SPKI value. If the CA argument is omitted, platform CA trust still applies
+alongside the required pin. Hostname, validity and certificate-chain checks
+remain active; missing trust, plaintext endpoints and incorrect server
+identities fail. Production callers should use the default HTTP handler, which
+enforces TLS validation, bounded decoded responses, deadlines and no redirects
+or proxies. A custom handler is a trusted application/test transport and owns
+its own transport security.
+
+Unity does not automatically discover a daemon or load environment trust
+settings. The launching application must supply the expected identity through
+a protected local configuration. Never download the expected pin or CA from
+the endpoint being authenticated. The Go `canonicalfs-bootstrap` command
+creates a fresh private directory under a pre-existing private parent on a
+trusted OS filesystem/volume. Rotate it for each daemon launch and update all
+client inputs together; generated certificates expire after 24 hours. Keep the
+token and `connection.json` outside project assets and version control. See
+the [release/process guide](../../docs/release-process.md) for bootstrap and
+daemon startup.
+
+The shell wrappers have different input contracts: Bash `write-text` now takes
+UTF-8 text on stdin with only project/path arguments, while the CMD wrapper
+receives a JSON stdin request with a `text` field. Unity callers pass content
+through the typed write methods.
+
 Local package use:
 
 - Add `packages/unity/package.json` through Unity Package Manager's local package flow, or use a manifest `file:` dependency pointing at `packages/unity`.

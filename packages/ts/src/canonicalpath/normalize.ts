@@ -26,7 +26,15 @@ export function normalize(raw: string, options: NormalizeOptions = {}): Canonica
   if (!options.windows?.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value);
   value = value.replaceAll("\\", "/");
 
-  if (options.targetProfile !== "posix") value = mapWSLDrive(value, options.wsl) ?? value;
+  if (options.targetProfile !== "posix" && value.startsWith("/") && !value.startsWith("//")) {
+    // Resolve POSIX dot segments before selecting the mounted drive.
+    if (options.wsl?.enabled && !isUriWindowsDrivePath(value)) {
+      if (options.windows?.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+      if (options.windows?.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+      value = cleanCanonical(value);
+    }
+    value = mapWSLDrive(value, options.wsl) ?? value;
+  }
   if (isUriWindowsDrivePath(value)) value = value.slice(1);
 
   if (isDriveRelative(value)) {

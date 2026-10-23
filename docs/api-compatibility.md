@@ -4,6 +4,10 @@ Since `2026.10.10-2`, TypeScript, PowerShell and Bash daemon clients enforce loc
 
 The repository is still pre-1.0, but the MVP contract is intentionally narrow so downstream integrations can start testing without depending on unstable behavior.
 
+## Next-release security migration
+
+All daemon endpoints require HTTPS plus chain/hostname verification and an out-of-band certificate/public-key pin before bearer transmission. Constructors without trust settings fail closed; TypeScript custom `fetch` injection is no longer supported. See [TLS bootstrap](daemon-tls-bootstrap.md). Bash `write-text` accepts its UTF-8 payload only on stdin. `encodeGitRef` identities change to v2 and require the [explicit migration](../Documentation/IDENTITY_V2_MIGRATION.md). PowerShell launchers select PS7/Core by default; legacy Windows PowerShell is only an explicit CI opt-in.
+
 ## Stable For MVP
 
 - `spec/testdata/*_cases.json` shape: `version`, `cases`, `id`, `operation`, `raw`, `root`, `target`, `relative`, `expected`, `error`, and `options`.
@@ -24,7 +28,7 @@ The repository is still pre-1.0, but the MVP contract is intentionally narrow so
 - Haxe `CanonicalPath` lexical helpers covered by shared vectors.
 - GDScript/Godot `CanonicalPath` lexical helpers covered by shared vectors.
 - JavaScript standalone/browser `canonicalpath` lexical helpers covered by shared vectors.
-- Git ref directory encoding as `slug--sha256-12`.
+- Git ref directory encoding v2 as `v2-<ASCII slug up to 80 chars>--<full SHA-256 hex>`, maximum 149 ASCII bytes. This intentionally changes every legacy directory key; follow [Identity v2 migration](../Documentation/IDENTITY_V2_MIGRATION.md). WSL cleanup order and byte-exact Swift Unicode identity also require review of persisted keys and aliases.
 - Error code strings listed in the stable taxonomy below.
 
 ## Stable Error Taxonomy
@@ -99,7 +103,7 @@ Client-local error codes are not daemon wire codes:
 - JavaScript standalone/browser package: lexical `canonicalpath` only, with no filesystem operations.
 - TypeScript package: `canonicalpath`, best-effort `canonicalfs`, and RPC/HTTP `canonicalfs` clients.
 - Bash wrapper: experimental transport-only CLI wrapper for Go daemon health, caps, project open/close, and root-bound file operations; no independent filesystem security boundary.
-- Windows CMD/BAT wrapper: experimental transport-only CLI wrapper for Go daemon health, caps, project open/close, and root-bound file operations via `curl.exe` and `powershell.exe`; no independent filesystem security boundary.
+- Windows CMD/BAT wrapper: experimental transport-only CLI wrapper for Go daemon health, caps, project open/close, and root-bound file operations through the bounded managed transport launched by PowerShell 7 (`pwsh.exe`); no independent filesystem security boundary.
 - PowerShell 5.1: experimental lexical module plus typed JSON HTTP client helpers to the Go `canonicalfs` daemon.
 - PowerShell 7: experimental lexical module plus typed JSON HTTP client helpers to the Go `canonicalfs` daemon.
 - Go `canonicalfsrpc` requires `Authorization: Bearer <capability-token>` for every endpoint except `GET /healthz`.

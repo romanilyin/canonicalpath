@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Implemented source remediation for the seven findings in scan `wfr_19a78830a145faebf05e2a070963b3e3d82394513b4ee5afe75423949bc46019`; see `docs/security-review-2026-10-22.md` for coverage, migration and the remaining external npm authorization cutover.
+- Bound npm retries to original immutable release assets, an attested source/producer manifest and a fresh verified publication job; documented the mandatory `npm-immutable` trusted-publisher cutover.
+- Normalized POSIX dot segments before WSL drive mapping and rejected ambiguous host-root registrations.
+- Added ZIP path/depth/component/directory/object budgets checked before output creation, plus cancellation checks during directory walks.
+- Replaced 48-bit Git-ref suffixes with versioned full SHA-256 identities across ports, strict raw Unicode handling and a read-only ownership-migration inventory.
+- Required authenticated HTTPS and out-of-band pins before daemon bearer transmission on every listener, added private per-launch TLS/token bootstrap, and retained response/deadline limits.
+- Preserved exact UTF-8 identities in Swift equality, root checks, slicing and vector assertions.
+- Moved Bash write payloads from argv/environment to bounded stdin and private request files with deterministic cleanup.
+- Selected PowerShell 7/Core for local tools without a Windows PowerShell fallback; kept the historical compatibility lane as explicit CI opt-in.
+
 - Updated Vite to 8.3.4, Vitest to 5.0.5 and Node types to 26.6.5, reconciling their shared lockfile.
 - Updated setup-node, artifact upload/download actions and all CodeQL steps to compatible pinned revisions; grouped coupled Dependabot updates to prevent mixed CodeQL versions.
 - Added a small CI artifact transfer check for the new upload/download pair, without package publication. Kept Go 1.25 support and the current x/sys dependency; the proposed x/sys 0.49.0 requires Go 1.26.

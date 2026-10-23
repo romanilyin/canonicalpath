@@ -246,6 +246,7 @@ function assertCanonicalPath(value, label) {
   }
 
   assert(!value.endsWith("/"), `${label}: trailing slash is allowed only for roots`);
+  if (value.startsWith("//") && rest === "") return;
   assert(!rest.split("/").some((part) => part === ""), `${label}: canonical path contains an empty component`);
   assert(!rest.split("/").some((part) => part === "." || part === ".."), `${label}: canonical path must be lexically cleaned`);
 }
@@ -272,12 +273,12 @@ function assertCanonicalRelativePath(value, label) {
 }
 
 function gitRefSlug(raw) {
-  return raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "ref";
+  return raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "").slice(0, 80).replace(/^[._-]+|[._-]+$/g, "") || "ref";
 }
 
 function gitRefExpected(raw) {
-  const hash = createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 12);
-  return `${gitRefSlug(raw)}--${hash}`;
+  const hash = createHash("sha256").update(raw, "utf8").digest("hex");
+  return `v2-${gitRefSlug(raw)}--${hash}`;
 }
 
 function validateLanguageTargets(data, label) {
@@ -585,8 +586,7 @@ for (const entry of readdirSync(testdataDir).filter((name) => name.endsWith(".js
         if (raw.includes("\0")) assert(testCase.error === "ERR_NUL_BYTE", `${label}: NUL error mismatch`);
         else if (!raw || malformed) assert(testCase.error === "ERR_INVALID_COMPONENT", `${label}: malformed Unicode error mismatch`);
         else {
-          const slug = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "ref";
-          const expected = `${slug}--${createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 12)}`;
+          const expected = gitRefExpected(raw);
           assert(testCase.expected === expected && testCase.error === undefined, `${label}: valid Unicode encoding mismatch`);
         }
       }
@@ -648,7 +648,7 @@ for (const entry of readdirSync(testdataDir).filter((name) => name.endsWith(".js
         if (testCase.operation === "relative") assertCanonicalRelativePath(testCase.expected, `${label}:${testCase.id}: expected`);
         if (testCase.operation === "is-equal") assert(["true", "false"].includes(testCase.expected), `${label}:${testCase.id}: expected must be true or false`);
         if (testCase.operation === "encode-git-ref") {
-          assert(testCase.expected === gitRefExpected(testCase.raw), `${label}:${testCase.id}: expected must be slug--sha256-12`);
+          assert(testCase.expected === gitRefExpected(testCase.raw), `${label}:${testCase.id}: expected must be v2-slug80--sha256-64`);
           assertCanonicalRelativePath(testCase.expected, `${label}:${testCase.id}: expected`);
         }
       }

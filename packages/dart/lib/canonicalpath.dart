@@ -35,8 +35,14 @@ String normalize(String raw, [Map<String, dynamic>? options]) {
   value = value.replaceAll('\\', '/');
 
   final targetProfile = _option(opts, 'targetProfile');
-  if (targetProfile != 'posix')
+  if (targetProfile != 'posix' && value.startsWith('/') && !value.startsWith('//')) {
+    if (_optionBool(_nested(opts, 'wsl'), 'enabled', false) && !_isUriWindowsDrivePath(value)) {
+      if (_optionBool(_nested(opts, 'windows'), 'rejectADS', false) && _hasWindowsAds(value)) throw _pathError('ERR_ALTERNATE_DATA_STREAM', 'Windows alternate data stream is not allowed');
+      if (_optionBool(_nested(opts, 'windows'), 'rejectDeviceNames', false) && _hasReservedDeviceName(value)) throw _pathError('ERR_RESERVED_DEVICE_NAME', 'Windows reserved device name is not allowed');
+      value = _cleanCanonical(value);
+    }
     value = _mapWslDrive(value, _nested(opts, 'wsl'));
+  }
   if (_isUriWindowsDrivePath(value)) value = value.substring(1);
 
   if (_isDriveRelative(value)) {
@@ -203,11 +209,12 @@ String encodeGitRef(String raw) {
     throw _pathError('ERR_INVALID_COMPONENT', 'git ref is empty');
   if (_hasNul(raw)) throw _pathError('ERR_NUL_BYTE', 'git ref contains NUL');
   _validateUtf16(raw, 'ERR_INVALID_COMPONENT');
-  final slug = raw
+  var slug = raw
       .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
       .replaceAll(RegExp(r'^[._-]+|[._-]+$'), '');
+  if (slug.length > 80) slug = slug.substring(0, 80).replaceAll(RegExp(r'^[._-]+|[._-]+$'), '');
   final safeSlug = slug.isEmpty ? 'ref' : slug;
-  return '$safeSlug--${_sha256Hex(utf8.encode(raw)).substring(0, 12)}';
+  return 'v2-$safeSlug--${_sha256Hex(utf8.encode(raw))}';
 }
 
 CanonicalPathError _pathError(String code, String message) =>
@@ -395,7 +402,7 @@ String _mapWslDrive(String value, Map<String, dynamic> options) {
   final mountRoot = _rstripSlashes(
     (_option(options, 'mountRoot') ?? '/mnt').toString(),
   );
-  final prefix = '$mountRoot/';
+  final prefix = '${mountRoot.replaceAll(RegExp(r"/+"), "/")}/';
   if (!value.startsWith(prefix)) return value;
   final rest = value.substring(prefix.length);
   if (rest.isEmpty || !_isAsciiLetter(rest[0])) return value;

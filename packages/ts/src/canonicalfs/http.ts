@@ -1,8 +1,9 @@
-import { trimBoundaryCharacters } from "../canonicalpath/internal.js";
 import { Buffer } from "node:buffer";
 import type { CanonicalRelativePath } from "../canonicalpath/types.js";
 import { CanonicalFSError, fsError } from "./errors.js";
 import type { CanonicalFSDaemonCapabilities, CanonicalFSClient, FileStat } from "./types.js";
+import { pinnedFetch, secureDaemonEndpoint, type CanonicalFSTLSOptions } from "./tls.js";
+export type { CanonicalFSTLSOptions } from "./tls.js";
 
 interface TransportError {
   code: string;
@@ -38,6 +39,8 @@ const TIMEOUT_MS = 30_000;
 
 export interface CanonicalFSHTTPClientOptions {
   capabilityToken: string;
+  tls: CanonicalFSTLSOptions;
+  /** @deprecated Arbitrary fetch implementations cannot enforce server authentication. */
   fetch?: CanonicalFSFetch;
   /** May lower, but never disable or exceed, the local hard limits. */
   maxResponseBytes?: number;
@@ -54,9 +57,11 @@ export class CanonicalFSHTTPClient implements CanonicalFSClient {
   constructor(endpoint: string, options: CanonicalFSHTTPClientOptions) {
     const capabilityToken = options.capabilityToken.trim();
     if (capabilityToken === "") throw fsError("ERR_DAEMON", "capabilityToken is required");
-    this.endpoint = trimBoundaryCharacters(endpoint, "/", false);
+    if (/[\r\n]/.test(capabilityToken)) throw fsError("ERR_DAEMON", "capabilityToken contains a line break");
+    this.endpoint = secureDaemonEndpoint(endpoint);
     this.#capabilityToken = capabilityToken;
-    this.fetchImpl = options.fetch ?? fetch;
+    if (options.fetch !== undefined) throw fsError("ERR_DAEMON", "custom fetch is not supported by the authenticated daemon transport");
+    this.fetchImpl = pinnedFetch(options.tls);
     this.maxResponseBytes = boundedOption(options.maxResponseBytes, MAX_RESPONSE_BYTES, "maxResponseBytes");
     this.timeoutMs = boundedOption(options.timeoutMs, TIMEOUT_MS, "timeoutMs");
   }

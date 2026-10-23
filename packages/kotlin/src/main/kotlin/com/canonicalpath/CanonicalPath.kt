@@ -58,7 +58,14 @@ object CanonicalPath {
         if (!options.windows.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value)
         value = value.replace('\\', '/')
 
-        if (options.targetProfile != "posix") value = mapWSLDrive(value, options.wsl)
+        if (options.targetProfile != "posix" && value.startsWith("/") && !value.startsWith("//")) {
+            if (options.wsl.enabled && !isUriWindowsDrivePath(value)) {
+                if (options.windows.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+                if (options.windows.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
+                value = cleanCanonical(value)
+            }
+            value = mapWSLDrive(value, options.wsl)
+        }
         if (isUriWindowsDrivePath(value)) value = value.substring(1)
         if (isDriveRelative(value)) {
             throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
@@ -197,11 +204,11 @@ object CanonicalPath {
     fun encodeGitRef(raw: String): String {
         if (raw.isEmpty()) throw pathError("ERR_INVALID_COMPONENT", "git ref is empty")
         if (hasNul(raw)) throw pathError("ERR_NUL_BYTE", "git ref contains NUL")
-        val hash = sha256Hex(raw).substring(0, 12)
+        val hash = sha256Hex(raw)
         var slug = slugGitRef(raw)
-        slug = trimComponentEdges(slug)
+        slug = trimComponentEdges(trimComponentEdges(slug).take(80))
         if (slug.isEmpty()) slug = "ref"
-        return "$slug--$hash"
+        return "v2-$slug--$hash"
     }
 
     private fun parseFileUri(uri: String, options: CanonicalPathNormalizeOptions): String {
@@ -293,7 +300,7 @@ object CanonicalPath {
     private fun mapWSLDrive(value: String, options: CanonicalPathWSLOptions): String {
         if (!options.enabled) return value
         val mountRoot = trimRightSlashes(options.mountRoot.ifEmpty { "/mnt" })
-        val prefix = "$mountRoot/"
+        val prefix = mountRoot.replace(Regex("/+"), "/") + "/"
         if (!value.startsWith(prefix)) return value
         val rest = value.substring(prefix.length)
         if (rest.isEmpty() || !isASCIILetter(rest[0])) return value

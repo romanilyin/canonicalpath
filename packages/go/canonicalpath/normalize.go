@@ -92,7 +92,21 @@ func Normalize(raw string, opts Options) (Path, error) {
 
 	value = strings.ReplaceAll(value, "\\", "/")
 
-	if shouldMapWSLDrive(opts) {
+	if shouldMapWSLDrive(opts) && strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		// Resolve POSIX dot segments before selecting the mounted drive.
+		if opts.WSL.Enabled && !isURIWindowsDrivePath(value) {
+			if opts.Windows.RejectADS && hasWindowsADS(value) {
+				return "", newError(ErrAlternateDataStream, "Windows alternate data stream is not allowed")
+			}
+			if opts.Windows.RejectDeviceNames && hasReservedDeviceName(value) {
+				return "", newError(ErrReservedDeviceName, "Windows reserved device name is not allowed")
+			}
+			cleaned, err := cleanCanonical(value)
+			if err != nil {
+				return "", err
+			}
+			value = cleaned
+		}
 		if mapped, ok := mapWSLDrive(value, opts.WSL); ok {
 			value = mapped
 		}

@@ -19,7 +19,7 @@ namespace CanonicalPath.Tests
             Assert.AreEqual("c:/Users/Alice/Repo", CP.Normalize("/mnt/c/Users/Alice/Repo", new CanonicalPathNormalizeOptions { SourceHost = "wsl", TargetProfile = "win32-drive", WSL = new CanonicalPathWSLOptions { Enabled = true, MountRoot = "/mnt" } }));
             Assert.AreEqual("src/file.txt", CP.Relative("c:/repo", "c:/repo/src/file.txt"));
             Assert.AreEqual("c:/repo/src/file.txt", CP.Join("c:/repo", "src/file.txt"));
-            Assert.AreEqual("feature-auth--fc659bd73585", CP.EncodeGitRef("feature/auth"));
+            Assert.AreEqual("v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6", CP.EncodeGitRef("feature/auth"));
         }
 
         [Test]
@@ -112,14 +112,14 @@ namespace CanonicalPath.Tests
         public void ManagedTransportAddsBearerAuthAndParsesCapabilities()
         {
             using (FakeHandler handler = new FakeHandler("{\"auth_required\":true,\"endpoints\":[\"POST /v1/fs/readFile\"],\"limits\":{\"max_request_bytes\":1048576,\"default_read_bytes\":1048576,\"max_read_bytes\":16777216,\"max_response_bytes\":25165824}}"))
-            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new global::CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
             using (CancellationTokenSource cancellation = new CancellationTokenSource())
             {
                 CanonicalFSDaemonCapabilities caps = client.CapabilitiesAsync(cancellation.Token).GetAwaiter().GetResult();
                 Assert.IsTrue(caps.AuthRequired);
                 Assert.AreEqual("Bearer", handler.LastRequest.Headers.Authorization.Scheme);
                 Assert.AreEqual("test-token", handler.LastRequest.Headers.Authorization.Parameter);
-                Assert.AreEqual("http://127.0.0.1:1234/v1/caps", handler.LastRequest.RequestUri.ToString());
+                Assert.AreEqual("https://127.0.0.1:1234/v1/caps", handler.LastRequest.RequestUri.ToString());
                 Assert.IsTrue(handler.LastCancellationToken.CanBeCanceled);
             }
         }
@@ -129,11 +129,11 @@ namespace CanonicalPath.Tests
         {
             string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes("scoped knowledge"));
             using (FakeHandler handler = new FakeHandler("{\"data_base64\":\"" + encoded + "\"}"))
-            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new global::CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
             {
                 string text = client.ReadScopedTextAsync("project-1", UnityMcpPathScope.Knowledge, "agent.md", 64, CancellationToken.None).GetAwaiter().GetResult();
                 Assert.AreEqual("scoped knowledge", text);
-                Assert.AreEqual("http://127.0.0.1:1234/v1/scoped/readFile", handler.LastRequest.RequestUri.ToString());
+                Assert.AreEqual("https://127.0.0.1:1234/v1/scoped/readFile", handler.LastRequest.RequestUri.ToString());
                 AssertBodyContains(handler, "\"operation\":\"read\"");
                 AssertBodyContains(handler, "\"path\":\"agent.md\"");
                 AssertBodyContains(handler, "\"project_id\":\"project-1\"");
@@ -142,17 +142,17 @@ namespace CanonicalPath.Tests
             }
 
             using (FakeHandler handler = new FakeHandler("{}"))
-            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new global::CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
             {
                 client.WriteScopedTextAsync("project-1", UnityMcpPathScope.Artifact, "job-artifacts/run-1/summary.json", "{}", CancellationToken.None).GetAwaiter().GetResult();
-                Assert.AreEqual("http://127.0.0.1:1234/v1/scoped/writeFile", handler.LastRequest.RequestUri.ToString());
+                Assert.AreEqual("https://127.0.0.1:1234/v1/scoped/writeFile", handler.LastRequest.RequestUri.ToString());
                 AssertBodyContains(handler, "\"operation\":\"write\"");
                 AssertBodyContains(handler, "\"scope\":\"artifact\"");
                 AssertBodyContains(handler, "\"data_base64\":\"e30=\"");
             }
 
             using (FakeHandler handler = new FakeHandler("{\"stat\":{\"path\":\"Packages/manifest.json\",\"size\":2,\"is_directory\":false}}"))
-            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+            using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new global::CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
             {
                 CanonicalFSFileStat stat = client.StatScopedAsync("project-1", UnityMcpPathScope.PackageManifest, "Packages/manifest.json", CancellationToken.None).GetAwaiter().GetResult();
                 Assert.AreEqual("Packages/manifest.json", stat.Path);

@@ -1,18 +1,18 @@
 # Daemon / Client Transport Example
 
-Run the Go canonicalfs daemon locally:
-
-```bash
-export CANONICALFS_DAEMON_TOKEN="$(openssl rand -hex 32)"
-go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root /home/alice/repo
-```
+Create a private per-launch bundle and start the HTTPS daemon using the [bootstrap guide](../../docs/daemon-tls-bootstrap.md). Pass the trusted local path to `connection.json` as `CANONICALFS_CONNECTION_FILE`; never retrieve that file from a network endpoint.
 
 Use the TypeScript HTTP client to register a project root and access project-relative files through the daemon:
 
 ```ts
+import { readFileSync } from "node:fs";
 import { CanonicalFSHTTPClient, CanonicalFSRPCRoot } from "@romanilyin/canonicalpath/canonicalfs";
 
-const client = new CanonicalFSHTTPClient("http://127.0.0.1:8765", { capabilityToken: process.env.CANONICALFS_DAEMON_TOKEN! });
+const connection = JSON.parse(readFileSync(process.env.CANONICALFS_CONNECTION_FILE!, "utf8"));
+const client = new CanonicalFSHTTPClient(connection.endpoint, {
+  capabilityToken: connection.token,
+  tls: { certificateSha256: connection.certificate_sha256, caCertificatePem: connection.ca_certificate_pem },
+});
 await client.openProject("project-1", "/home/alice/repo");
 
 const root = new CanonicalFSRPCRoot("project-1", client);

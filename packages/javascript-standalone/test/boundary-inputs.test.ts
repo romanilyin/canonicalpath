@@ -9,5 +9,5 @@ it("handles large interior slash, space and hyphen runs without changing identit
   const name = "a" + " ".repeat(200_000) + "z";
   expect(sanitizeComponent(" __" + name + "-.. ", "portable")).toBe(name);
   const ref = "a" + "-".repeat(200_000) + "z";
-  expect(encodeGitRef("-" + ref + "-").startsWith(ref + "--")).toBe(true);
+  expect(encodeGitRef("-" + ref + "-")).toMatch(/^v2-a--[0-9a-f]{64}$/);
 });

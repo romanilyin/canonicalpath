@@ -1,7 +1,8 @@
-import { createServer } from "node:http";
+import { createTlsFixture } from "../../../scripts/tls-test-fixture.mjs";
+import { createServer } from "node:https";
 import { Buffer } from "node:buffer";
 import { inspect } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { CanonicalFSHTTPClient, fsErrorCode } from "../src/canonicalfs";
 import type { CanonicalRelativePath } from "../src/canonicalpath";
 
@@ -11,6 +12,8 @@ interface RequestRecord {
   body: unknown;
 }
 
+const fixture = createTlsFixture();
+afterAll(() => fixture.dispose());
 const servers: Array<{ close: () => Promise<void> }> = [];
 
 afterEach(async () => {
@@ -22,7 +25,7 @@ describe("canonicalfs HTTP client", () => {
     const token = "private-daemon-capability-for-regression-3847";
     const requests: RequestRecord[] = [];
     const endpoint = await startServer(requests, () => ({}));
-    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: ` ${token} ` });
+    const client = new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: ` ${token} ` });
 
     expect(JSON.parse(JSON.stringify(client))).toEqual({ type: "CanonicalFSHTTPClient" });
     for (const diagnostic of [
@@ -54,7 +57,7 @@ describe("canonicalfs HTTP client", () => {
       if (url === "/v1/fs/stat") return { stat: { path: "safe/file.txt", size: 2, is_directory: false } };
       return {};
     });
-    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: "test-token" });
+    const client = new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: "test-token" });
 
     await expect(client.capabilities()).resolves.toEqual({
       authRequired: true,
@@ -99,12 +102,12 @@ describe("canonicalfs HTTP client", () => {
   it("requires a non-empty capability token", async () => {
     const endpoint = await startServer([], () => ({}));
 
-    expect(() => new CanonicalFSHTTPClient(endpoint, { capabilityToken: "" })).toThrow("capabilityToken is required");
+    expect(() => new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: "" })).toThrow("capabilityToken is required");
   });
 
   it("maps canonical daemon errors to CanonicalFSError", async () => {
     const endpoint = await startServer([], () => ({ error: { code: "ERR_OUTSIDE_ROOT", message: "path escapes root" } }), 400);
-    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: "test-token" });
+    const client = new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: "test-token" });
 
     try {
       await client.readFile("project-1", "../outside.txt" as CanonicalRelativePath);
@@ -117,7 +120,7 @@ describe("canonicalfs HTTP client", () => {
 
   it("maps daemon transport errors to CanonicalFSError", async () => {
     const endpoint = await startServer([], () => ({ error: { code: "ERR_UNAUTHORIZED", message: "missing or invalid bearer token" } }), 401);
-    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: "test-token" });
+    const client = new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: "test-token" });
 
     try {
       await client.capabilities();
@@ -130,14 +133,14 @@ describe("canonicalfs HTTP client", () => {
 
   it("wraps non-JSON daemon responses", async () => {
     const endpoint = await startRawServer(502, "not json");
-    const client = new CanonicalFSHTTPClient(endpoint, { capabilityToken: "test-token" });
+    const client = new CanonicalFSHTTPClient(endpoint, { tls: fixture.tls, capabilityToken: "test-token" });
 
     await expect(client.readFile("project-1", "safe/file.txt" as CanonicalRelativePath)).rejects.toThrow("ERR_DAEMON: daemon response is not valid JSON");
   });
 });
 
 async function startServer(requests: RequestRecord[], respond: (url: string, body: unknown) => unknown, status = 200): Promise<string> {
-  const server = createServer((request, response) => {
+  const server = createServer({ cert: fixture.cert, key: fixture.key }, (request, response) => {
     let body = "";
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
@@ -156,11 +159,11 @@ async function startServer(requests: RequestRecord[], respond: (url: string, bod
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server address is unavailable");
   servers.push({ close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))) });
-  return `http://127.0.0.1:${address.port}`;
+  return `https://127.0.0.1:${address.port}`;
 }
 
 async function startRawServer(status: number, body: string): Promise<string> {
-  const server = createServer((_request, response) => {
+  const server = createServer({ cert: fixture.cert, key: fixture.key }, (_request, response) => {
     response.statusCode = status;
     response.setHeader("content-type", "text/plain");
     response.end(body);
@@ -170,5 +173,5 @@ async function startRawServer(status: number, body: string): Promise<string> {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server address is unavailable");
   servers.push({ close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))) });
-  return `http://127.0.0.1:${address.port}`;
+  return `https://127.0.0.1:${address.port}`;
 }

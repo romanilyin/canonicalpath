@@ -292,6 +292,11 @@ static char *cp_map_wsl_drive(const char *value, const canonicalpath_wsl_options
   if (!options->enabled) return cp_strdup(value);
   char *mount_root = cp_strdup(options->mount_root == NULL || options->mount_root[0] == '\0' ? "/mnt" : options->mount_root);
   cp_trim_right_slashes(mount_root);
+  size_t write = 0;
+  for (size_t read = 0; mount_root[read] != '\0'; ++read) {
+    if (mount_root[read] != '/' || write == 0 || mount_root[write - 1] != '/') mount_root[write++] = mount_root[read];
+  }
+  mount_root[write] = '\0';
 
   size_t mount_len = strlen(mount_root);
   char *prefix = (char *)malloc(mount_len + 2);
@@ -772,7 +777,16 @@ canonicalpath_result canonicalpath_normalize_n(const char *raw, size_t raw_len,
   char *slash = cp_replace_char(unwrapped, '\\', '/');
   free(unwrapped);
 
-  if (!cp_equals(options->target_profile, "posix")) {
+  if (!cp_equals(options->target_profile, "posix") && slash[0] == '/' && slash[1] != '/') {
+    if (options->wsl.enabled && !cp_is_uri_windows_drive_path(slash)) {
+      if (options->windows.reject_ads && cp_has_windows_ads(slash)) { free(slash); return cp_err("ERR_ALTERNATE_DATA_STREAM"); }
+      if (options->windows.reject_device_names && cp_has_reserved_device_name(slash)) { free(slash); return cp_err("ERR_RESERVED_DEVICE_NAME"); }
+      char *posix_cleaned = NULL;
+      const char *error = cp_clean_canonical(slash, &posix_cleaned);
+      free(slash);
+      if (error != NULL) return cp_err(error);
+      slash = posix_cleaned;
+    }
     char *mapped = cp_map_wsl_drive(slash, &options->wsl);
     free(slash);
     slash = mapped;
@@ -1046,8 +1060,9 @@ canonicalpath_result canonicalpath_encode_git_ref(const char *raw) {
 }
 
 canonicalpath_result canonicalpath_encode_git_ref_n(const char *raw, size_t raw_len) {
-  if (raw_len == 0) return cp_err("ERR_INVALID_COMPONENT");
+  if (raw_len == 0 || raw == NULL) return cp_err("ERR_INVALID_COMPONENT");
   if (cp_has_nul(raw, raw_len)) return cp_err("ERR_NUL_BYTE");
+  if (!cp_valid_utf8(raw, raw_len)) return cp_err("ERR_INVALID_COMPONENT");
   char *slug = (char *)malloc(raw_len + 1);
   if (slug == NULL) abort();
   size_t write = 0;
@@ -1070,15 +1085,20 @@ canonicalpath_result canonicalpath_encode_git_ref_n(const char *raw, size_t raw_
     free(trimmed);
     trimmed = cp_strdup("ref");
   }
+  if (strlen(trimmed) > 80) trimmed[80] = '\0';
+  char *bounded = cp_trim_component_edges(trimmed);
+  free(trimmed);
+  trimmed = bounded;
+  if (trimmed[0] == '\0') { free(trimmed); trimmed = cp_strdup("ref"); }
   char *hash = cp_sha256_hex((const unsigned char *)raw, raw_len);
   size_t slug_len = strlen(trimmed);
-  char *result = (char *)malloc(slug_len + 2 + 12 + 1);
+  char *result = (char *)malloc(3 + slug_len + 2 + 64 + 1);
   if (result == NULL) abort();
-  memcpy(result, trimmed, slug_len);
-  result[slug_len] = '-';
-  result[slug_len + 1] = '-';
-  memcpy(result + slug_len + 2, hash, 12);
-  result[slug_len + 14] = '\0';
+  memcpy(result, "v2-", 3);
+  memcpy(result + 3, trimmed, slug_len);
+  memcpy(result + 3 + slug_len, "--", 2);
+  memcpy(result + 5 + slug_len, hash, 64);
+  result[slug_len + 69] = '\0';
   free(trimmed);
   free(hash);
   return cp_ok(result);

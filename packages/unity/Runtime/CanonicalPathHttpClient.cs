@@ -1,4 +1,7 @@
 using System;
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -10,6 +13,66 @@ using System.Threading.Tasks;
 
 namespace CanonicalPath
 {
+    // Trust material must come from the launching application/private local
+    // configuration. Never obtain a pin or CA from the endpoint being verified.
+    public sealed class CanonicalFSTlsOptions
+    {
+        private readonly string pin;
+        private readonly X509Certificate2 trustedRoot;
+
+        public CanonicalFSTlsOptions(string certificateSha256, string caCertificatePem = null)
+        {
+            if (certificateSha256 == null || certificateSha256.Length != 64)
+                throw new ArgumentException("A trusted 64-hex SHA-256 certificate pin is required.");
+            foreach (char c in certificateSha256)
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                    throw new ArgumentException("Invalid SHA-256 certificate pin.");
+            pin = certificateSha256.ToLowerInvariant();
+            if (!String.IsNullOrEmpty(caCertificatePem))
+            {
+                if (caCertificatePem.Length > 65536) throw new ArgumentException("Trusted CA certificate is too large.");
+                try
+                {
+                    string body = caCertificatePem.Replace("-----BEGIN CERTIFICATE-----", "").Replace("-----END CERTIFICATE-----", "");
+                    trustedRoot = new X509Certificate2(Convert.FromBase64String(body));
+                }
+                catch (Exception) { throw new ArgumentException("Invalid trusted CA certificate."); }
+            }
+        }
+
+        internal bool Validate(X509Certificate certificate, X509Chain suppliedChain, SslPolicyErrors errors)
+        {
+            if (certificate == null || (errors & (SslPolicyErrors.RemoteCertificateNotAvailable | SslPolicyErrors.RemoteCertificateNameMismatch)) != 0)
+                return false;
+            using (X509Certificate2 leaf = new X509Certificate2(certificate))
+            {
+                if (Fingerprint(leaf) != pin) return false;
+                if (trustedRoot == null) return errors == SslPolicyErrors.None;
+                using (X509Chain chain = new X509Chain())
+                {
+                    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(2);
+                    chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+                    chain.ChainPolicy.ExtraStore.Add(trustedRoot);
+                    if (suppliedChain != null)
+                        foreach (X509ChainElement element in suppliedChain.ChainElements)
+                            chain.ChainPolicy.ExtraStore.Add(element.Certificate);
+                    if (!chain.Build(leaf) || chain.ChainElements.Count == 0) return false;
+                    foreach (X509ChainStatus status in chain.ChainStatus)
+                        if ((status.Status & ~X509ChainStatusFlags.UntrustedRoot) != X509ChainStatusFlags.NoError) return false;
+                    return Fingerprint(chain.ChainElements[chain.ChainElements.Count - 1].Certificate) == Fingerprint(trustedRoot);
+                }
+            }
+        }
+
+        private static string Fingerprint(X509Certificate2 certificate)
+        {
+            using (SHA256 sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(certificate.RawData)).Replace("-", "").ToLowerInvariant();
+        }
+    }
+
     public sealed class CanonicalFSDaemonException : Exception
     {
         private readonly string code;
@@ -57,22 +120,27 @@ namespace CanonicalPath
         private readonly int timeoutMilliseconds;
         private readonly int maxResponseBytes;
 
+        [Obsolete("Pass trusted CanonicalFSTlsOptions; plaintext and unpinned clients are rejected.")]
         public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken)
-            : this(endpoint, capabilityToken, null)
-        {
-        }
+            : this(endpoint, capabilityToken, (CanonicalFSTlsOptions)null) { }
 
+        [Obsolete("Pass trusted CanonicalFSTlsOptions before the optional test transport.")]
         public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken, HttpMessageHandler handler)
-            : this(endpoint, capabilityToken, handler, 30000, 24 * 1048576)
-        {
-        }
+            : this(endpoint, capabilityToken, (CanonicalFSTlsOptions)null, handler) { }
 
+        [Obsolete("Pass trusted CanonicalFSTlsOptions before the optional test transport.")]
         public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken, HttpMessageHandler handler, int timeoutMilliseconds, int maxResponseBytes)
+            : this(endpoint, capabilityToken, (CanonicalFSTlsOptions)null, handler, timeoutMilliseconds, maxResponseBytes) { }
+
+        // A supplied handler is trusted application code (e.g. an in-memory test
+        // double) and owns its transport. Production callers use the default handler.
+        public CanonicalFSDaemonHttpClient(Uri endpoint, string capabilityToken, CanonicalFSTlsOptions tls, HttpMessageHandler handler = null, int timeoutMilliseconds = 30000, int maxResponseBytes = 24 * 1048576)
         {
+            if (tls == null) throw new ArgumentNullException("tls", "Trusted daemon TLS configuration is required.");
             if (endpoint == null) throw new ArgumentNullException("endpoint");
             if (string.IsNullOrEmpty(capabilityToken) || capabilityToken.Trim().Length == 0) throw new ArgumentException("capabilityToken is required.", "capabilityToken");
-            if (!endpoint.IsAbsoluteUri || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0)
-                throw new ArgumentException("endpoint must be an HTTP(S) URL without credentials, query or fragment.", "endpoint");
+            if (!endpoint.IsAbsoluteUri || endpoint.Scheme != "https" || endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0)
+                throw new ArgumentException("endpoint must be an HTTPS URL without credentials, query or fragment.", "endpoint");
             if (capabilityToken.IndexOf('\r') >= 0 || capabilityToken.IndexOf('\n') >= 0) throw new ArgumentException("bearer contains a line break.", "capabilityToken");
             if (timeoutMilliseconds < 1 || timeoutMilliseconds > 30000 || maxResponseBytes < 1 || maxResponseBytes > 24 * 1048576)
                 throw new ArgumentOutOfRangeException("timeoutMilliseconds", "limits cannot exceed 30 seconds or 24 MiB.");
@@ -84,7 +152,15 @@ namespace CanonicalPath
             this.capabilityToken = capabilityToken.Trim();
             if (handler == null)
             {
-                this.http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate });
+                HttpClientHandler secureHandler = new HttpClientHandler
+                {
+                    AllowAutoRedirect = false,
+                    UseProxy = false,
+                    AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+                    SslProtocols = System.Security.Authentication.SslProtocols.Tls12,
+                    ServerCertificateCustomValidationCallback = (request, certificate, chain, errors) => tls.Validate(certificate, chain, errors),
+                };
+                this.http = new HttpClient(secureHandler);
                 this.ownsHttp = true;
             }
             else

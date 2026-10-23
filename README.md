@@ -50,7 +50,7 @@ The key idea:
 |---|---|---:|---|
 | `CanonicalPath` | Deterministic lexical identity, comparison, serialization, aliases, and shared test vectors. | No | Stable identity contract, not an I/O boundary. |
 | `CanonicalFS` | Root-bound filesystem access for real reads/writes. | Yes | Go implementation is the authoritative filesystem security boundary. |
-| Go daemon | Capability-style HTTP/RPC boundary for non-Go clients. | Yes | Other languages delegate security-sensitive I/O to this daemon. |
+| Go daemon | Capability-style HTTPS/RPC boundary for non-Go clients. | Yes | Other languages delegate security-sensitive I/O to this daemon. |
 | Client/runtime ports | Lexical helpers, wrappers, transports, Unity bridge adapters. | Usually no | Lexical/client-only unless explicitly documented otherwise. |
 
 The split is intentional: **path identity is not file access**.
@@ -100,6 +100,10 @@ Use the root-bound filesystem layer:
 - Zip Slip style archive writes outside the destination directory.
 - Agent/MCP tools writing into the wrong project, cache, artifact, package, or temp root.
 - Broken identity when one runtime stores a path and another runtime interprets it differently.
+
+## Security migration in the next release
+
+Daemon clients now require authenticated HTTPS and a trusted certificate/public-key pin, including on loopback. Create a fresh private bundle for each daemon launch; see [TLS bootstrap](./docs/daemon-tls-bootstrap.md). Git-ref directory identities use the versioned full SHA-256 format and require an explicit ownership-checked migration; see [identity v2 migration](./Documentation/IDENTITY_V2_MIGRATION.md). Bash `write-text` reads the payload from stdin. npm retries use the original attested immutable release assets and require the administrative trust cutover documented in [release process](./docs/release-process.md).
 
 ## Package identity and release
 

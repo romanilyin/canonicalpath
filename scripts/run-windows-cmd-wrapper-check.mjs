@@ -1,3 +1,4 @@
+import { createTlsFixture, tlsFetch } from "./tls-test-fixture.mjs";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -5,6 +6,7 @@ import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectPowerShells } from "./powershell-shell.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const wrapper = path.join(root, "packages", "windows-cmd-batch-wrapper", "canonicalfs.cmd");
@@ -15,10 +17,11 @@ if (!commandExists("cmd.exe", ["/c", "ver"])) {
   console.log("cmd.exe not found; skipping Windows CMD wrapper check");
   process.exit(0);
 }
-if (!commandExists("cmd.exe", ["/c", "powershell.exe", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"])) {
-  console.log("Windows PowerShell not found; skipping Windows CMD wrapper check");
+if (process.platform !== "win32" && !process.env.CANONICALPATH_POWERSHELL) {
+  console.log("Set CANONICALPATH_POWERSHELL to the Windows PowerShell 7 executable for a WSL CMD wrapper check");
   process.exit(0);
 }
+const [powerShell] = selectPowerShells([], { required: true });
 if (!commandExists("go", ["version"])) {
   console.log("Go command not found; skipping Windows CMD wrapper check");
   process.exit(0);
@@ -49,9 +52,12 @@ function wslpathIfAvailable(value) {
 
 function wrapperEnv(daemon, token = daemon.token) {
   return { ...process.env,
+    CANONICALPATH_POWERSHELL: wslpathIfAvailable(powerShell),
+    ...daemon.tlsFixture.env,
+    CANONICALFS_TLS_CA_FILE: wslpathIfAvailable(daemon.tlsFixture.certFile),
     CANONICALFS_DAEMON_URL: daemon.endpoint,
     CANONICALFS_DAEMON_TOKEN: token ?? "",
-    WSLENV: [process.env.WSLENV, "CANONICALFS_DAEMON_URL/w", "CANONICALFS_DAEMON_TOKEN/w"].filter(Boolean).join(":"),
+    WSLENV: [process.env.WSLENV, "CANONICALPATH_POWERSHELL/w", "CANONICALFS_DAEMON_URL/w", "CANONICALFS_DAEMON_TOKEN/w", "CANONICALFS_TLS_CA_FILE/w", "CANONICALFS_TLS_CERTIFICATE_SHA256/w"].filter(Boolean).join(":"),
   };
 }
 
@@ -148,7 +154,7 @@ function runAllocationCheck(daemon) {
     runWrapper(daemon, ["write-text", projectId, "safe/file.txt", "hello from cmd allocation check"]);
 
     writeFileSync(scriptPath, allocationScript(iterations, budgetBytes, wrapperForWindows, projectId), "utf8");
-    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wslpathIfAvailable(scriptPath)], {
+    const result = spawnSync(powerShell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wslpathIfAvailable(scriptPath)], {
       cwd: root, encoding: "utf8", env: wrapperEnv(daemon),
     });
     if (result.error) throw result.error;
@@ -215,9 +221,10 @@ async function startDaemon() {
   const projectRoot = path.join(tempParent, "project");
   mkdirSync(projectRoot);
   const port = await freePort();
-  const endpoint = `http://127.0.0.1:${port}`;
+  const tls = createTlsFixture();
+  const endpoint = `https://127.0.0.1:${port}`;
   const token = randomBytes(32).toString("hex");
-  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
+  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, ...tls.daemonArgs, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },
     detached: process.platform !== "win32",
@@ -230,20 +237,23 @@ async function startDaemon() {
   });
 
   try {
-    await waitForHealth(endpoint, child, () => stderr);
+    await waitForHealth(endpoint, child, () => stderr, tls);
   } catch (error) {
     await stopProcessTree(child);
     rmSync(tempParent, { recursive: true, force: true });
+    tls.dispose();
     throw error;
   }
 
   return {
     endpoint,
+    tlsFixture: tls,
     token,
     projectRoot,
     async stop() {
       await stopProcessTree(child);
       rmSync(tempParent, { recursive: true, force: true });
+      tls.dispose();
     },
   };
 }
@@ -304,11 +314,11 @@ function freePort() {
   });
 }
 
-async function waitForHealth(endpoint, child, stderr) {
+async function waitForHealth(endpoint, child, stderr, tls) {
   for (let attempt = 0; attempt < 80; attempt++) {
     if (child.exitCode !== null) throw new Error(`canonicalfs daemon exited early with code ${child.exitCode}: ${stderr()}`);
     try {
-      const response = await fetch(`${endpoint}/healthz`);
+      const response = await tlsFetch(`${endpoint}/healthz`, {}, tls);
       if (response.ok) return;
     } catch {
       // Retry until the Go daemon is listening.

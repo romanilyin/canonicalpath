@@ -1,3 +1,4 @@
+import { hasUriScheme, isAbsolutePathLike } from "../canonicalpath/internal.js";
 import { pathError } from "../canonicalpath/errors.js";
 import type { CanonicalPath, HostKind, NormalizeOptions } from "../canonicalpath/types.js";
 import { CanonicalPathService } from "./path-service.js";
@@ -103,6 +104,11 @@ export class CanonicalPathBroker {
     assertAliasString(registration.clientId, "clientId");
     assertAliasString(registration.environmentId, "environmentId");
     assertAliasString(registration.hostRoot, "hostRoot");
+    // Preserve a usable native root only after rejecting ambiguous lexical aliases.
+    const nativeRoot = registration.hostRoot.replaceAll("\\", "/");
+    if (!isAbsolutePathLike(nativeRoot) || hasUriScheme(nativeRoot) || nativeRoot.split("/").some((part) => part === "." || part === "..")) {
+      throw pathError("ERR_INVALID_PATH", "path alias hostRoot must be an absolute native path without dot segments");
+    }
     const normalizeOptions = registration.normalizeOptions ?? project.normalizeOptions;
     const aliasCanonicalPath = this.paths.normalizeProjectRoot(registration.hostRoot, normalizeOptions);
     if (aliasCanonicalPath !== project.canonicalProjectPath) {

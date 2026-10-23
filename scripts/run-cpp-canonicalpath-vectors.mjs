@@ -112,6 +112,12 @@ int main() {
   };
 
 ${caseLines.join("\n")}
+  { const char raw[] = {static_cast<char>(128)}; run_error("git-v2-invalid-utf8-0", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
+  { const char raw[] = {static_cast<char>(192),static_cast<char>(175)}; run_error("git-v2-invalid-utf8-1", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
+  { const char raw[] = {static_cast<char>(237),static_cast<char>(160),static_cast<char>(128)}; run_error("git-v2-invalid-utf8-2", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
+  { const char raw[] = {static_cast<char>(244),static_cast<char>(144),static_cast<char>(128),static_cast<char>(128)}; run_error("git-v2-invalid-utf8-3", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
+  { const char raw[] = {static_cast<char>(226),static_cast<char>(130)}; run_error("git-v2-invalid-utf8-4", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
+  { const char raw[] = {static_cast<char>(97),static_cast<char>(255)}; run_error("git-v2-invalid-utf8-5", "ERR_INVALID_COMPONENT", [&]() { canonicalpath::encode_git_ref(std::string_view(raw, sizeof(raw))); }); }
 
   std::cout << "C++ CanonicalPath vectors passed: " << count << " cases" << std::endl;
   return 0;
