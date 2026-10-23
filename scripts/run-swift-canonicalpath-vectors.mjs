@@ -149,8 +149,8 @@ enum Program {
             if let expectedError = testCase.error {
                 throw Failure("\(testCase.id): expected error \(expectedError), got value \(actual)")
             }
-            if actual != testCase.expected {
-                throw Failure("\(testCase.id): expected \(testCase.expected ?? "<nil>"), got \(actual)")
+            guard let expected = testCase.expected, actual.utf8.elementsEqual(expected.utf8) else {
+                throw Failure("\(testCase.id): expected UTF-8 \(Array((testCase.expected ?? "<nil>").utf8)), got \(Array(actual.utf8))")
             }
         } catch let error as CanonicalPathError {
             guard let expectedError = testCase.error, error.code == expectedError else {

@@ -39,7 +39,10 @@ func mapWSLDrive(value string, opts WSLOptions) (string, bool) {
 		mountRoot = "/mnt"
 	}
 	mountRoot = strings.TrimRight(mountRoot, "/")
-	prefix := mountRoot + "/"
+	if strings.HasPrefix(mountRoot, "/") {
+		mountRoot = "/" + strings.Join(strings.FieldsFunc(mountRoot, func(r rune) bool { return r == '/' }), "/")
+	}
+	prefix := strings.TrimRight(mountRoot, "/") + "/"
 	if !strings.HasPrefix(value, prefix) {
 		return "", false
 	}

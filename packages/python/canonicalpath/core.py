@@ -39,7 +39,13 @@ def normalize(raw: str, options: Mapping[str, Any] | None = None) -> str:
     value = value.replace("\\", "/")
 
     target_profile = _option(opts, "targetProfile")
-    if target_profile != "posix":
+    if target_profile != "posix" and value.startswith("/") and not value.startswith("//"):
+        if _option(_nested(opts, "wsl"), "enabled", False) and not _is_uri_windows_drive_path(value):
+            if _option(_nested(opts, "windows"), "rejectADS", False) and _has_windows_ads(value):
+                raise _path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+            if _option(_nested(opts, "windows"), "rejectDeviceNames", False) and _has_reserved_device_name(value):
+                raise _path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
+            value = _clean_canonical(value)
         value = _map_wsl_drive(value, _nested(opts, "wsl"))
     if _is_uri_windows_drive_path(value):
         value = value[1:]
@@ -184,8 +190,12 @@ def encode_git_ref(raw: str) -> str:
         raise _path_error("ERR_INVALID_COMPONENT", "git ref is empty")
     if _has_nul(raw):
         raise _path_error("ERR_NUL_BYTE", "git ref contains NUL")
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("._-") or "ref"
-    return f"{slug}--{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:12]}"
+    try:
+        raw_bytes = raw.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        raise _path_error("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode") from None
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("._-")[:80].strip("._-") or "ref"
+    return f"v2-{slug}--{hashlib.sha256(raw_bytes).hexdigest()}"
 
 
 def _path_error(code: str, message: str) -> CanonicalPathError:
@@ -311,7 +321,7 @@ def _map_wsl_drive(value: str, options: Mapping[str, Any]) -> str:
     if not _option(options, "enabled", False):
         return value
     mount_root = str(_option(options, "mountRoot", "/mnt") or "/mnt").rstrip("/")
-    prefix = f"{mount_root}/"
+    prefix = re.sub(r"/+", "/", mount_root) + "/"
     if not value.startswith(prefix):
         return value
     rest = value[len(prefix) :]

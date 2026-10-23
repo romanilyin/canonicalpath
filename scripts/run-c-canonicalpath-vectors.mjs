@@ -131,7 +131,13 @@ ${optionHelpers.join("\n")}
 
 int main(void) {
 ${caseBlocks.join("\n")}
-  printf("C CanonicalPath vectors passed: ${cases.length} cases\\n");
+  { const char raw[] = {(char)128}; assert_error("git-v2-invalid-utf8-0", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  { const char raw[] = {(char)192,(char)175}; assert_error("git-v2-invalid-utf8-1", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  { const char raw[] = {(char)237,(char)160,(char)128}; assert_error("git-v2-invalid-utf8-2", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  { const char raw[] = {(char)244,(char)144,(char)128,(char)128}; assert_error("git-v2-invalid-utf8-3", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  { const char raw[] = {(char)226,(char)130}; assert_error("git-v2-invalid-utf8-4", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  { const char raw[] = {(char)97,(char)255}; assert_error("git-v2-invalid-utf8-5", "ERR_INVALID_COMPONENT", canonicalpath_encode_git_ref_n(raw, sizeof(raw))); }
+  printf("C CanonicalPath vectors passed: ${cases.length} shared cases + 6 invalid UTF-8 cases\\n");
   return 0;
 }
 `;

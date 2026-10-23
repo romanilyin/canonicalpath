@@ -23,10 +23,21 @@ type ZipLimits struct {
 	MaxTotalBytes       int64
 	MaxCompressionRatio uint64
 	MaxDuration         time.Duration
+	// MaxEntryNameBytes also bounds the raw destination name, before cleaning.
+	MaxEntryNameBytes int
+	// MaxPathDepth includes the destination and each normalized member path.
+	MaxPathDepth int
+	// The cumulative budgets include the destination once and every member's
+	// components. Repeated/existing directories are counted again, deliberately
+	// bounding both filesystem work and possible output without a prefix map.
+	MaxTotalPathComponents int
+	MaxDirectories         int
+	MaxObjects             int
 }
 
 func defaultZipLimits(l ZipLimits) (ZipLimits, error) {
-	if l.MaxArchiveBytes < 0 || l.MaxEntries < 0 || l.MaxEntryBytes < 0 || l.MaxTotalBytes < 0 || l.MaxDuration < 0 {
+	if l.MaxArchiveBytes < 0 || l.MaxEntries < 0 || l.MaxEntryBytes < 0 || l.MaxTotalBytes < 0 || l.MaxDuration < 0 ||
+		l.MaxEntryNameBytes < 0 || l.MaxPathDepth < 0 || l.MaxTotalPathComponents < 0 || l.MaxDirectories < 0 || l.MaxObjects < 0 {
 		return l, newError(ErrReadLimitExceeded, "invalid ZIP limits")
 	}
 	if l.MaxArchiveBytes == 0 {
@@ -47,6 +58,21 @@ func defaultZipLimits(l ZipLimits) (ZipLimits, error) {
 	if l.MaxDuration == 0 {
 		l.MaxDuration = 30 * time.Second
 	}
+	if l.MaxEntryNameBytes == 0 {
+		l.MaxEntryNameBytes = 4096
+	}
+	if l.MaxPathDepth == 0 {
+		l.MaxPathDepth = 64
+	}
+	if l.MaxTotalPathComponents == 0 {
+		l.MaxTotalPathComponents = 16384
+	}
+	if l.MaxDirectories == 0 {
+		l.MaxDirectories = 4096
+	}
+	if l.MaxObjects == 0 {
+		l.MaxObjects = 8192
+	}
 	return l, nil
 }
 
@@ -56,8 +82,10 @@ func (r *Root) ExtractZip(zipRel string, destRel string) error {
 }
 
 // ExtractZipWithLimits confines all members to the opened destination. Existing
-// destination symlinks, special input files and non-regular archive entries are rejected. On error,
-// earlier complete entries may remain; the incomplete output file is removed.
+// destination symlinks, special input files and non-regular archive entries are
+// rejected. Path budgets are checked before output creation. A later I/O error or
+// cancellation can leave bounded directories and earlier complete entries; the
+// incomplete output file is removed. Extraction is not a transaction.
 func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string, limits ZipLimits) error {
 	limits, err := defaultZipLimits(limits)
 	if err != nil {
@@ -65,6 +93,9 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 	}
 	ctx, cancel := context.WithTimeout(ctx, limits.MaxDuration)
 	defer cancel()
+	if len(destRel) > limits.MaxEntryNameBytes {
+		return newError(ErrReadLimitExceeded, "ZIP destination name exceeds limit")
+	}
 	zipClean, err := cleanRelative(zipRel)
 	if err != nil {
 		return err
@@ -74,6 +105,10 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 		return err
 	}
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	budget := zipPathBudget{limits: limits, destinationDepth: zipPathDepth(destClean)}
+	if err := budget.add(destClean, true, true); err != nil {
 		return err
 	}
 	archiveFile, err := r.openRegularFile(zipClean, os.O_RDONLY, 0)
@@ -110,11 +145,22 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 	}
 	var declared uint64
 	for _, entry := range reader.File {
-		if _, err := zipEntryPath(".", entry.Name); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Bound the raw name before path cleaning or component splitting.
+		if len(entry.Name) > limits.MaxEntryNameBytes {
+			return newError(ErrReadLimitExceeded, "ZIP entry name exceeds limit")
+		}
+		entryRel, err := zipEntryPath(".", entry.Name)
+		if err != nil {
 			return err
 		}
 		if !entry.Mode().IsRegular() && !entry.Mode().IsDir() {
 			return newError(ErrArchiveTraversal, "ZIP contains a link or special file")
+		}
+		if err := budget.add(entryRel, entry.Mode().IsDir(), false); err != nil {
+			return err
 		}
 		expanded := entry.UncompressedSize64
 		if expanded > uint64(limits.MaxEntryBytes) || expanded > uint64(limits.MaxTotalBytes)-declared {
@@ -129,7 +175,7 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	destination, err := r.openZipDestination(destClean)
+	destination, err := r.openZipDestination(ctx, destClean)
 	if err != nil {
 		return err
 	}
@@ -141,7 +187,7 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 		}
 		entryRel, _ := zipEntryPath(".", entry.Name)
 		if entry.FileInfo().IsDir() {
-			dir, err := destination.openZipDestination(entryRel)
+			dir, err := destination.openZipDestination(ctx, entryRel)
 			if err != nil {
 				return err
 			}
@@ -150,7 +196,7 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 		}
 		// Pin the member parent as well. Its children cannot traverse back into
 		// the extraction destination through a replaced directory symlink.
-		parent, err := destination.openZipDestination(path.Dir(entryRel))
+		parent, err := destination.openZipDestination(ctx, path.Dir(entryRel))
 		if err != nil {
 			return err
 		}
@@ -167,8 +213,48 @@ func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string,
 
 // openZipDestination walks through pinned directory handles and rejects
 // pre-existing symlinks. Each open remains confined to its current parent.
-func (r *Root) openZipDestination(rel string) (*Root, error) {
-	return r.openPinnedDirectory(rel, true, ErrArchiveTraversal)
+func (r *Root) openZipDestination(ctx context.Context, rel string) (*Root, error) {
+	return r.openPinnedDirectoryContext(ctx, rel, true, ErrArchiveTraversal)
+}
+
+type zipPathBudget struct {
+	limits           ZipLimits
+	destinationDepth int
+	components       int
+	directories      int
+	objects          int
+}
+
+func zipPathDepth(rel string) int {
+	if rel == "." {
+		return 0
+	}
+	return strings.Count(rel, "/") + 1
+}
+
+func (b *zipPathBudget) add(rel string, directory, destination bool) error {
+	depth := zipPathDepth(rel)
+	parentDepth := b.destinationDepth
+	if destination {
+		parentDepth = 0
+	}
+	if parentDepth > b.limits.MaxPathDepth || depth > b.limits.MaxPathDepth-parentDepth {
+		return newError(ErrReadLimitExceeded, "ZIP output path depth exceeds limit")
+	}
+	directories := depth
+	if !directory {
+		directories--
+	}
+	// Subtraction avoids overflow even when callers choose very large limits.
+	if depth > b.limits.MaxTotalPathComponents-b.components ||
+		directories > b.limits.MaxDirectories-b.directories ||
+		depth > b.limits.MaxObjects-b.objects {
+		return newError(ErrReadLimitExceeded, "ZIP cumulative path or object budget exceeds limit")
+	}
+	b.components += depth
+	b.directories += directories
+	b.objects += depth
+	return nil
 }
 
 // OpenScopedRoot pins an exact scope anchor, rejecting links and replacement
@@ -189,14 +275,29 @@ func (r *Root) OpenScopedRoot(rel string, create bool) (*Root, error) {
 }
 
 func (r *Root) openPinnedDirectory(rel string, create bool, code ErrorCode) (*Root, error) {
+	return r.openPinnedDirectoryContext(context.Background(), rel, create, code)
+}
+
+func (r *Root) openPinnedDirectoryContext(ctx context.Context, rel string, create bool, code ErrorCode) (*Root, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	current, err := r.OpenRoot(".")
 	if err != nil {
 		return nil, err
 	}
 	if rel == "." {
+		if err := ctx.Err(); err != nil {
+			_ = current.Close()
+			return nil, err
+		}
 		return current, nil
 	}
 	for _, part := range strings.Split(rel, "/") {
+		if err := ctx.Err(); err != nil {
+			_ = current.Close()
+			return nil, err
+		}
 		handle, _ := current.rootHandle()
 		if create {
 			if err := handle.Mkdir(part, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
@@ -204,14 +305,26 @@ func (r *Root) openPinnedDirectory(rel string, create bool, code ErrorCode) (*Ro
 				return nil, err
 			}
 		}
+		if err := ctx.Err(); err != nil {
+			_ = current.Close()
+			return nil, err
+		}
 		info, err := handle.Lstat(part)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			_ = current.Close()
 			return nil, newError(code, "directory anchor contains a link or non-directory")
 		}
+		if err := ctx.Err(); err != nil {
+			_ = current.Close()
+			return nil, err
+		}
 		child, err := current.OpenRoot(part)
 		_ = current.Close()
 		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			_ = child.Close()
 			return nil, err
 		}
 		opened, statErr := child.Stat(".")
@@ -220,6 +333,10 @@ func (r *Root) openPinnedDirectory(rel string, create bool, code ErrorCode) (*Ro
 			return nil, newError(code, "directory anchor changed during opening")
 		}
 		current = child
+	}
+	if err := ctx.Err(); err != nil {
+		_ = current.Close()
+		return nil, err
 	}
 	return current, nil
 }

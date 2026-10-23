@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-func TestRemoteListenerRequiresTLS(t *testing.T) {
-	for _, address := range []string{"0.0.0.0:8765", "[::]:8765", "192.168.1.5:8765", ":8765", "evil.test:8765"} {
+func TestEveryListenerRequiresTLS(t *testing.T) {
+	for _, address := range []string{"0.0.0.0:8765", "[::]:8765", "192.168.1.5:8765", ":8765", "evil.test:8765", "127.0.0.1:8765", "[::1]:8765", "localhost:8765"} {
 		if validateListener(address, "", "") == nil {
 			t.Fatalf("accepted plaintext %s", address)
 		}
 	}
 	for _, address := range []string{"127.0.0.1:8765", "[::1]:8765", "localhost:8765"} {
-		if err := validateListener(address, "", ""); err != nil {
+		if err := validateListener(address, "cert", "key"); err != nil {
 			t.Fatal(err)
 		}
 	}

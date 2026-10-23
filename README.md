@@ -50,7 +50,7 @@ The key idea:
 |---|---|---:|---|
 | `CanonicalPath` | Deterministic lexical identity, comparison, serialization, aliases, and shared test vectors. | No | Stable identity contract, not an I/O boundary. |
 | `CanonicalFS` | Root-bound filesystem access for real reads/writes. | Yes | Go implementation is the authoritative filesystem security boundary. |
-| Go daemon | Capability-style HTTP/RPC boundary for non-Go clients. | Yes | Other languages delegate security-sensitive I/O to this daemon. |
+| Go daemon | Capability-style HTTPS/RPC boundary for non-Go clients. | Yes | Other languages delegate security-sensitive I/O to this daemon. |
 | Client/runtime ports | Lexical helpers, wrappers, transports, Unity bridge adapters. | Usually no | Lexical/client-only unless explicitly documented otherwise. |
 
 The split is intentional: **path identity is not file access**.
@@ -101,6 +101,10 @@ Use the root-bound filesystem layer:
 - Agent/MCP tools writing into the wrong project, cache, artifact, package, or temp root.
 - Broken identity when one runtime stores a path and another runtime interprets it differently.
 
+## Security migration in the next release
+
+Daemon clients now require authenticated HTTPS and a trusted certificate/public-key pin, including on loopback. Create a fresh private bundle for each daemon launch; see [TLS bootstrap](./docs/daemon-tls-bootstrap.md). Git-ref directory identities use the versioned full SHA-256 format and require an explicit ownership-checked migration; see [identity v2 migration](./Documentation/IDENTITY_V2_MIGRATION.md). Bash `write-text` reads the payload from stdin. npm retries use the original attested immutable release assets and require the administrative trust cutover documented in [release process](./docs/release-process.md).
+
 ## Package identity and release
 
 - Canonical repository: `https://github.com/romanilyin/canonicalpath`.
@@ -124,6 +128,7 @@ The earlier full source release plan is tracked in `docs/release-2026.5.18-2.md`
 - Planned language targets and allocation-check gates are tracked in `spec/language-targets.json` and summarized in `docs/language-targets.md`.
 - Planned package directories are skeleton/not implemented placeholders unless listed as supported or as an early bridge target.
 - Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. `canonicalfs.Rename` uses the root-bound implementation on Go 1.26+ and remains unsupported on older runtimes. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
+- Security-sensitive builds must use a supported Go toolchain with current security patches. The workspace recommends Go 1.26.10 and CI/release workflows pin it for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809); the module language floor remains Go 1.25. With standard `GOTOOLCHAIN=auto`, older bundled toolchains select this recommended version. A newer default toolchain must still contain the fix (Go 1.27 requires 1.27.3 or later). If automatic selection is disabled or `GOWORK=off` is used, provision the patched toolchain explicitly.
 
 ## Quick verification
 

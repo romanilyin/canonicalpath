@@ -71,39 +71,39 @@ function Get-OptionValue {
 
 function Test-AsciiLetter {
     param([string] $Value)
-    return $Value -match '^[A-Za-z]$'
+    return $Value -cmatch '^[A-Za-z]$'
 }
 
 function Test-UriScheme {
     param([string] $Value)
-    return $Value -match '^[A-Za-z][A-Za-z0-9+.-]*://'
+    return $Value -cmatch '^[A-Za-z][A-Za-z0-9+.-]*://'
 }
 
 function Test-DriveRoot {
     param([string] $Value)
-    return $Value -match '^[A-Za-z]:/'
+    return $Value -cmatch '^[A-Za-z]:/'
 }
 
 function Test-DriveRelative {
     param([string] $Value)
-    return $Value -match '^[A-Za-z]:($|[^/])'
+    return $Value -cmatch '^[A-Za-z]:($|[^/])'
 }
 
 function Test-UriWindowsDrivePath {
     param([string] $Value)
-    return $Value -match '^/[A-Za-z]:/'
+    return $Value -cmatch '^/[A-Za-z]:/'
 }
 
 function Test-AbsolutePathLike {
     param([string] $Value)
-    return $Value.StartsWith('/') -or $Value.StartsWith('\\') -or (($Value -replace '\\', '/') -match '^[A-Za-z]:/')
+    return $Value.StartsWith('/', [StringComparison]::Ordinal) -or $Value.StartsWith('\\', [StringComparison]::Ordinal) -or (($Value -replace '\\', '/') -cmatch '^[A-Za-z]:/')
 }
 
 function Remove-WindowsExtendedPrefix {
     param([string] $Value)
 
-    if ($Value.StartsWith('\\?\UNC\')) { return '\\' + $Value.Substring(8) }
-    if ($Value.StartsWith('\\?\')) { return $Value.Substring(4) }
+    if ($Value.StartsWith('\\?\UNC\', [StringComparison]::Ordinal)) { return '\\' + $Value.Substring(8) }
+    if ($Value.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $Value.Substring(4) }
     return $Value
 }
 
@@ -116,8 +116,8 @@ function ConvertFrom-WSLDrivePath {
     if (-not [bool] (Get-OptionValue $Options 'enabled' $false)) { return $null }
     $mountRoot = [string] (Get-OptionValue $Options 'mountRoot' '/mnt')
     $mountRoot = $mountRoot -replace '/+$', ''
-    $prefix = $mountRoot + '/'
-    if (-not $Value.StartsWith($prefix)) { return $null }
+    $prefix = ($mountRoot -replace '/+', '/') + '/'
+    if (-not $Value.StartsWith($prefix, [StringComparison]::Ordinal)) { return $null }
 
     $rest = $Value.Substring($prefix.Length)
     if ($rest.Length -lt 1 -or -not (Test-AsciiLetter $rest.Substring(0, 1))) { return $null }
@@ -134,7 +134,7 @@ function Split-CanonicalRoot {
     if (Test-DriveRoot $Value) {
         return @{ Prefix = $Value.Substring(0, 3); Rest = $Value.Substring(3) }
     }
-    if ($Value.StartsWith('//')) {
+    if ($Value.StartsWith('//', [StringComparison]::Ordinal)) {
         $parts = $Value.Substring(2).Split('/')
         if ($parts.Length -lt 2 -or $parts[0].Length -eq 0 -or $parts[1].Length -eq 0) {
             throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'UNC path requires server and share')
@@ -144,7 +144,7 @@ function Split-CanonicalRoot {
         if ($parts.Length -gt 2) { $restParts = $parts[2..($parts.Length - 1)] }
         return @{ Prefix = $prefix; Rest = [string]::Join('/', $restParts) }
     }
-    if ($Value.StartsWith('/')) {
+    if ($Value.StartsWith('/', [StringComparison]::Ordinal)) {
         return @{ Prefix = '/'; Rest = $Value.Substring(1) }
     }
     return @{ Prefix = ''; Rest = $Value }
@@ -180,7 +180,7 @@ function ConvertTo-CleanCanonicalPath {
         if ($joined.Length -eq 0) { return '/' }
         return '/' + $joined
     }
-    if ($prefix.EndsWith('/')) {
+    if ($prefix.EndsWith('/', [StringComparison]::Ordinal)) {
         if ($joined.Length -eq 0) { return $prefix }
         return $prefix + $joined
     }
@@ -194,7 +194,7 @@ function Test-WindowsADS {
     $start = 0
     if (Test-DriveRoot $Value) {
         $start = 3
-    } elseif ($Value.StartsWith('//')) {
+    } elseif ($Value.StartsWith('//', [StringComparison]::Ordinal)) {
         $parts = $Value.Substring(2).Split('/')
         if ($parts.Length -ge 2) { $start = ('//' + $parts[0] + '/' + $parts[1]).Length }
     }
@@ -261,7 +261,7 @@ function ConvertFrom-FileUriPath {
     }
 
     $rest = $Uri.Substring($Prefix.Length)
-    $slash = $rest.IndexOf('/')
+    $slash = $rest.IndexOf('/', [StringComparison]::Ordinal)
     if ($slash -lt 0) { throw (New-CanonicalPathError 'ERR_INVALID_URI' 'URI path is empty') }
 
     $authority = $rest.Substring(0, $slash)
@@ -287,13 +287,13 @@ function ConvertFrom-CanonicalFileUri {
     )
 
     $uriOptions = Get-OptionValue $Options 'uri' $null
-    if ($Value.StartsWith('file://')) {
+    if ($Value.StartsWith('file://', [StringComparison]::Ordinal)) {
         if (-not [bool] (Get-OptionValue $uriOptions 'allowFileUri' $false)) {
             throw (New-CanonicalPathError 'ERR_UNSUPPORTED_URI_SCHEME' 'file URI is not allowed')
         }
         return ConvertFrom-FileUriPath $Value 'file://' $Options
     }
-    if ($Value.StartsWith('vscode-file://')) {
+    if ($Value.StartsWith('vscode-file://', [StringComparison]::Ordinal)) {
         if (-not [bool] (Get-OptionValue $uriOptions 'allowVSCodeFileUri' $false)) {
             throw (New-CanonicalPathError 'ERR_UNSUPPORTED_URI_SCHEME' 'vscode-file URI is not allowed')
         }
@@ -312,13 +312,13 @@ function Assert-TargetProfile {
     switch ($TargetProfile) {
         { $_ -eq $null -or $_ -eq '' -or $_ -eq 'portable' } { return }
         'posix' {
-            if ((Test-DriveRoot $Value) -or $Value.StartsWith('//')) {
+            if ((Test-DriveRoot $Value) -or $Value.StartsWith('//', [StringComparison]::Ordinal)) {
                 throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'targetProfile posix does not allow Windows drive or UNC roots')
             }
             return
         }
         'win32-drive' {
-            if ($Value.StartsWith('/')) {
+            if ($Value.StartsWith('/', [StringComparison]::Ordinal)) {
                 throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'targetProfile win32-drive does not allow POSIX or UNC roots')
             }
             return
@@ -351,7 +351,13 @@ function ConvertTo-CanonicalPath {
     $value = $value -replace '\\', '/'
 
     $targetProfile = [string] (Get-OptionValue $Options 'targetProfile' '')
-    if ($targetProfile -ne 'posix') {
+    if ($targetProfile -ne 'posix' -and $value.StartsWith('/', [StringComparison]::Ordinal) -and -not $value.StartsWith('//', [StringComparison]::Ordinal)) {
+        $wslOptions = Get-OptionValue $Options 'wsl' $null
+        if ([bool] (Get-OptionValue $wslOptions 'enabled' $false) -and -not (Test-UriWindowsDrivePath $value)) {
+            if ([bool] (Get-OptionValue $windowsOptions 'rejectADS' $false) -and (Test-WindowsADS $value)) { throw (New-CanonicalPathError 'ERR_ALTERNATE_DATA_STREAM' 'Windows alternate data stream is not allowed') }
+            if ([bool] (Get-OptionValue $windowsOptions 'rejectDeviceNames' $false) -and (Test-ReservedDeviceName $value)) { throw (New-CanonicalPathError 'ERR_RESERVED_DEVICE_NAME' 'Windows reserved device name is not allowed') }
+            $value = ConvertTo-CleanCanonicalPath $value
+        }
         $mapped = ConvertFrom-WSLDrivePath $value (Get-OptionValue $Options 'wsl' $null)
         if ($null -ne $mapped) { $value = $mapped }
     }
@@ -446,7 +452,7 @@ function Join-CanonicalPath {
     $cleanRelative = ConvertTo-CanonicalRelativePath $Relative
     if ($Root.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'root contains NUL') }
     if ($cleanRelative.Equals('.', [StringComparison]::Ordinal)) { return $Root }
-    if ($Root -eq '/' -or $Root.EndsWith('/')) { return $Root + $cleanRelative }
+    if ($Root.Equals('/', [StringComparison]::Ordinal) -or $Root.EndsWith('/', [StringComparison]::Ordinal)) { return $Root + $cleanRelative }
     return $Root + '/' + $cleanRelative
 }
 
@@ -467,7 +473,7 @@ function ConvertTo-CanonicalWin32Path {
 
     if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
     if (Test-DriveRoot $Path) { return $Path.Substring(0, 1).ToUpperInvariant() + ':\' + ($Path.Substring(3) -replace '/', '\') }
-    if ($Path.StartsWith('//')) { return '\\' + ($Path.Substring(2) -replace '/', '\') }
+    if ($Path.StartsWith('//', [StringComparison]::Ordinal)) { return '\\' + ($Path.Substring(2) -replace '/', '\') }
     return $Path -replace '/', '\'
 }
 
@@ -501,7 +507,7 @@ function ConvertTo-CanonicalPosixPath {
 function Escape-ReservedWin32Component {
     param([string] $Value)
 
-    $dot = $Value.IndexOf('.')
+    $dot = $Value.IndexOf('.', [StringComparison]::Ordinal)
     if ($dot -ge 0) {
         $base = $Value.Substring(0, $dot)
         $suffix = $Value.Substring($dot)
@@ -535,10 +541,18 @@ function New-CanonicalFSDaemonClient {
         [Parameter(Mandatory = $true)][string] $Endpoint,
         [string] $Token = '',
         [ValidateRange(1, 30000)][int] $TimeoutMilliseconds = 30000,
-        [ValidateRange(1, 25165824)][int] $MaxResponseBytes = 25165824
+        [ValidateRange(1, 25165824)][int] $MaxResponseBytes = 25165824,
+        [string] $CertificateSha256 = $env:CANONICALFS_TLS_CERTIFICATE_SHA256,
+        [string] $CACertificatePath = $env:CANONICALFS_TLS_CA_FILE
     )
 
-    return [CanonicalPath.PowerShell.DaemonClient]::new($Endpoint, $Token, $TimeoutMilliseconds, $MaxResponseBytes)
+    $caPem = $null
+    if (-not [string]::IsNullOrEmpty($CACertificatePath)) {
+        $caInfo = Get-Item -LiteralPath $CACertificatePath
+        if ($caInfo.PSIsContainer -or $caInfo.Length -gt 65536) { throw (New-CanonicalFSDaemonError 'ERR_DAEMON_CLIENT' 'invalid trusted CA file') }
+        $caPem = [IO.File]::ReadAllText($caInfo.FullName)
+    }
+    return [CanonicalPath.PowerShell.DaemonClient]::new($Endpoint, $Token, $TimeoutMilliseconds, $MaxResponseBytes, $caPem, $CertificateSha256)
 }
 
 function Invoke-CanonicalFSDaemonRequest {
@@ -720,8 +734,9 @@ function ConvertTo-CanonicalGitRef {
     if ($Ref.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'git ref contains NUL') }
     try { $bytes = [System.Text.UTF8Encoding]::new($false, $true).GetBytes($Ref) }
     catch { throw (New-CanonicalPathError 'ERR_INVALID_COMPONENT' 'git ref contains invalid Unicode') }
-    $slug = $Ref -replace '[^A-Za-z0-9._-]+', '-'
+    $slug = $Ref -creplace '[^A-Za-z0-9._-]+', '-'
     $slug = $slug -replace '^[._-]+|[._-]+$', ''
+    if ($slug.Length -gt 80) { $slug = $slug.Substring(0, 80).Trim('.', '_', '-') }
     if ($slug -eq '') { $slug = 'ref' }
 
     $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -731,7 +746,7 @@ function ConvertTo-CanonicalGitRef {
         if ($sha -ne $null) { $sha.Dispose() }
     }
     $hex = -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
-    return $slug + '--' + $hex.Substring(0, 12)
+    return 'v2-' + $slug + '--' + $hex
 }
 
 Export-ModuleMember -Function @(

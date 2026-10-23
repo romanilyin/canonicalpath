@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing published non-prerelease GitHub Release tag
+        description: Existing immutable published release with its original attested assets
         required: true
         type: string
 
@@ -18,186 +18,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.prerelease == false) }}
+  verify:
+    if: ${{ github.repository == 'romanilyin/canonicalpath' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.prerelease == false)) }}
     runs-on: ubuntu-24.04
-    env:
-      NODE_VERSION: 24.18.0
-      NPM_VERSION: 11.16.0
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
-
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
     outputs:
       kind: ${{ steps.release.outputs.kind }}
       version: ${{ steps.release.outputs.version }}
-      manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
+      manifest_sha256: ${{ steps.release.outputs.manifest_sha256 }}
+      release_manifest_sha256: ${{ steps.release.outputs.release_manifest_sha256 }}
+      source_commit: ${{ steps.release.outputs.source_commit }}
+      release_id: ${{ steps.release.outputs.release_id }}
+      artifact_id: ${{ steps.artifacts.outputs.artifact-id }}
     steps:
-      - name: Validate release tag
-        id: release
-        run: |
-          VERSION_PATTERN='[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}-[0-9]+'
-
-          if [[ "$RELEASE_TAG" =~ ^${VERSION_PATTERN}$ ]]; then
-            RELEASE_KIND=full
-            RELEASE_VERSION="$RELEASE_TAG"
-          elif [[ "$RELEASE_TAG" =~ ^unity/com\.romanilyin\.canonicalpath/(${VERSION_PATTERN})$ ]]; then
-            RELEASE_KIND=unity
-            RELEASE_VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "Unsupported release tag: $RELEASE_TAG" >&2
-            exit 1
-          fi
-
-          echo "kind=$RELEASE_KIND" >> "$GITHUB_OUTPUT"
-          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
-
+      # Only verifier code from the executing workflow commit is loaded. No
+      # release-selected script, source checkout, dependency install or rebuild.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
-          fetch-depth: 0
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
+          node-version: 24.18.0
           package-manager-cache: false
-
-      - name: Verify published release
+      - name: Verify immutable original release and producer provenance
+        id: release
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG_COMMIT="$(git rev-parse HEAD)"
-          git merge-base --is-ancestor "$TAG_COMMIT" refs/remotes/origin/main
-
-          if [[ "$EVENT_NAME" == release ]]; then
-            test "$TAG_COMMIT" = "$(git rev-parse "${EVENT_SHA}^{commit}")"
-          fi
-
-          ENCODED_TAG="$(node -p 'encodeURIComponent(process.argv[1])' "$RELEASE_TAG")"
-          PUBLISHED_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${ENCODED_TAG}" --jq 'select(.draft == false and .prerelease == false) | .tag_name')"
-          test "$PUBLISHED_TAG" = "$RELEASE_TAG"
-
-      - name: Verify release toolchain
-        run: |
-          test "$(node --version)" = "v$NODE_VERSION"
-          test "$(npm --version)" = "$NPM_VERSION"
-
-      - name: Verify package versions
-        env:
-          RELEASE_KIND: ${{ steps.release.outputs.kind }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          verify_version() {
-            local package_dir="$1"
-            local package_version
-            package_version="$(node -p "require('./${package_dir}/package.json').version")"
-            test "$package_version" = "$RELEASE_VERSION"
-          }
-
-          if [[ "$RELEASE_KIND" == full ]]; then
-            verify_version packages/ts
-            verify_version packages/javascript-standalone
-          fi
-
-          verify_version packages/unity
-
-      - name: Verify package licenses
-        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          RELEASE_EVENT_ID: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          RELEASE_EVENT_SHA: ${{ github.event_name == 'release' && github.sha || '' }}
           ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
           ACTIONS_ID_TOKEN_REQUEST_URL: ""
-        run: node scripts/check-package-license-layout.mjs
-
-      - name: Install package dependencies
-        if: steps.release.outputs.kind == 'full'
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-        run: |
-          corepack enable
-          test "$(pnpm --version)" = "10.0.0"
-          pnpm install --frozen-lockfile
-
-      - name: Build and test JavaScript packages
-        if: steps.release.outputs.kind == 'full'
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-        run: |
-          umask 022
-          pnpm -C packages/ts typecheck
-          pnpm -C packages/ts test
-          pnpm ts:build
-          pnpm ts:package:smoke
-          pnpm -C packages/javascript-standalone typecheck
-          pnpm js:standalone:test
-          pnpm js:standalone:build
-          pnpm js:standalone:build:smoke
-
-      - name: Pack release artifacts
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          RELEASE_KIND: ${{ steps.release.outputs.kind }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          umask 022
-          PACK_DIR="$RUNNER_TEMP/npm-packages"
-          MANIFEST="$PACK_DIR/manifest.tsv"
-          mkdir -p "$PACK_DIR"
-          : > "$MANIFEST"
-
-          pack_package() {
-            local package_dir="$1"
-            local expected_name="$2"
-            local pack_json name version integrity filename
-            pack_json="$PACK_DIR/$(basename "$package_dir").json"
-
-            npm pack --json --pack-destination "$PACK_DIR" "./$package_dir" > "$pack_json"
-            IFS=$'\t' read -r name version integrity filename <<< "$(node -e 'const [entry] = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (!entry) process.exit(1); process.stdout.write([entry.name, entry.version, entry.integrity, entry.filename].join("\t"));' "$pack_json")"
-            test "$name" = "$expected_name"
-            test "$version" = "$RELEASE_VERSION"
-            test -f "$PACK_DIR/$filename"
-            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$filename" >> "$MANIFEST"
-          }
-
-          if [[ "$RELEASE_KIND" == full ]]; then
-            pack_package packages/ts @romanilyin/canonicalpath
-            pack_package packages/javascript-standalone @romanilyin/canonicalpath-standalone
-          fi
-
-          pack_package packages/unity com.romanilyin.canonicalpath
-
-      - name: Hash release manifest
-        id: digest
-        run: echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/npm-packages/manifest.tsv" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # immutable release artifacts
+        run: node scripts/verify-npm-release.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # immutable verified data transfer
+        id: artifacts
         with:
           name: npm-packages
           archive: true
           path: |
             ${{ runner.temp }}/npm-packages/*.tgz
             ${{ runner.temp }}/npm-packages/manifest.tsv
+            ${{ runner.temp }}/npm-packages/release-manifest.json
           if-no-files-found: error
           retention-days: 7
 
   # Fresh runner: no repository checkout, dependency installation, build code,
   # package lifecycle execution, or persisted executable state from the build.
   publish:
-    needs: build
+    needs: verify
     runs-on: ubuntu-24.04
-    environment: npm
+    environment: npm-immutable
     permissions:
       contents: read
       id-token: write
     env:
       NODE_VERSION: 24.18.0
       NPM_VERSION: 11.16.0
-      RELEASE_KIND: ${{ needs.build.outputs.kind }}
-      RELEASE_VERSION: ${{ needs.build.outputs.version }}
-      MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+      RELEASE_KIND: ${{ needs.verify.outputs.kind }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      MANIFEST_SHA256: ${{ needs.verify.outputs.manifest_sha256 }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.verify.outputs.release_manifest_sha256 }}
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -207,7 +91,8 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # same-run immutable artifacts
         with:
-          name: npm-packages
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/npm-packages
           digest-mismatch: error
 
@@ -222,9 +107,10 @@ jobs:
           test "$(node --version)" = "v$NODE_VERSION"
           test "$(npm --version)" = "$NPM_VERSION"
           cd "$RUNNER_TEMP/npm-packages"
+          printf '%s  release-manifest.json\n' "$RELEASE_MANIFEST_SHA256" | sha256sum --check --strict
           printf '%s  manifest.tsv\n' "$MANIFEST_SHA256" | sha256sum --check --strict
           node --input-type=module <<'JS'
-          import { readFileSync, statSync } from 'node:fs';
+          import { readFileSync, lstatSync } from 'node:fs';
           import { createHash } from 'node:crypto';
           import { execFileSync } from 'node:child_process';
           const expected = new Set(process.env.RELEASE_KIND === 'full'
@@ -236,7 +122,7 @@ jobs:
             const [name, version, integrity, filename, extra] = row.split('\t');
             if (!expected.delete(name) || version !== process.env.RELEASE_VERSION || extra !== undefined
               || !/^[A-Za-z0-9_.-]+\.tgz$/.test(filename) || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity)) throw new Error('Invalid artifact manifest');
-            if (!statSync(filename).isFile() || statSync(filename).size > 64 * 1024 * 1024) throw new Error('Artifact size or type is invalid');
+            if (!lstatSync(filename).isFile() || lstatSync(filename).size < 1 || lstatSync(filename).size > 64 * 1024 * 1024) throw new Error('Artifact size or type is invalid');
             const actual = 'sha512-' + createHash('sha512').update(readFileSync(filename)).digest('base64');
             if (actual !== integrity) throw new Error('Artifact integrity mismatch');
             // Read metadata only, with no OIDC variables in the tar subprocess.
@@ -255,42 +141,84 @@ jobs:
 
       - name: Preflight npm versions
         run: |
-          PACK_DIR="$RUNNER_TEMP/npm-packages"
-          PENDING="$PACK_DIR/pending.tsv"
-          : > "$PENDING"
+          node --input-type=module <<'JS'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync, writeFileSync } from "node:fs";
+          import path from "node:path";
 
-          while IFS=$'\t' read -r name version integrity filename; do
-            tarball="$PACK_DIR/$filename"
-            view_json="$PACK_DIR/view-$(basename "$tarball").json"
-            view_error="$PACK_DIR/view-$(basename "$tarball").error"
+          // This source is mirrored verbatim in the privileged workflow, which never
+          // checks out or executes repository/asset-provided helpers. Tests enforce parity.
+          function calendarVersionParts(value) {
+            const match = typeof value === "string" && value.length <= 100 && /^([1-9][0-9]{3})\.([1-9]|1[0-2])\.([1-9]|[12][0-9]|3[01])-(0|[1-9][0-9]*)$/.exec(value);
+            if (!match) throw new Error("Unsupported calendar version in npm registry preflight");
+            const [, year, month, day, sequence] = match;
+            const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+            if (date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) throw new Error("Invalid calendar date in npm registry preflight");
+            return [year, month, day, sequence].map(part => BigInt(part));
+          }
 
-            if npm view "$name@$version" dist.integrity --json --registry=https://registry.npmjs.org/ --strict-ssl=true > "$view_json" 2> "$view_error"; then
-              published_integrity="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$view_json")"
-              if [[ "$published_integrity" != "$integrity" ]]; then
-                echo "$name@$version is already published with different contents" >&2
-                exit 1
-              fi
+          function isLaterCalendarVersion(version, latest) {
+            const requested = calendarVersionParts(version), current = calendarVersionParts(latest);
+            for (let index = 0; index < requested.length; index++) {
+              if (requested[index] !== current[index]) return requested[index] > current[index];
+            }
+            return false;
+          }
 
-              latest_json="$PACK_DIR/latest-$(basename "$tarball").json"
-              npm view "$name" dist-tags.latest --json --registry=https://registry.npmjs.org/ --strict-ssl=true > "$latest_json"
-              latest_version="$(node -e 'const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof value !== "string") process.exit(1); process.stdout.write(value);' "$latest_json")"
-              if [[ "$latest_version" != "$version" ]]; then
-                echo "$name@$version is published, but the latest dist-tag points to $latest_version" >&2
-                exit 1
-              fi
+          export function planPublication(rows, lookup) {
+            const pending = [];
+            const skipped = [];
+            for (const row of rows) {
+              const [name, version, integrity, filename, extra] = row.split("\t");
+              if (!name || !version || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(integrity ?? "") ||
+                  !/^[A-Za-z0-9][A-Za-z0-9_.-]*\.tgz$/.test(filename ?? "") || extra !== undefined) throw new Error("Invalid verified publication row");
+              calendarVersionParts(version);
+              const current = lookup(name, version);
+              if (!current || typeof current !== "object" || current.integrity === undefined || current.latest === undefined) throw new Error("Registry preflight must check both the target version and latest");
+              if (current.integrity === null) {
+                if (current.latest !== null && !isLaterCalendarVersion(version, current.latest)) throw new Error(`${name}@${version} would replace an equal or newer latest; refusing a rollback`);
+                pending.push({ name, version, integrity, filename });
+                continue;
+              }
+              if (current.integrity !== integrity) throw new Error(`${name}@${version} is already published with different contents`);
+              if (current.latest !== version) throw new Error(`${name}@${version} is published, but latest points to a different version; refusing a rollback`);
+              skipped.push({ name, version });
+            }
+            return { pending, skipped };
+          }
 
-              echo "$name@$version is already published with matching integrity; skipping"
-              continue
-            fi
+          function view(args, missingAllowed = false, run = execFileSync) {
+            let output;
+            try {
+              output = run("npm", ["view", ...args, "--json", "--registry=https://registry.npmjs.org/", "--strict-ssl=true"], {
+                encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+              });
+            } catch (error) {
+              let failure;
+              try { failure = JSON.parse(String(error.stdout)); } catch { /* Any non-JSON failure is fatal. */ }
+              if (missingAllowed && error.status !== 0 && failure?.error?.code === "E404") return null;
+              throw new Error("npm registry preflight failed; no package will be published", { cause: error });
+            }
+            const value = JSON.parse(output);
+            if (typeof value !== "string" || !value) throw new Error("Invalid npm registry preflight response");
+            return value;
+          }
 
-            view_error_text="$(<"$view_error")"
-            if [[ "$view_error_text" != *E404* ]]; then
-              printf '%s\n' "$view_error_text" >&2
-              exit 1
-            fi
-
-            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$tarball" >> "$PENDING"
-          done < "$PACK_DIR/manifest.tsv"
+          export function preflightNpmPackages(directory, run = execFileSync) {
+            const rows = readFileSync(path.join(directory, "manifest.tsv"), "utf8").trimEnd().split("\n");
+            const result = planPublication(rows, (name, version) => {
+              const integrity = view([`${name}@${version}`, "dist.integrity"], true, run);
+              // A missing old version must not skip the latest check and roll back a newer release.
+              const latest = view([name, "dist-tags.latest"], integrity === null, run);
+              return { integrity, latest };
+            });
+            // All package identities have been checked before exposing any pending row.
+            const pending = result.pending.map(entry => [entry.name, entry.version, entry.integrity, path.join(directory, entry.filename)].join("\t")).join("\n");
+            writeFileSync(path.join(directory, "pending.tsv"), pending ? pending + "\n" : "", { mode: 0o600 });
+            for (const entry of result.skipped) console.log(`${entry.name}@${entry.version} already has the original integrity; skipping`);
+          }
+          preflightNpmPackages(process.env.RUNNER_TEMP + '/npm-packages');
+          JS
 
       - name: Verify npm trusted publishing access
         run: |

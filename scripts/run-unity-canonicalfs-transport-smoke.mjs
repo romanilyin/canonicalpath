@@ -1,3 +1,4 @@
+import { createTlsFixture, tlsFetch } from "./tls-test-fixture.mjs";
 import { unityClientBudgetChecks } from "./unity-client-budget-checks.mjs";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
@@ -31,7 +32,7 @@ const daemon = await startDaemon();
 try {
   const result = spawnSync(
     dotnet.command,
-    [...dotnet.prefixArgs, "run", "-c", "Release", "--project", dotnet.nativePath(projectPath), "--", daemon.endpoint, daemon.token, daemon.projectRoot],
+    [...dotnet.prefixArgs, "run", "-c", "Release", "--project", dotnet.nativePath(projectPath), "--", daemon.endpoint, daemon.token, daemon.projectRoot, dotnet.nativePath(daemon.tlsFixture.certFile), daemon.tlsFixture.certificateSha256],
     { stdio: "inherit" },
   );
   if (result.error) {
@@ -101,14 +102,15 @@ internal static class Program
 
     private static async Task Run(string[] args)
     {
-        if (args.Length != 3) throw new ArgumentException("Expected endpoint, token, and hostRoot.");
+        if (args.Length != 5) throw new ArgumentException("Expected endpoint, token, hostRoot, CA file and certificate pin.");
         UnityClientBudgetChecks.Run();
         string endpoint = args[0];
         string token = args[1];
         string hostRoot = args[2];
+        CanonicalFSTlsOptions tlsOptions = new CanonicalFSTlsOptions(args[4], System.IO.File.ReadAllText(args[3]));
 
         using (CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri(endpoint), token))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri(endpoint), token, tlsOptions))
         {
             CancellationToken cancellationToken = timeout.Token;
             if (!await client.HealthAsync(cancellationToken)) throw new InvalidOperationException("daemon health check failed");
@@ -157,7 +159,7 @@ internal static class Program
         }
 
         using (CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
-        using (CanonicalFSDaemonHttpClient unauthorized = new CanonicalFSDaemonHttpClient(new Uri(endpoint), "wrong-token"))
+        using (CanonicalFSDaemonHttpClient unauthorized = new CanonicalFSDaemonHttpClient(new Uri(endpoint), "wrong-token", tlsOptions))
         {
             await ExpectError("ERR_UNAUTHORIZED", async () => await unauthorized.CapabilitiesAsync(timeout.Token));
         }
@@ -188,11 +190,12 @@ async function startDaemon() {
   const projectRoot = path.join(tempParent, "project");
   mkdirSync(projectRoot);
   const port = await freePort();
-  const endpoint = `http://127.0.0.1:${port}`;
+  const tls = createTlsFixture();
+  const endpoint = `https://127.0.0.1:${port}`;
   const token = randomBytes(32).toString("hex");
   mkdirSync(path.join(projectRoot, "Assets", "UnityMcpKnowledge"), { recursive: true });
   writeFileSync(path.join(projectRoot, "Assets", "UnityMcpKnowledge", "large.txt"), Buffer.alloc(4 * 1048576 + 1, 97));
-  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
+  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, ...tls.daemonArgs, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },
     detached: process.platform !== "win32",
@@ -205,20 +208,23 @@ async function startDaemon() {
   });
 
   try {
-    await waitForHealth(endpoint, child, () => stderr);
+    await waitForHealth(endpoint, child, () => stderr, tls);
   } catch (error) {
     await stopProcessTree(child);
     rmSync(tempParent, { recursive: true, force: true });
+    tls.dispose();
     throw error;
   }
 
   return {
     endpoint,
+    tlsFixture: tls,
     token,
     projectRoot,
     async stop() {
       await stopProcessTree(child);
       rmSync(tempParent, { recursive: true, force: true });
+      tls.dispose();
     },
   };
 }
@@ -279,11 +285,11 @@ function freePort() {
   });
 }
 
-async function waitForHealth(endpoint, child, stderr) {
+async function waitForHealth(endpoint, child, stderr, tls) {
   for (let attempt = 0; attempt < 80; attempt++) {
     if (child.exitCode !== null) throw new Error(`canonicalfs daemon exited early with code ${child.exitCode}: ${stderr()}`);
     try {
-      const response = await fetch(`${endpoint}/healthz`);
+      const response = await tlsFetch(`${endpoint}/healthz`, {}, tls);
       if (response.ok) return;
     } catch {
       // Retry until the Go daemon is listening.

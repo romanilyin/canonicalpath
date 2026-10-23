@@ -25,9 +25,9 @@ export function encodeGitRef(raw: string): string {
       if (!(next >= 0xdc00 && next <= 0xdfff)) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
     } else if (code >= 0xdc00 && code <= 0xdfff) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
   }
-  const slug = trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-") || "ref";
-  const hash = createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 12);
-  return `${slug}--${hash}`;
+  const slug = trimBoundaryCharacters(trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-").slice(0, 80), "._-") || "ref";
+  const hash = createHash("sha256").update(raw, "utf8").digest("hex");
+  return `v2-${slug}--${hash}`;
 }
 
 function escapeReservedWin32Component(value: string): string {

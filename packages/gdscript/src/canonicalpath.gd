@@ -31,7 +31,16 @@ static func normalize_result(raw: String, options: Dictionary = {}) -> Dictionar
     value = value.replace("\\", "/")
 
     var target_profile := str(options.get("targetProfile", ""))
-    if target_profile != "posix":
+    if target_profile != "posix" and value.begins_with("/") and not value.begins_with("//"):
+        if _option_bool(_nested(options, "wsl"), "enabled", false) and not _is_uri_windows_drive_path(value):
+            if _option_bool(_nested(options, "windows"), "rejectADS", false) and _has_windows_ads(value):
+                return _err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+            if _option_bool(_nested(options, "windows"), "rejectDeviceNames", false) and _has_reserved_device_name(value):
+                return _err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
+            var posix_cleaned := _clean_canonical(value)
+            if not posix_cleaned.ok:
+                return posix_cleaned
+            value = posix_cleaned.value
         value = _map_wsl_drive(value, _nested(options, "wsl"))
     if _is_uri_windows_drive_path(value):
         value = value.substr(1)
@@ -181,10 +190,14 @@ static func encode_git_ref_result(raw: String) -> Dictionary:
         return _err("ERR_INVALID_COMPONENT", "git ref is empty")
     if _has_nul(raw):
         return _err("ERR_NUL_BYTE", "git ref contains NUL")
-    var slug := _trim_component_edges(_slug_git_ref(raw))
+    for index in range(raw.length()):
+        var scalar := raw.unicode_at(index)
+        if scalar > 0x10ffff or (scalar >= 0xd800 and scalar <= 0xdfff):
+            return _err("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode")
+    var slug := _trim_component_edges(_trim_component_edges(_slug_git_ref(raw)).substr(0, 80))
     if slug.is_empty():
         slug = "ref"
-    return _ok(slug + "--" + raw.sha256_text().substr(0, 12))
+    return _ok("v2-" + slug + "--" + raw.sha256_text())
 
 
 static func _parse_file_uri(uri: String, options: Dictionary) -> Dictionary:
@@ -303,7 +316,10 @@ static func _map_wsl_drive(value: String, options: Dictionary) -> String:
     var mount_root := _trim_right_slashes(str(options.get("mountRoot", "/mnt")))
     if mount_root.is_empty():
         mount_root = "/mnt"
-    var prefix := mount_root + "/"
+    var compact_root := "/".join(mount_root.split("/", false))
+    if mount_root.begins_with("/"):
+        compact_root = "/" + compact_root
+    var prefix := compact_root + "/"
     if not value.begins_with(prefix):
         return value
     var rest := value.substr(prefix.length())

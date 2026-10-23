@@ -110,7 +110,12 @@ pub fn normalize_with_options(raw: &str, options: &NormalizeOptions) -> Result<S
     }
     value = value.replace('\\', "/");
 
-    if options.target_profile != "posix" {
+    if options.target_profile != "posix" && value.starts_with('/') && !value.starts_with("//") {
+        if options.wsl.enabled && !is_uri_windows_drive_path(&value) {
+            if options.windows.reject_ads && has_windows_ads(&value) { return Err(err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")); }
+            if options.windows.reject_device_names && has_reserved_device_name(&value) { return Err(err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")); }
+            value = clean_canonical(&value)?;
+        }
         value = map_wsl_drive(&value, &options.wsl);
     }
     if is_uri_windows_drive_path(&value) {
@@ -308,10 +313,12 @@ pub fn encode_git_ref(raw: &str) -> Result<String, PathError> {
         }
     }
     slug = trim_component_edges(&slug);
+    slug.truncate(80); // ASCII slug; truncation cannot split UTF-8.
+    slug = trim_component_edges(&slug);
     if slug.is_empty() {
         slug = "ref".to_string();
     }
-    Ok(format!("{}--{}", slug, &sha256_hex(raw)[..12]))
+    Ok(format!("v2-{}--{}", slug, sha256_hex(raw)))
 }
 
 fn err(code: &str, message: &str) -> PathError {
@@ -526,7 +533,8 @@ fn map_wsl_drive(value: &str, options: &WslOptions) -> String {
     } else {
         options.mount_root.clone()
     });
-    let prefix = format!("{mount_root}/");
+    let compact_root = mount_root.split('/').filter(|part| !part.is_empty()).collect::<Vec<_>>().join("/");
+    let prefix = format!("{}{compact_root}/", if mount_root.starts_with('/') { "/" } else { "" });
     let Some(rest) = value.strip_prefix(&prefix) else {
         return value.to_string();
     };
@@ -941,7 +949,7 @@ mod tests {
     fn encodes_git_refs_with_hash_suffix() {
         assert_eq!(
             encode_git_ref("feature/auth").unwrap(),
-            "feature-auth--fc659bd73585"
+            "v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6"
         );
     }
 }

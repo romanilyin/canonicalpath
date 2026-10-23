@@ -1,0 +1,213 @@
+name: Prepare immutable npm release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: New full or Unity release tag (never reuse a published tag)
+        required: true
+        type: string
+      source_commit:
+        description: Full 40-character SHA of main at dispatch (must equal workflow SHA)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-prepare
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.repository == 'romanilyin/canonicalpath' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    env:
+      NODE_VERSION: 24.18.0
+      NPM_VERSION: 11.16.0
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+    outputs:
+      manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
+    steps:
+      - name: Validate original main commit and release tag
+        id: release
+        run: |
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          test "$SOURCE_COMMIT" = "$WORKFLOW_COMMIT"
+          VERSION_PATTERN='[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}-[0-9]+'
+          if [[ "$RELEASE_TAG" =~ ^${VERSION_PATTERN}$ ]]; then
+            echo "kind=full" >> "$GITHUB_OUTPUT"
+            echo "version=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          elif [[ "$RELEASE_TAG" =~ ^unity/com\.romanilyin\.canonicalpath/(${VERSION_PATTERN})$ ]]; then
+            echo "kind=unity" >> "$GITHUB_OUTPUT"
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported release tag" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact source checkout
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          git merge-base --is-ancestor "$SOURCE_COMMIT" refs/remotes/origin/main
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Verify release toolchain
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          test "$(npm --version)" = "$NPM_VERSION"
+
+      - name: Verify package versions
+        env:
+          RELEASE_KIND: ${{ steps.release.outputs.kind }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          verify_version() {
+            local package_dir="$1"
+            local package_version
+            package_version="$(node -p "require('./${package_dir}/package.json').version")"
+            test "$package_version" = "$RELEASE_VERSION"
+          }
+
+          if [[ "$RELEASE_KIND" == full ]]; then
+            verify_version packages/ts
+            verify_version packages/javascript-standalone
+          fi
+
+          verify_version packages/unity
+
+      - name: Verify package licenses
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: node scripts/check-package-license-layout.mjs
+
+      - name: Install package dependencies
+        if: steps.release.outputs.kind == 'full'
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: |
+          corepack enable
+          test "$(pnpm --version)" = "10.0.0"
+          pnpm install --frozen-lockfile
+
+      - name: Build and test JavaScript packages
+        if: steps.release.outputs.kind == 'full'
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: |
+          umask 022
+          pnpm -C packages/ts typecheck
+          pnpm -C packages/ts test
+          pnpm ts:build
+          pnpm ts:package:smoke
+          pnpm -C packages/javascript-standalone typecheck
+          pnpm js:standalone:test
+          pnpm js:standalone:build
+          pnpm js:standalone:build:smoke
+
+      - name: Pack release artifacts
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+          RELEASE_KIND: ${{ steps.release.outputs.kind }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          umask 022
+          PACK_DIR="$RUNNER_TEMP/npm-packages"
+          MANIFEST="$PACK_DIR/manifest.tsv"
+          mkdir -p "$PACK_DIR"
+          : > "$MANIFEST"
+
+          pack_package() {
+            local package_dir="$1"
+            local expected_name="$2"
+            local pack_json name version integrity filename
+            pack_json="$PACK_DIR/$(basename "$package_dir").json"
+
+            npm pack --json --pack-destination "$PACK_DIR" "./$package_dir" > "$pack_json"
+            IFS=$'\t' read -r name version integrity filename <<< "$(node -e 'const [entry] = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (!entry) process.exit(1); process.stdout.write([entry.name, entry.version, entry.integrity, entry.filename].join("\t"));' "$pack_json")"
+            test "$name" = "$expected_name"
+            test "$version" = "$RELEASE_VERSION"
+            test -f "$PACK_DIR/$filename"
+            printf '%s\t%s\t%s\t%s\n' "$name" "$version" "$integrity" "$filename" >> "$MANIFEST"
+          }
+
+          if [[ "$RELEASE_KIND" == full ]]; then
+            pack_package packages/ts @romanilyin/canonicalpath
+            pack_package packages/javascript-standalone @romanilyin/canonicalpath-standalone
+          fi
+
+          pack_package packages/unity com.romanilyin.canonicalpath
+
+      - name: Hash release manifest
+        id: digest
+        run: echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/npm-packages/manifest.tsv" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # immutable release artifacts
+        with:
+          name: npm-build-packages
+          archive: true
+          path: |
+            ${{ runner.temp }}/npm-packages/*.tgz
+            ${{ runner.temp }}/npm-packages/manifest.tsv
+          if-no-files-found: error
+          retention-days: 7
+
+  # Fresh runner: no package build/lifecycle code. OIDC here can attest only;
+  # npm Trusted Publishing must continue to allow publish-npm.yml + npm-immutable only.
+  draft:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+      MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # same-run immutable artifacts
+        with:
+          name: npm-build-packages
+          path: ${{ runner.temp }}/npm-packages
+          digest-mismatch: error
+      - name: Create a new draft and original release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: node scripts/create-npm-release-draft.mjs
+      - name: Attest the original manifest and package digests
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ runner.temp }}/npm-packages/release-manifest.json
+      - name: Attach all original artifacts without replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/npm-packages/release-manifest.json" "$RUNNER_TEMP"/npm-packages/*.tgz
+          echo "Draft prepared. Review the successful run and assets, then publish it with immutable releases enabled." >> "$GITHUB_STEP_SUMMARY"
+          echo "The draft is deliberately left unpublished; GITHUB_TOKEN release events do not trigger the publisher." >> "$GITHUB_STEP_SUMMARY"

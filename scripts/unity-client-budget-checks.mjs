@@ -7,7 +7,7 @@ internal static class UnityClientBudgetChecks
         foreach (bool health in new[] { true, false })
         foreach (string mode in new[] { "valid", "fixed", "chunked", "error", "headers", "body", "drip" })
         using (BudgetHandler handler = new BudgetHandler(mode))
-        using (CanonicalPath.CanonicalFSDaemonHttpClient client = new CanonicalPath.CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "dummy-bearer", handler, 150, 1024))
+        using (CanonicalPath.CanonicalFSDaemonHttpClient client = new CanonicalPath.CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "dummy-bearer", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler, 150, 1024))
         {
             var elapsed = System.Diagnostics.Stopwatch.StartNew();
             string code = null;
@@ -19,7 +19,7 @@ internal static class UnityClientBudgetChecks
             if (code != expected || elapsed.ElapsedMilliseconds > 2000) throw new InvalidOperationException("Unity client budget failed: " + health + "/" + mode + "/" + code);
         }
         using (BudgetHandler handler = new BudgetHandler("headers"))
-        using (CanonicalPath.CanonicalFSDaemonHttpClient client = new CanonicalPath.CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "dummy-bearer", handler, 1000, 1024))
+        using (CanonicalPath.CanonicalFSDaemonHttpClient client = new CanonicalPath.CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "dummy-bearer", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler, 1000, 1024))
         using (CancellationTokenSource caller = new CancellationTokenSource(50))
         {
             bool cancelled = false;

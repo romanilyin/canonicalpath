@@ -102,11 +102,16 @@ public enum CanonicalPath {
         }
         value = value.replacingOccurrences(of: "\\", with: "/")
 
-        if options.targetProfile != "posix" {
+        if options.targetProfile != "posix" && hasUTF8Prefix(value, "/") && !hasUTF8Prefix(value, "//") {
+            if options.wsl.enabled && !isUriWindowsDrivePath(value) {
+                if options.windows.rejectADS && hasWindowsADS(value) { throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed") }
+                if options.windows.rejectDeviceNames && hasReservedDeviceName(value) { throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed") }
+                value = try cleanCanonical(value)
+            }
             value = mapWSLDrive(value, options: options.wsl)
         }
         if isUriWindowsDrivePath(value) {
-            value = String(value.dropFirst())
+            value = dropUTF8(value, 1)
         }
         if isDriveRelative(value) {
             throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
@@ -130,11 +135,11 @@ public enum CanonicalPath {
     public static func relative(_ root: String, _ target: String) throws -> String {
         let rootParts = try canonicalParts(root)
         let targetParts = try canonicalParts(target)
-        if rootParts.prefix != targetParts.prefix || targetParts.parts.count < rootParts.parts.count {
+        if !exactUTF8Equal(rootParts.prefix, targetParts.prefix) || targetParts.parts.count < rootParts.parts.count {
             throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
         }
         for index in 0..<rootParts.parts.count {
-            if rootParts.parts[index] != targetParts.parts[index] {
+            if !exactUTF8Equal(rootParts.parts[index], targetParts.parts[index]) {
                 throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
             }
         }
@@ -146,7 +151,7 @@ public enum CanonicalPath {
         let cleanRelative = try normalizeRelative(relativePath)
         if hasNul(root) { throw pathError("ERR_NUL_BYTE", "root contains NUL") }
         if cleanRelative == "." { return root }
-        if root == "/" || root.hasSuffix("/") { return root + cleanRelative }
+        if root == "/" || hasUTF8Suffix(root, "/") { return root + cleanRelative }
         return root + "/" + cleanRelative
     }
 
@@ -186,18 +191,18 @@ public enum CanonicalPath {
     }
 
     public static func isEqual(_ left: String, _ right: String, options: CanonicalPathNormalizeOptions = CanonicalPathNormalizeOptions()) throws -> Bool {
-        try normalize(left, options: options) == normalize(right, options: options)
+        try exactUTF8Equal(normalize(left, options: options), normalize(right, options: options))
     }
 
     public static func toWin32(_ canonical: String) throws -> String {
         if hasNul(canonical) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
         if hasDriveRoot(canonical), let drive = asciiByte(canonical, at: 0) {
             let upperDrive = String(UnicodeScalar(Int(toUpperASCII(drive)))!)
-            let rest = String(canonical.dropFirst(3)).replacingOccurrences(of: "/", with: "\\")
+            let rest = dropUTF8(canonical, 3).replacingOccurrences(of: "/", with: "\\")
             return upperDrive + ":\\" + rest
         }
-        if canonical.hasPrefix("//") {
-            return "\\\\" + String(canonical.dropFirst(2)).replacingOccurrences(of: "/", with: "\\")
+        if hasUTF8Prefix(canonical, "//") {
+            return "\\\\" + dropUTF8(canonical, 2).replacingOccurrences(of: "/", with: "\\")
         }
         return canonical.replacingOccurrences(of: "/", with: "\\")
     }
@@ -207,7 +212,7 @@ public enum CanonicalPath {
         if !hasDriveRoot(canonical) { return canonical }
         let mountRoot = trimRightSlashes(options.mountRoot.isEmpty ? "/mnt" : options.mountRoot)
         let drive = String(canonical.prefix(1)).lowercased()
-        let rest = String(canonical.dropFirst(3))
+        let rest = dropUTF8(canonical, 3)
         if rest.isEmpty { return mountRoot + "/" + drive }
         return mountRoot + "/" + drive + "/" + rest
     }
@@ -240,17 +245,18 @@ public enum CanonicalPath {
         if hasNul(raw) { throw pathError("ERR_NUL_BYTE", "git ref contains NUL") }
         var slug = slugGitRef(raw)
         slug = trim(slug, characters: Set("._-"))
+        slug = trim(String(slug.prefix(80)), characters: Set("._-"))
         if slug.isEmpty { slug = "ref" }
-        return slug + "--" + String(sha256Hex(Array(raw.utf8)).prefix(12))
+        return "v2-" + slug + "--" + sha256Hex(Array(raw.utf8))
     }
 
     private static func parseFileUri(_ uri: String, options: CanonicalPathNormalizeOptions) throws -> String {
         if hasNul(uri) { throw pathError("ERR_NUL_BYTE", "URI contains NUL") }
-        if uri.hasPrefix("file://") {
+        if hasUTF8Prefix(uri, "file://") {
             if !options.uri.allowFileUri { throw pathError("ERR_UNSUPPORTED_URI_SCHEME", "file URI is not allowed") }
             return try parseHierarchicalURIPath(uri, prefix: "file://", options: options)
         }
-        if uri.hasPrefix("vscode-file://") {
+        if hasUTF8Prefix(uri, "vscode-file://") {
             if !options.uri.allowVSCodeFileUri { throw pathError("ERR_UNSUPPORTED_URI_SCHEME", "vscode-file URI is not allowed") }
             return try parseHierarchicalURIPath(uri, prefix: "vscode-file://", options: options)
         }
@@ -264,12 +270,13 @@ public enum CanonicalPath {
             throw pathError("ERR_ENCODED_SEPARATOR", "URI contains an encoded path separator")
         }
 
-        let rest = String(raw.dropFirst(prefix.count))
-        guard let slash = rest.firstIndex(of: "/") else {
+        let rest = dropUTF8(raw, prefix.utf8.count)
+        let authorityBytes = rest.utf8.prefix(while: { $0 != 0x2f })
+        if authorityBytes.count == rest.utf8.count {
             throw pathError("ERR_INVALID_URI", "URI path is empty")
         }
-        let authority = String(rest[..<slash])
-        let pathPart = String(rest[slash...])
+        let authority = String(decoding: authorityBytes, as: UTF8.self)
+        let pathPart = dropUTF8(rest, authorityBytes.count)
         let decodedAuthority = try percentDecode(authority)
         let decodedPath = try percentDecode(pathPart)
         if decodedPath.utf8.contains(0) || decodedAuthority.utf8.contains(0) { throw pathError("ERR_NUL_BYTE", "decoded URI contains NUL") }
@@ -318,22 +325,39 @@ public enum CanonicalPath {
     }
 
     private static func unwrapWindowsExtendedPrefix(_ value: String) -> String {
-        if value.hasPrefix("\\\\?\\UNC\\") { return "\\\\" + String(value.dropFirst("\\\\?\\UNC\\".count)) }
-        if value.hasPrefix("\\\\?\\") { return String(value.dropFirst("\\\\?\\".count)) }
+        if hasUTF8Prefix(value, "\\\\?\\UNC\\") { return "\\\\" + dropUTF8(value, 8) }
+        if hasUTF8Prefix(value, "\\\\?\\") { return dropUTF8(value, 4) }
         return value
+    }
+
+    // Swift String equality folds canonical Unicode equivalents; path identity must not.
+    private static func exactUTF8Equal(_ left: String, _ right: String) -> Bool {
+        left.utf8.elementsEqual(right.utf8)
+    }
+
+    private static func hasUTF8Prefix(_ value: String, _ prefix: String) -> Bool {
+        value.utf8.starts(with: prefix.utf8)
+    }
+
+    private static func hasUTF8Suffix(_ value: String, _ suffix: String) -> Bool {
+        value.utf8.suffix(suffix.utf8.count).elementsEqual(suffix.utf8)
+    }
+
+    private static func dropUTF8(_ value: String, _ count: Int) -> String {
+        String(decoding: value.utf8.dropFirst(count), as: UTF8.self)
     }
 
     private static func mapWSLDrive(_ value: String, options: CanonicalPathWSLOptions) -> String {
         if !options.enabled { return value }
         let mountRoot = trimRightSlashes(options.mountRoot.isEmpty ? "/mnt" : options.mountRoot)
-        let prefix = mountRoot + "/"
-        if !value.hasPrefix(prefix) { return value }
-        let rest = String(value.dropFirst(prefix.count))
+        let prefix = mountRoot.replacingOccurrences(of: "/+", with: "/", options: .regularExpression) + "/"
+        if !value.utf8.starts(with: prefix.utf8) { return value }
+        let rest = String(decoding: value.utf8.dropFirst(prefix.utf8.count), as: UTF8.self)
         guard let first = rest.utf8.first, isASCIILetter(first) else { return value }
         if rest.utf8.count > 1, asciiByte(rest, at: 1) != 0x2f { return value }
         let drive = String(UnicodeScalar(Int(toLowerASCII(first)))!)
         if rest.utf8.count == 1 { return drive + ":/" }
-        return drive + ":/" + String(rest.dropFirst(2))
+        return drive + ":/" + dropUTF8(rest, 2)
     }
 
     private static func cleanCanonical(_ value: String) throws -> String {
@@ -356,20 +380,20 @@ public enum CanonicalPath {
         let joined = parts.joined(separator: "/")
         if root.prefix.isEmpty { return joined.isEmpty ? "." : joined }
         if root.prefix == "/" { return joined.isEmpty ? "/" : "/" + joined }
-        if root.prefix.hasSuffix("/") { return joined.isEmpty ? root.prefix : root.prefix + joined }
+        if hasUTF8Suffix(root.prefix, "/") { return joined.isEmpty ? root.prefix : root.prefix + joined }
         return joined.isEmpty ? root.prefix : root.prefix + "/" + joined
     }
 
     private static func validateTargetProfile(_ value: String, _ targetProfile: String) throws {
         if targetProfile.isEmpty || targetProfile == "portable" { return }
         if targetProfile == "posix" {
-            if hasDriveRoot(value) || value.hasPrefix("//") {
+            if hasDriveRoot(value) || hasUTF8Prefix(value, "//") {
                 throw pathError("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots")
             }
             return
         }
         if targetProfile == "win32-drive" {
-            if value.hasPrefix("/") {
+            if hasUTF8Prefix(value, "/") {
                 throw pathError("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots")
             }
             return
@@ -390,37 +414,25 @@ public enum CanonicalPath {
 
     private static func splitRoot(_ value: String) throws -> RootParts {
         if hasDriveRoot(value) {
-            return RootParts(prefix: String(value.prefix(3)), rest: String(value.dropFirst(3)))
+            return RootParts(prefix: String(decoding: value.utf8.prefix(3), as: UTF8.self), rest: dropUTF8(value, 3))
         }
-        if value.hasPrefix("//") {
-            let rest = String(value.dropFirst(2))
-            guard let first = rest.firstIndex(of: "/"), first != rest.startIndex else {
+        if hasUTF8Prefix(value, "//") {
+            let parts = splitKeepingEmpty(dropUTF8(value, 2), separator: "/")
+            if parts.count < 2 || parts[0].isEmpty || parts[1].isEmpty {
                 throw pathError("ERR_INVALID_PATH", "UNC path requires server and share")
             }
-            let server = String(rest[..<first])
-            let afterFirst = String(rest[rest.index(after: first)...])
-            let share: String
-            let tail: String
-            if let second = afterFirst.firstIndex(of: "/") {
-                share = String(afterFirst[..<second])
-                tail = String(afterFirst[afterFirst.index(after: second)...])
-            } else {
-                share = afterFirst
-                tail = ""
-            }
-            if share.isEmpty { throw pathError("ERR_INVALID_PATH", "UNC path requires server and share") }
-            return RootParts(prefix: "//" + server + "/" + share, rest: tail)
+            return RootParts(prefix: "//" + parts[0] + "/" + parts[1], rest: parts.dropFirst(2).joined(separator: "/"))
         }
-        if value.hasPrefix("/") { return RootParts(prefix: "/", rest: String(value.dropFirst())) }
+        if hasUTF8Prefix(value, "/") { return RootParts(prefix: "/", rest: dropUTF8(value, 1)) }
         return RootParts(prefix: "", rest: value)
     }
 
     private static func hasWindowsADS(_ value: String) -> Bool {
         var rest = value
         if hasDriveRoot(value) {
-            rest = String(value.dropFirst(3))
-        } else if value.hasPrefix("//"), let root = try? splitRoot(value) {
-            rest = String(value.dropFirst(root.prefix.count))
+            rest = dropUTF8(value, 3)
+        } else if hasUTF8Prefix(value, "//"), let root = try? splitRoot(value) {
+            rest = dropUTF8(value, root.prefix.utf8.count)
         }
         return rest.contains(":")
     }
@@ -474,7 +486,7 @@ public enum CanonicalPath {
     private static func isReservedDeviceBase(_ value: String) -> Bool {
         if value == "CON" || value == "PRN" || value == "AUX" || value == "NUL" { return true }
         if value.count != 4 { return false }
-        if !(value.hasPrefix("COM") || value.hasPrefix("LPT")) { return false }
+        if !(hasUTF8Prefix(value, "COM") || hasUTF8Prefix(value, "LPT")) { return false }
         guard let digit = value.utf8.last else { return false }
         return digit >= 0x31 && digit <= 0x39
     }
@@ -482,9 +494,9 @@ public enum CanonicalPath {
     private static func slugGitRef(_ raw: String) -> String {
         var result = ""
         var previousUnsafe = false
-        for ch in raw {
+        for ch in raw.unicodeScalars {
             if isGitRefSlugChar(ch) {
-                result.append(ch)
+                result.unicodeScalars.append(ch)
                 previousUnsafe = false
             } else if !previousUnsafe {
                 result.append("-")
@@ -494,9 +506,8 @@ public enum CanonicalPath {
         return result
     }
 
-    private static func isGitRefSlugChar(_ value: Character) -> Bool {
-        guard value.unicodeScalars.count == 1, let scalar = value.unicodeScalars.first else { return false }
-        let byte = scalar.value
+    private static func isGitRefSlugChar(_ value: UnicodeScalar) -> Bool {
+        let byte = value.value
         return (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39) || byte == 0x2e || byte == 0x5f || byte == 0x2d
     }
 
@@ -530,12 +541,12 @@ public enum CanonicalPath {
     }
 
     private static func isAbsolutePathLike(_ value: String) -> Bool {
-        value.hasPrefix("/") || value.hasPrefix("\\\\") || hasDriveRoot(value.replacingOccurrences(of: "\\", with: "/"))
+        hasUTF8Prefix(value, "/") || hasUTF8Prefix(value, "\\\\") || hasDriveRoot(value.replacingOccurrences(of: "\\", with: "/"))
     }
 
     private static func lowercaseDriveRoot(_ value: String) -> String {
         guard let drive = asciiByte(value, at: 0) else { return value }
-        return String(UnicodeScalar(Int(toLowerASCII(drive)))!) + String(value.dropFirst())
+        return String(UnicodeScalar(Int(toLowerASCII(drive)))!) + dropUTF8(value, 1)
     }
 
     private static func hasNul(_ value: String) -> Bool {
@@ -568,13 +579,21 @@ public enum CanonicalPath {
     }
 
     private static func splitKeepingEmpty(_ value: String, separator: Character) -> [String] {
-        value.split(separator: separator, omittingEmptySubsequences: false).map(String.init)
+        let byte = String(separator).utf8.first! // Internal callers use ASCII separators.
+        return value.utf8.split(separator: byte, omittingEmptySubsequences: false).map { String(decoding: $0, as: UTF8.self) }
     }
 
     private static func trimRightSlashes(_ value: String) -> String {
-        var result = value
-        while result.hasSuffix("/") { result.removeLast() }
-        return result
+        let bytes = value.utf8
+        var end = bytes.endIndex
+        while end != bytes.startIndex {
+            let previous = bytes.index(before: end)
+            if bytes[previous] != 0x2f { break }
+            end = previous
+        }
+        // A Unicode Prepend scalar can share a grapheme with the slash.
+        // Trim only ASCII delimiter bytes, preserving every other scalar.
+        return String(decoding: bytes[..<end], as: UTF8.self)
     }
 
     private static func trim(_ value: String, characters: Set<Character>) -> String {

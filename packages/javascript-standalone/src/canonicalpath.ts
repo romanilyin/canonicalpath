@@ -49,7 +49,15 @@ export function normalize(raw: string, options: NormalizeOptions = {}): Canonica
   if (!options.windows?.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value);
   value = value.replaceAll("\\", "/");
 
-  if (options.targetProfile !== "posix") value = mapWSLDrive(value, options.wsl) ?? value;
+  if (options.targetProfile !== "posix" && value.startsWith("/") && !value.startsWith("//")) {
+    // Resolve POSIX dot segments before selecting the mounted drive.
+    if (options.wsl?.enabled && !isUriWindowsDrivePath(value)) {
+      if (options.windows?.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+      if (options.windows?.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+      value = cleanCanonical(value);
+    }
+    value = mapWSLDrive(value, options.wsl) ?? value;
+  }
   if (isUriWindowsDrivePath(value)) value = value.slice(1);
 
   if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
@@ -157,8 +165,8 @@ export function encodeGitRef(raw: string): string {
       if (!(next >= 0xdc00 && next <= 0xdfff)) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
     } else if (code >= 0xdc00 && code <= 0xdfff) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
   }
-  const slug = trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-") || "ref";
-  return `${slug}--${sha256Hex(raw).slice(0, 12)}`;
+  const slug = trimBoundaryCharacters(trimBoundaryCharacters(raw.replace(/[^A-Za-z0-9._-]+/g, "-"), "._-").slice(0, 80), "._-") || "ref";
+  return `v2-${slug}--${sha256Hex(raw)}`;
 }
 
 function pathError(code: string, message: string): CanonicalPathError {
@@ -252,7 +260,7 @@ function unwrapWindowsExtendedPrefix(value: string): string {
 function mapWSLDrive(value: string, options: NormalizeOptions["wsl"]): string | undefined {
   if (!options?.enabled) return undefined;
   const mountRoot = trimBoundaryCharacters(options.mountRoot ?? "/mnt", "/", false);
-  const prefix = `${mountRoot}/`;
+  const prefix = `${mountRoot.replace(/\/+/g, "/")}/`;
   if (!value.startsWith(prefix)) return undefined;
   const rest = value.slice(prefix.length);
   if (rest.length < 1 || !isAsciiLetter(rest[0] ?? "")) return undefined;

@@ -43,7 +43,7 @@
         {
           "id": "transport-loop-memory",
           "status": "active",
-          "command": "pnpm ps:transport:alloc -- --shell powershell.exe",
+          "command": "pnpm ps:transport:alloc -- --allow-windows-powershell --shell powershell.exe",
           "metric": "bounded process private bytes during repeated live JSON HTTP transport calls through the Go daemon"
         }
       ]
@@ -75,7 +75,7 @@
           "status": "active",
           "command": "pnpm ps:alloc",
           "metric": "bounded process private bytes during repeated CanonicalPath lexical helper loops and daemon client object construction for PowerShell 5.1 and 7",
-          "notes": "The allocation command runs with the first available PowerShell shell and skips only when PowerShell is unavailable. The manual Windows workflow runs this gate with both powershell.exe and pwsh when available. Live daemon HTTP transport memory checks are tracked on the PowerShell 5.1 and PowerShell 7 target rows."
+          "notes": "The allocation command selects PowerShell 7/Core only and skips when it is unavailable. The dedicated legacy Windows CI lane explicitly opts into powershell.exe; it is never a local fallback. Live daemon HTTP transport memory checks are tracked on the PowerShell 5.1 and PowerShell 7 target rows."
         }
       ]
     },

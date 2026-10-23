@@ -1,3 +1,5 @@
+#requires -Version 5.1
+
 param(
     [Parameter(Mandatory = $true)][string] $RepoRoot,
     [string] $GoCommand = 'go',
@@ -11,6 +13,9 @@ $ErrorActionPreference = 'Stop'
 
 $useExternalDaemon = $Endpoint -ne '' -and $Token -ne '' -and $HostRoot -ne ''
 if (-not $useExternalDaemon) {
+    if ($PSVersionTable.PSVersion.Major -lt 7 -or $PSVersionTable.PSEdition -ne 'Core') {
+        throw 'Starting a private smoke-test daemon requires PowerShell 7 Core; legacy compatibility runs must supply an external TLS daemon.'
+    }
     $goProbe = Get-Command $GoCommand -ErrorAction SilentlyContinue
     if ($null -eq $goProbe) {
         Write-Host ('Go command not found; skipping CanonicalFS daemon PowerShell smoke tests: ' + $GoCommand)
@@ -42,41 +47,82 @@ function Assert-True {
 }
 
 $tempParent = $null
+$ownsTempParent = $false
 $projectRoot = $HostRoot
 $endpointValue = $Endpoint
 $tokenValue = $Token
+$certificateSha256 = $env:CANONICALFS_TLS_CERTIFICATE_SHA256
+$caCertificatePath = $env:CANONICALFS_TLS_CA_FILE
 $daemon = $null
 
 try {
     if (-not $useExternalDaemon) {
         $tempParent = Join-Path ([System.IO.Path]::GetTempPath()) ('canonicalfs-ps-smoke-' + [guid]::NewGuid().ToString('n'))
+        # Protect the newly created empty parent before generating credentials.
+        # The bootstrap command independently validates its owner, ACL/mode and
+        # ancestors, and refuses an existing bootstrap output directory.
+        New-Item -ItemType Directory -Path $tempParent | Out-Null
+        $ownsTempParent = $true
+        if ($IsWindows) {
+            $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+            try {
+                $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+                $acl.SetOwner($identity.User)
+                $acl.SetAccessRuleProtection($true, $false)
+                $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+                foreach ($sid in @($identity.User, [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'), [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))) {
+                    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
+                    $acl.AddAccessRule($rule)
+                }
+                Set-Acl -LiteralPath $tempParent -AclObject $acl
+            } finally { $identity.Dispose() }
+        } else {
+            & chmod 700 $tempParent
+            if ($LASTEXITCODE -ne 0) { throw 'failed to protect the smoke-test parent directory' }
+        }
         $projectRoot = Join-Path $tempParent 'project'
-        New-Item -ItemType Directory -Path $projectRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $projectRoot | Out-Null
         $port = New-FreeTcpPort
-        $tokenValue = 'ps-smoke-token-' + [guid]::NewGuid().ToString('n')
-        $endpointValue = 'http://127.0.0.1:' + $port
+        $listenAddress = '127.0.0.1:' + $port
 
         # Own the actual daemon process, not the go run parent. Bootstrap root
         # handles stay open until daemon exit and lock the fixture on Windows.
         $daemonExecutable = Join-Path $tempParent 'canonicalfs-daemon.exe'
+        $bootstrapExecutable = Join-Path $tempParent 'canonicalfs-bootstrap.exe'
         Push-Location -LiteralPath $RepoRoot
         try {
             & $GoCommand build -o $daemonExecutable ./packages/go/cmd/canonicalfs-daemon
             if ($LASTEXITCODE -ne 0) { throw 'failed to build the smoke-test daemon' }
+            & $GoCommand build -o $bootstrapExecutable ./packages/go/cmd/canonicalfs-bootstrap
+            if ($LASTEXITCODE -ne 0) { throw 'failed to build the smoke-test bootstrap command' }
         } finally { Pop-Location }
+        $bootstrapDirectory = Join-Path $tempParent 'bootstrap'
+        & $bootstrapExecutable -out-dir $bootstrapDirectory -host '127.0.0.1' -listen $listenAddress | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'failed to create private per-launch daemon credentials' }
+        $connection = [IO.File]::ReadAllText((Join-Path $bootstrapDirectory 'connection.json')) | ConvertFrom-Json
+        if ($connection.version -ne 1) { throw 'unexpected bootstrap connection version' }
+        $endpointValue = [string] $connection.endpoint
+        $tokenValue = [string] $connection.token
+        $certificateSha256 = [string] $connection.certificate_sha256
+        $caCertificatePath = Join-Path $bootstrapDirectory 'ca.pem'
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $daemonExecutable
-        $psi.Arguments = '-listen 127.0.0.1:' + $port + ' -allow-root "' + $projectRoot + '"'
+        foreach ($argument in @('-listen', $listenAddress, '-allow-root', $projectRoot,
+                '-tls-cert', (Join-Path $bootstrapDirectory 'certificate.pem'),
+                '-tls-key', (Join-Path $bootstrapDirectory 'key.pem'),
+                '-token-file', (Join-Path $bootstrapDirectory 'token'))) {
+            $psi.ArgumentList.Add($argument)
+        }
         $psi.WorkingDirectory = $RepoRoot
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
         $psi.RedirectStandardError = $true
         $psi.RedirectStandardOutput = $true
-        $psi.EnvironmentVariables['CANONICALFS_DAEMON_TOKEN'] = $tokenValue
+        $psi.EnvironmentVariables.Remove('CANONICALFS_DAEMON_TOKEN')
         $daemon = [System.Diagnostics.Process]::Start($psi)
     }
 
-    $client = New-CanonicalFSDaemonClient -Endpoint $endpointValue -Token $tokenValue
+    $client = New-CanonicalFSDaemonClient -Endpoint $endpointValue -Token $tokenValue -CertificateSha256 $certificateSha256 -CACertificatePath $caCertificatePath
     $healthy = $false
     for ($attempt = 0; $attempt -lt 80; $attempt++) {
         if ($null -ne $daemon -and $daemon.HasExited) {
@@ -125,7 +171,7 @@ try {
     }
     Assert-True 'traversal rejected by daemon' $gotOutsideRoot
 
-    $unauthorizedClient = New-CanonicalFSDaemonClient -Endpoint $endpointValue -Token 'wrong-token'
+    $unauthorizedClient = New-CanonicalFSDaemonClient -Endpoint $endpointValue -Token 'wrong-token' -CertificateSha256 $certificateSha256 -CACertificatePath $caCertificatePath
     $gotUnauthorized = $false
     try {
         Open-CanonicalFSProject -Client $unauthorizedClient -ProjectId 'project-1' -HostRoot $projectRoot | Out-Null
@@ -143,7 +189,7 @@ try {
         $daemon.WaitForExit()
     }
     if ($null -ne $daemon) { $daemon.Dispose() }
-    if ($null -ne $tempParent -and (Test-Path -LiteralPath $tempParent)) {
+    if ($ownsTempParent -and $null -ne $tempParent -and (Test-Path -LiteralPath $tempParent)) {
         Remove-Item -LiteralPath $tempParent -Recurse -Force
     }
 }

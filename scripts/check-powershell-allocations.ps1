@@ -46,7 +46,7 @@ for ($index = 0; $index -lt $Iterations; $index++) {
     $equal = Test-CanonicalPathEqual -Left '/repo/./src' -Right '/repo/src'
     $component = ConvertTo-CanonicalComponent -Name 'CON.txt' -Profile 'win32'
     $gitRef = ConvertTo-CanonicalGitRef -Ref 'feature/powershell-alloc'
-    $client = New-CanonicalFSDaemonClient -Endpoint 'http://127.0.0.1:1' -Token 'token'
+    $client = New-CanonicalFSDaemonClient -Endpoint 'https://127.0.0.1:1' -Token 'token' -CertificateSha256 ('0' * 64)
     $sink = $joined + '|' + $win32 + '|' + $wsl + '|' + $equal + '|' + $component + '|' + $gitRef + '|' + $client.Endpoint
 }
 

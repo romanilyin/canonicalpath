@@ -4,6 +4,8 @@ import os
 import signal
 import subprocess
 import sys
+import re
+from urllib.parse import urlsplit
 
 
 def interrupted(_signal, _frame):
@@ -12,6 +14,17 @@ def interrupted(_signal, _frame):
 
 def main():
     destination = sys.argv[1]
+    arguments_in = sys.argv[2:]
+    try:
+        endpoint = arguments_in[arguments_in.index("--url") + 1]
+        parsed = urlsplit(endpoint)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment or any(ord(c) <= 32 or ord(c) == 127 for c in endpoint):
+            raise ValueError()
+    except (ValueError, IndexError):
+        raise SystemExit("ERR_DAEMON: daemon endpoint must be HTTPS without credentials, query or fragment")
+    pin = os.environ.get("CANONICALFS_TLS_PUBLIC_KEY_PIN", "")
+    if not re.fullmatch(r"sha256//[A-Za-z0-9+/]{43}=", pin):
+        raise SystemExit("ERR_DAEMON: a trusted CANONICALFS_TLS_PUBLIC_KEY_PIN is required")
     try:
         limit = int(os.environ.get("CANONICALFS_MAX_RESPONSE_BYTES", "25165824"))
         timeout = float(os.environ.get("CANONICALFS_TIMEOUT_SECONDS", "30"))
@@ -22,9 +35,15 @@ def main():
     config = sys.stdin.buffer.read()
     environment = dict(os.environ)
     environment.pop("CANONICALFS_DAEMON_TOKEN", None)
-    arguments = ["curl", "--config", "-", "--silent", "--show-error", "--compressed",
+    arguments = ["curl", "--disable", "--config", "-", "--silent", "--show-error", "--compressed",
+                 "--proto", "=https", "--proto-redir", "=https", "--tlsv1.2", "--pinnedpubkey", pin,
                  "--max-time", str(timeout), "--connect-timeout", str(min(timeout, 10)),
-                 "--max-filesize", str(limit), "--output", "-", "--write-out", "%{http_code}", *sys.argv[2:]]
+                 "--max-filesize", str(limit), "--output", "-", "--write-out", "%{http_code}"]
+    ca_file = os.environ.get("CANONICALFS_TLS_CA_FILE")
+    if ca_file:
+        arguments.extend(["--cacert", ca_file])
+    # No proxy, user curlrc, redirect following, --insecure or public trust bootstrap.
+    arguments.extend(["--noproxy", "*", *arguments_in])
     process = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, env=environment)
     try:

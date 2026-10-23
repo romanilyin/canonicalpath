@@ -25,6 +25,7 @@ if (!python) {
 }
 
 const cases = vectorFiles.flatMap((file) => JSON.parse(readFileSync(file, "utf8")).cases);
+cases.push(...JSON.parse(readFileSync(path.join(root, "spec/testdata/git-ref-utf16-vectors.json"), "utf8")).cases);
 
 rmSync(tempRoot, { recursive: true, force: true });
 mkdirSync(tempRoot, { recursive: true });
@@ -96,6 +97,10 @@ def run_case(test_case):
     if operation == "encode-component":
         return canonicalpath.encode_component(test_case.get("raw", ""), test_case.get("profile", "portable"))
     if operation == "encode-git-ref":
+        if "rawUtf16" in test_case:
+            units = test_case["rawUtf16"]
+            encoded = bytes(byte for unit in units for byte in (unit & 255, unit >> 8))
+            return canonicalpath.encode_git_ref(encoded.decode("utf-16-le", errors="surrogatepass"))
         return canonicalpath.encode_git_ref(test_case.get("raw", ""))
     raise AssertionError(f"unsupported operation {operation}")
 

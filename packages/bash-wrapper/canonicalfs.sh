@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${CANONICALFS_DAEMON_URL:-http://127.0.0.1:8765}"
+BASE_URL="${CANONICALFS_DAEMON_URL:-https://127.0.0.1:8765}"
 BASE_URL="${BASE_URL%/}"
 TOKEN="${CANONICALFS_DAEMON_TOKEN:-}"
+# Do not propagate the bearer (or the retired payload variable) to helpers.
+# The caller is responsible for provisioning its initial token environment.
+export -n TOKEN
+unset CANONICALFS_DAEMON_TOKEN CANONICALFS_WRAPPER_TEXT
 PYTHON_BIN="${PYTHON:-python3}"
 TRANSPORT_HELPER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/canonicalfs_transport.py"
 # Wait for the request subshell's EXIT cleanup before the CLI exits on a
@@ -22,7 +26,7 @@ ops:
   open-project <project_id> <host_root>
   close-project <project_id>
   mkdir-all <project_id> <path>
-  write-text <project_id> <path> <text>
+  write-text <project_id> <path>  (UTF-8 text on stdin)
   read-text <project_id> <path> [max_bytes]
   stat <project_id> <path>
   remove <project_id> <path>
@@ -65,13 +69,37 @@ print(json.dumps(payload, separators=(",", ":")))
 PY
 }
 
-base64_text() {
-  CANONICALFS_WRAPPER_TEXT="$1" "$PYTHON_BIN" - <<'PY'
+write_text_body() {
+  # Static Python code is supplied with -c so stdin remains exclusively the
+  # payload channel. Encode before Bash sees the bytes, preserving NUL and all
+  # trailing newlines without putting text/base64 in child argv or environment.
+  "$PYTHON_BIN" -c '
 import base64
-import os
+import json
+import sys
 
-print(base64.b64encode(os.environ["CANONICALFS_WRAPPER_TEXT"].encode("utf-8")).decode("ascii"))
-PY
+limit = 1 << 20
+raw = sys.stdin.buffer.read(limit + 1)
+if len(raw) > limit:
+    raise SystemExit("write-text input exceeds the 1 MiB limit")
+try:
+    raw.decode("utf-8", errors="strict")
+except UnicodeDecodeError:
+    raise SystemExit("write-text input must be valid UTF-8")
+payload = json.dumps({"project_id": sys.argv[1], "path": sys.argv[2],
+                      "data_base64": base64.b64encode(raw).decode("ascii")},
+                     separators=(",", ":"))
+if len(payload.encode("utf-8")) > limit:
+    raise SystemExit("write-text encoded request exceeds the 1 MiB limit")
+sys.stdout.write(payload)
+' "$1" "$2"
+}
+
+write_text() {
+  local body
+  export -n body
+  body="$(write_text_body "$1" "$2")" || return $?
+  request POST /v1/fs/writeFile none "$body"
 }
 
 parse_response() {
@@ -122,23 +150,30 @@ request() (
   local path="$2"
   local mode="$3"
   local body="${4:-}"
-  local tmp status parse_status config=""
+  export -n body
+  local tmp_dir tmp body_file status parse_status config="" escaped_token=""
+  export -n config escaped_token
   local curl_args=(-H "Accept: application/json")
   if [[ "$path" != "/healthz" ]]; then
     require_token
     [[ "$TOKEN" != *$'\n'* && "$TOKEN" != *$'\r'* ]] || die "token contains a line break"
-    local escaped_token="${TOKEN//\\/\\\\}"
+    escaped_token="${TOKEN//\\/\\\\}"
     escaped_token="${escaped_token//\"/\\\"}"
     printf -v config 'header = "Authorization: Bearer %s"\n' "$escaped_token"
   fi
-  if [[ "$method" == "POST" ]]; then
-    curl_args+=(-X POST -H "Content-Type: application/json" --data "$body")
-  fi
-  curl_args+=(--url "$BASE_URL$path")
-  tmp="$(mktemp)"
-  trap 'rm -f -- "$tmp"' EXIT
+  umask 077
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/canonicalfs-request.XXXXXXXX")"
+  tmp="$tmp_dir/response.json"
+  body_file="$tmp_dir/request.json"
+  trap 'rm -f -- "$body_file" "$tmp"; rmdir -- "$tmp_dir"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM HUP
+  : > "$tmp"
+  if [[ "$method" == "POST" ]]; then
+    printf '%s' "$body" > "$body_file"
+    curl_args+=(-X POST -H "Content-Type: application/json" --data-binary "@$body_file")
+  fi
+  curl_args+=(--url "$BASE_URL$path")
 
   if ! status="$(printf '%s' "$config" | "$PYTHON_BIN" "$TRANSPORT_HELPER" "$tmp" "${curl_args[@]}")"; then
     die "daemon request failed: $method $path"
@@ -181,8 +216,8 @@ case "$OP" in
     request POST /v1/fs/mkdirAll none "$(json_body project_id "$1" path "$2")"
     ;;
   write-text)
-    [[ $# -eq 3 ]] || die "write-text requires project_id, path, and text" 64
-    request POST /v1/fs/writeFile none "$(json_body project_id "$1" path "$2" data_base64 "$(base64_text "$3")")"
+    [[ $# -eq 2 ]] || die "write-text requires project_id and path; pass UTF-8 text on stdin" 64
+    write_text "$1" "$2"
     ;;
   read-text)
     if [[ $# -eq 2 ]]; then

@@ -1,7 +1,9 @@
+import { unityPowerShellCommand } from "./unity-editor-execution.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectPowerShells } from "./powershell-shell.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const unitySuccessMarker = "Unity Burst allocation probe passed";
@@ -63,8 +65,9 @@ process.exit(result.status ?? 1);
 function runUnity(args) {
   const options = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
   if (process.platform === "linux" && unity.startsWith("/mnt/")) {
-    const command = ["Set-Location", quotePowerShell(wslpathIfAvailable(root)) + ";", "&", quotePowerShell(wslpathIfAvailable(unity)), ...args.map(quotePowerShell), ";", "exit", "$LASTEXITCODE"].join(" ");
-    return spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], options);
+    const [powerShell] = selectPowerShells(["--shell", process.env.CANONICALPATH_POWERSHELL ?? "/mnt/c/Program Files/PowerShell/7/pwsh.exe"], { required: true });
+    const command = unityPowerShellCommand(wslpathIfAvailable(unity), args, wslpathIfAvailable(root));
+    return spawnSync(powerShell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], options);
   }
   return spawnSync(unity, args, { ...options, cwd: root });
 }
@@ -287,8 +290,4 @@ function wslpathIfAvailable(value) {
   const result = spawnSync("wslpath", ["-w", value], { encoding: "utf8" });
   if (result.error || result.status !== 0) return value;
   return result.stdout.trim() || value;
-}
-
-function quotePowerShell(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
 }

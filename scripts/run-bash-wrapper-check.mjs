@@ -1,3 +1,4 @@
+import { createTlsFixture, tlsFetch } from "./tls-test-fixture.mjs";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -50,6 +51,7 @@ function commandExists(command, args) {
 function wrapperEnv(daemon, token = daemon.token) {
   const env = {
     ...process.env,
+    ...daemon.tlsFixture.env,
     CANONICALFS_DAEMON_URL: daemon.endpoint,
     PYTHON: "python3",
   };
@@ -61,6 +63,7 @@ function runWrapper(daemon, args, options = {}) {
   const result = spawnSync("bash", [wrapper, ...args], {
     cwd: root,
     encoding: "utf8",
+    input: options.input,
     env: wrapperEnv(daemon, options.token),
   });
   if (result.error) throw result.error;
@@ -88,7 +91,7 @@ function runSmokeCheck(daemon) {
   runWrapper(daemon, ["open-project", projectId, daemon.projectRoot]);
   try {
     runWrapper(daemon, ["mkdir-all", projectId, "safe"]);
-    runWrapper(daemon, ["write-text", projectId, "safe/file.txt", "hello from bash wrapper"]);
+    runWrapper(daemon, ["write-text", projectId, "safe/file.txt"], { input: "hello from bash wrapper" });
     const text = runWrapper(daemon, ["read-text", projectId, "safe/file.txt", "128"]);
     if (text !== "hello from bash wrapper") throw new Error(`read text mismatch: ${text}`);
 
@@ -119,7 +122,7 @@ function runAllocationCheck(daemon) {
   runWrapper(daemon, ["open-project", projectId, daemon.projectRoot]);
   try {
     runWrapper(daemon, ["mkdir-all", projectId, "safe"]);
-    runWrapper(daemon, ["write-text", projectId, "safe/file.txt", "hello from bash allocation check"]);
+    runWrapper(daemon, ["write-text", projectId, "safe/file.txt"], { input: "hello from bash allocation check" });
 
     writeFileSync(loopPath, allocationLoop(iterations, projectId), "utf8");
     const result = spawnSync("/usr/bin/time", ["-f", "MAX_RSS_KB=%M", "bash", loopPath], {
@@ -166,9 +169,10 @@ async function startDaemon() {
   const projectRoot = path.join(tempParent, "project");
   mkdirSync(projectRoot);
   const port = await freePort();
-  const endpoint = `http://127.0.0.1:${port}`;
+  const tls = createTlsFixture();
+  const endpoint = `https://127.0.0.1:${port}`;
   const token = randomBytes(32).toString("hex");
-  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
+  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, ...tls.daemonArgs, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },
     detached: process.platform !== "win32",
@@ -181,20 +185,23 @@ async function startDaemon() {
   });
 
   try {
-    await waitForHealth(endpoint, child, () => stderr);
+    await waitForHealth(endpoint, child, () => stderr, tls);
   } catch (error) {
     await stopProcessTree(child);
     rmSync(tempParent, { recursive: true, force: true });
+    tls.dispose();
     throw error;
   }
 
   return {
     endpoint,
+    tlsFixture: tls,
     token,
     projectRoot,
     async stop() {
       await stopProcessTree(child);
       rmSync(tempParent, { recursive: true, force: true });
+      tls.dispose();
     },
   };
 }
@@ -255,11 +262,11 @@ function freePort() {
   });
 }
 
-async function waitForHealth(endpoint, child, stderr) {
+async function waitForHealth(endpoint, child, stderr, tls) {
   for (let attempt = 0; attempt < 80; attempt++) {
     if (child.exitCode !== null) throw new Error(`canonicalfs daemon exited early with code ${child.exitCode}: ${stderr()}`);
     try {
-      const response = await fetch(`${endpoint}/healthz`);
+      const response = await tlsFetch(`${endpoint}/healthz`, {}, tls);
       if (response.ok) return;
     } catch {
       // Retry until the Go daemon is listening.

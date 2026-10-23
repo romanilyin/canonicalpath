@@ -1,17 +1,27 @@
+import { randomUUID } from "node:crypto";
+import { unityPowerShellCommand, requireUnityCompletion } from "./unity-editor-execution.mjs";
 import { unityClientBudgetChecks } from "./unity-client-budget-checks.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectPowerShells } from "./powershell-shell.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requiredUnityVersionPrefix = process.env.UNITY_REQUIRED_VERSION_PREFIX || process.env.UNITY_EDITMODE_REQUIRED_VERSION_PREFIX;
 const projectRoot = path.join(root, "tmp", `${tempProjectName("unity-editmode-project", requiredUnityVersionPrefix)}-${process.pid}`);
+const completionNonce = randomUUID();
+const completionFile = path.join(projectRoot, "canonicalpath-editmode-complete.txt");
+const logFile = path.join(projectRoot, "unity-editor.log");
 
 const unity = findUnityEditor(requiredUnityVersionPrefix);
 if (!unity) {
   const versionLabel = requiredUnityVersionPrefix ? ` ${requiredUnityVersionPrefix}` : "";
-  console.log(`Unity Editor${versionLabel} not found; skipping Unity EditMode tests. Set UNITY_EDITOR or UNITY_EXE to enable this gate.`);
+  if (requiredUnityVersionPrefix || ["UNITY_EDITOR", "UNITY_EXE", "UNITY_PATH"].some(key => process.env[key])) {
+    console.error(`Required Unity Editor${versionLabel} not found; Unity EditMode tests failed.`);
+    process.exit(1);
+  }
+  console.log("Unity Editor not found; skipping Unity EditMode tests. Set UNITY_EDITOR or UNITY_EXE to enable this gate.");
   process.exit(0);
 }
 const unityVersion = projectVersionForUnity(unity, requiredUnityVersionPrefix);
@@ -32,20 +42,30 @@ const result = runUnity([
   "-quit",
   "-projectPath",
   relativeForUnity(projectRoot),
+  "-logFile",
+  relativeForUnity(logFile),
   "-executeMethod",
   "CanonicalPathUnityEditModeRunner.Run",
 ]);
 
-if (result.error) {
-  console.error(result.error.message);
+try {
+  requireUnityCompletion(result, completionFile, completionNonce);
+} catch (error) {
+  console.error(`Unity EditMode failed: ${error.message}`);
+  if (existsSync(logFile)) {
+    console.error(`Unity Editor log: ${logFile}`);
+    console.error(readFileSync(logFile, "utf8").split(/\r?\n/).slice(-60).join("\n"));
+  }
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+console.log(`Unity ${unityVersion} EditMode assertions completed; receipt verified. Log: ${logFile}`);
+process.exit(0);
 
 function runUnity(args) {
   if (process.platform === "linux" && unity.startsWith("/mnt/")) {
-    const command = ["Set-Location", quotePowerShell(wslpathIfAvailable(root)) + ";", "&", quotePowerShell(wslpathIfAvailable(unity)), ...args.map(quotePowerShell), ";", "exit", "$LASTEXITCODE"].join(" ");
-    return spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], { stdio: "inherit" });
+    const [powerShell] = selectPowerShells(["--shell", process.env.CANONICALPATH_POWERSHELL ?? "/mnt/c/Program Files/PowerShell/7/pwsh.exe"], { required: true });
+    const command = unityPowerShellCommand(wslpathIfAvailable(unity), args, wslpathIfAvailable(root));
+    return spawnSync(powerShell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], { stdio: "inherit" });
   }
   return spawnSync(unity, args, { stdio: "inherit", cwd: root });
 }
@@ -91,6 +111,8 @@ using CP = CanonicalPath.CanonicalPath;
 
 public static class CanonicalPathUnityEditModeRunner
 {
+    private const string CompletionNonce = "${completionNonce}";
+
     public static void Run()
     {
         try
@@ -107,6 +129,7 @@ public static class CanonicalPathUnityEditModeRunner
             UnityBridgeReadsUseBoundedScopedDaemon();
             BurstCompatibleSurfaceUsesUnmanagedCodeUnits();
             ManagedHotLoopHasBoundedEditorAllocations();
+            System.IO.File.WriteAllText(System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "canonicalpath-editmode-complete.txt"), CompletionNonce, new UTF8Encoding(false));
             Console.WriteLine("Unity EditMode CanonicalPath runner passed");
             EditorApplication.Exit(0);
         }
@@ -124,7 +147,7 @@ public static class CanonicalPathUnityEditModeRunner
         Equal("c:/Users/Alice/Repo", CP.Normalize("/mnt/c/Users/Alice/Repo", new CanonicalPathNormalizeOptions { SourceHost = "wsl", TargetProfile = "win32-drive", WSL = new CanonicalPathWSLOptions { Enabled = true, MountRoot = "/mnt" } }));
         Equal("src/file.txt", CP.Relative("c:/repo", "c:/repo/src/file.txt"));
         Equal("c:/repo/src/file.txt", CP.Join("c:/repo", "src/file.txt"));
-        Equal("feature-auth--fc659bd73585", CP.EncodeGitRef("feature/auth"));
+        Equal("v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6", CP.EncodeGitRef("feature/auth"));
     }
 
     private static void ManagedCanonicalPathRejectsSecurityCases()
@@ -178,14 +201,14 @@ public static class CanonicalPathUnityEditModeRunner
     private static void ManagedTransportAddsBearerAuthAndParsesCapabilities()
     {
         using (FakeHandler handler = new FakeHandler("{\"auth_required\":true,\"endpoints\":[\"POST /v1/fs/readFile\"],\"limits\":{\"max_request_bytes\":1048576,\"default_read_bytes\":1048576,\"max_read_bytes\":16777216,\"max_response_bytes\":25165824}}"))
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
         using (CancellationTokenSource cancellation = new CancellationTokenSource())
         {
             CanonicalFSDaemonCapabilities caps = client.CapabilitiesAsync(cancellation.Token).GetAwaiter().GetResult();
             if (!caps.AuthRequired) throw new InvalidOperationException("expected auth_required=true");
             Equal("Bearer", handler.LastRequest.Headers.Authorization.Scheme);
             Equal("test-token", handler.LastRequest.Headers.Authorization.Parameter);
-            Equal("http://127.0.0.1:1234/v1/caps", handler.LastRequest.RequestUri.ToString());
+            Equal("https://127.0.0.1:1234/v1/caps", handler.LastRequest.RequestUri.ToString());
             True(handler.LastCancellationToken.CanBeCanceled);
         }
     }
@@ -194,11 +217,11 @@ public static class CanonicalPathUnityEditModeRunner
     {
         string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes("scoped knowledge"));
         using (FakeHandler handler = new FakeHandler("{\"data_base64\":\"" + encoded + "\"}"))
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
         {
             string text = client.ReadScopedTextAsync("project-1", UnityMcpPathScope.Knowledge, "agent.md", 64, CancellationToken.None).GetAwaiter().GetResult();
             Equal("scoped knowledge", text);
-            Equal("http://127.0.0.1:1234/v1/scoped/readFile", handler.LastRequest.RequestUri.ToString());
+            Equal("https://127.0.0.1:1234/v1/scoped/readFile", handler.LastRequest.RequestUri.ToString());
             Contains(handler.LastBody, "\"operation\":\"read\"");
             Contains(handler.LastBody, "\"path\":\"agent.md\"");
             Contains(handler.LastBody, "\"project_id\":\"project-1\"");
@@ -207,17 +230,17 @@ public static class CanonicalPathUnityEditModeRunner
         }
 
         using (FakeHandler handler = new FakeHandler("{}"))
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
         {
             client.WriteScopedTextAsync("project-1", UnityMcpPathScope.Artifact, "job-artifacts/run-1/summary.json", "{}", CancellationToken.None).GetAwaiter().GetResult();
-            Equal("http://127.0.0.1:1234/v1/scoped/writeFile", handler.LastRequest.RequestUri.ToString());
+            Equal("https://127.0.0.1:1234/v1/scoped/writeFile", handler.LastRequest.RequestUri.ToString());
             Contains(handler.LastBody, "\"operation\":\"write\"");
             Contains(handler.LastBody, "\"scope\":\"artifact\"");
             Contains(handler.LastBody, "\"data_base64\":\"e30=\"");
         }
 
         using (FakeHandler handler = new FakeHandler("{\"stat\":{\"path\":\"Packages/manifest.json\",\"size\":2,\"is_directory\":false}}"))
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
         {
             CanonicalFSFileStat stat = client.StatScopedAsync("project-1", UnityMcpPathScope.PackageManifest, "Packages/manifest.json", CancellationToken.None).GetAwaiter().GetResult();
             Equal("Packages/manifest.json", stat.Path);
@@ -235,7 +258,7 @@ public static class CanonicalPathUnityEditModeRunner
         try { disconnected.ReadText("Assets/file.txt", 10); } catch (InvalidOperationException) { failed = true; }
         if (!failed) throw new InvalidOperationException("local fallback read was allowed");
         FakeHandler handler = new FakeHandler("{\"data_base64\":\"aGVsbG8=\"}");
-        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("http://127.0.0.1:1234"), "test-token", handler))
+        using (CanonicalFSDaemonHttpClient client = new CanonicalFSDaemonHttpClient(new Uri("https://127.0.0.1:1234"), "test-token", new CanonicalPath.CanonicalFSTlsOptions(new string('0', 64)), handler))
         {
             UnityBridgeBuiltins bridge = new UnityBridgeBuiltins("project-1", new CanonicalPathValue("/repo/Game"), "Game", "test", null, client);
             UnityBridgeReadResult result = bridge.ReadText("Assets/file.txt", 3);
@@ -413,8 +436,4 @@ function wslpathIfAvailable(value) {
   const result = spawnSync("wslpath", ["-w", value], { encoding: "utf8" });
   if (result.error || result.status !== 0) return value;
   return result.stdout.trim() || value;
-}
-
-function quotePowerShell(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
 }

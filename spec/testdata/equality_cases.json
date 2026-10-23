@@ -6,7 +6,10 @@
       "operation": "is-equal",
       "root": "/home//alice/./repo",
       "target": "/home/alice/repo",
-      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
       "expected": "true"
     },
     {
@@ -14,7 +17,10 @@
       "operation": "is-equal",
       "root": "/tmp/project",
       "target": "/tmp/project-evil",
-      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
       "expected": "false"
     },
     {
@@ -22,7 +28,10 @@
       "operation": "is-equal",
       "root": "C:\\Users\\Alice\\Repo",
       "target": "c:/Users/Alice/Repo",
-      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
       "expected": "true"
     },
     {
@@ -30,7 +39,10 @@
       "operation": "is-equal",
       "root": "C:\\Users\\Alice\\Repo",
       "target": "c:/users/Alice/Repo",
-      "options": { "sourceHost": "win32", "targetProfile": "win32-drive" },
+      "options": {
+        "sourceHost": "win32",
+        "targetProfile": "win32-drive"
+      },
       "expected": "false"
     },
     {
@@ -38,7 +50,14 @@
       "operation": "is-equal",
       "root": "/mnt/c/Users/Alice/Repo",
       "target": "c:/Users/Alice/Repo",
-      "options": { "sourceHost": "wsl", "targetProfile": "win32-drive", "wsl": { "enabled": true, "mountRoot": "/mnt" } },
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
       "expected": "true"
     },
     {
@@ -46,8 +65,63 @@
       "operation": "is-equal",
       "root": "",
       "target": "/tmp/repo",
-      "options": { "sourceHost": "posix", "targetProfile": "posix" },
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
       "error": "ERR_EMPTY_PATH"
+    },
+    {
+      "id": "unequal-unicode-nfc-nfd",
+      "operation": "is-equal",
+      "root": "/repo/café",
+      "target": "/repo/café",
+      "expected": "false"
+    },
+    {
+      "id": "unequal-unicode-nfd-nfc",
+      "operation": "is-equal",
+      "root": "/repo/café",
+      "target": "/repo/café",
+      "expected": "false"
+    },
+    {
+      "id": "equal-unicode-identical-nfd",
+      "operation": "is-equal",
+      "root": "/repo/café",
+      "target": "/repo/café",
+      "expected": "true"
+    },
+    {
+      "id": "unequal-unicode-unc-server",
+      "operation": "is-equal",
+      "root": "//café/share/repo",
+      "target": "//café/share/repo",
+      "expected": "false"
+    },
+    {
+      "id": "unequal-wsl-cross-drive-alias",
+      "operation": "is-equal",
+      "root": "/mnt/c/../d/repo",
+      "target": "/mnt/c/d/repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "false"
+    },
+    {
+      "id": "equal-wsl-cleaned-drive",
+      "operation": "is-equal",
+      "root": "/mnt/c/../d/repo",
+      "target": "d:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "true"
     }
   ]
 }

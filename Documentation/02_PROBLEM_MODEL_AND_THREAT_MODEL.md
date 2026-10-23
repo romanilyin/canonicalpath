@@ -159,10 +159,10 @@ feature__auth -> feature__auth
 Решение:
 
 ```text
-safeBranchDir = sanitizeComponent(branchName) + "--" + shortHash(branchName)
+safeBranchDir = "v2-" + boundedAsciiSlug(branchName, 80) + "--" + fullSHA256(rawUTF8(branchName))
 ```
 
-или percent-encoding with hash fallback.
+Полный SHA-256 вычисляется до любого изменения исходной строки. Вход должен содержать только корректные Unicode scalar values; максимальная длина ASCII-компонента v2 составляет 149 байт. Для существующих worktree/cache каталогов требуется [проверяемая миграция](IDENTITY_V2_MIGRATION.md), без автоматического переиспользования старых имён.
 
 ### 5. Unsafe sandbox checks
 

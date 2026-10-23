@@ -433,31 +433,27 @@ safeBranchName := strings.ReplaceAll(branchName, "/", "__")
 Better:
 
 ```go
-func WorktreeDirName(branch string) string {
-    slug := canonicalpath.SanitizeComponent(branch, canonicalpath.PortableComponent)
-    hash := shortSHA256(branch, 10)
-    if len(slug) > 48 {
-        slug = slug[:48]
-    }
-    return slug + "--" + hash
+func WorktreeDirName(branch string) (string, error) {
+    return canonicalpath.EncodeGitRef(branch)
 }
 ```
 
 Examples:
 
 ```text
-feature/auth     -> feature-auth--0b3c91d9aa
-feature__auth    -> feature__auth--6a1bd2e917
-bugfix/wsl-paths -> bugfix-wsl-paths--9f8d2c4410
+feature/auth     -> v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6
+feature__auth    -> v2-feature__auth--2a861c0eececd1c4b2be0e725fe75f8fd1a6c593e1c74679a16d60fe835819d3
+bugfix/wsl-paths -> v2-bugfix-wsl-paths--0c8633ccd78cee24c5c2f632496559f1591c30f1beb13f425fdf8bc149910a1c
 ```
 
-This prevents collisions and keeps folder names readable.
+The v2 encoder retains a readable ASCII slug of at most 80 characters and the complete 64-hex SHA-256 digest of the exact raw UTF-8 ref. The maximum component length is 149 ASCII bytes. This provides a cryptographic collision margin, not an absolute collision guarantee. Invalid Unicode scalar input is rejected; case, whitespace and Unicode normalization are not changed before hashing. Existing directories require the [identity migration procedure](IDENTITY_V2_MIGRATION.md); never reuse a legacy directory without verifying its original ref ownership.
 
 ### Worktree path
 
 ```go
 func GenerateWorktreePath(pfs *ProjectFS, branch string) (string, error) {
-    dir := WorktreeDirName(branch)
+    dir, err := WorktreeDirName(branch)
+    if err != nil { return "", err }
     rel := canonicalpath.JoinRelative(".opencode/worktrees", dir)
     return pfs.Root.MkdirAll(rel, 0755)
 }

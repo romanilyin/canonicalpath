@@ -4,52 +4,67 @@
     {
       "id": "unicode-replacement-relative-preserved",
       "operation": "normalize",
-      "raw": "\ufffd",
-      "options": { "sourceHost": "posix", "targetProfile": "portable" },
-      "expected": "\ufffd"
+      "raw": "�",
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "portable"
+      },
+      "expected": "�"
     },
     {
       "id": "unicode-replacement-relative-root",
       "operation": "relative",
-      "root": "/repo/\ufffd",
-      "target": "/repo/\ufffd/file.txt",
+      "root": "/repo/�",
+      "target": "/repo/�/file.txt",
       "expected": "file.txt"
     },
     {
       "id": "unicode-replacement-root-distinct",
       "operation": "relative",
-      "root": "/repo/\ufffd",
+      "root": "/repo/�",
       "target": "/repo/file.txt",
       "error": "ERR_OUTSIDE_ROOT"
     },
     {
       "id": "unicode-replacement-wsl-preserved",
       "operation": "to-wsl",
-      "raw": "c:/\ufffd",
-      "expected": "/mnt/c/\ufffd"
+      "raw": "c:/�",
+      "expected": "/mnt/c/�"
     },
     {
       "id": "unicode-preserved-nfc",
       "operation": "normalize",
-      "raw": "/repo/caf\u00e9.txt",
-      "options": { "sourceHost": "posix", "targetProfile": "posix" },
-      "expected": "/repo/caf\u00e9.txt",
+      "raw": "/repo/café.txt",
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
+      "expected": "/repo/café.txt",
       "notes": "MVP preserves Unicode codepoints; it does not fold composed characters."
     },
     {
       "id": "unicode-preserved-nfd",
       "operation": "normalize",
-      "raw": "/repo/cafe\u0301.txt",
-      "options": { "sourceHost": "posix", "targetProfile": "posix" },
-      "expected": "/repo/cafe\u0301.txt",
+      "raw": "/repo/café.txt",
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
+      "expected": "/repo/café.txt",
       "notes": "NFD stays NFD; normalization policy is lexical and does not rewrite Unicode."
     },
     {
       "id": "unicode-uri-decodes-once",
       "operation": "normalize",
       "raw": "file:///repo/caf%C3%A9.txt",
-      "options": { "sourceHost": "vscode-file-uri", "targetProfile": "posix", "uri": { "allowFileUri": true } },
-      "expected": "/repo/caf\u00e9.txt"
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "targetProfile": "posix",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "/repo/café.txt"
     },
     {
       "id": "unicode-device-check-two-byte",
@@ -80,6 +95,100 @@
         "targetProfile": "win32-drive"
       },
       "expected": "c:/repo/a€.txt"
+    },
+    {
+      "id": "unicode-relative-nfc-nfd-outside",
+      "operation": "relative",
+      "root": "/repo/café",
+      "target": "/repo/café/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unicode-relative-nfd-nfc-outside",
+      "operation": "relative",
+      "root": "/repo/café",
+      "target": "/repo/café/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unicode-relative-nfd-identical",
+      "operation": "relative",
+      "root": "/repo/café",
+      "target": "/repo/café/file",
+      "expected": "file"
+    },
+    {
+      "id": "unicode-relative-unc-share-outside",
+      "operation": "relative",
+      "root": "//server/café",
+      "target": "//server/café/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unicode-relative-unc-server-outside",
+      "operation": "relative",
+      "root": "//café/share",
+      "target": "//café/share/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "unicode-mark-after-posix-root",
+      "operation": "normalize",
+      "raw": "/́repo/file",
+      "expected": "/́repo/file"
+    },
+    {
+      "id": "unicode-mark-after-drive-root",
+      "operation": "normalize",
+      "raw": "C:/́repo/file",
+      "expected": "c:/́repo/file"
+    },
+    {
+      "id": "unicode-mark-after-separator",
+      "operation": "normalize",
+      "raw": "/repo/́dir/file",
+      "expected": "/repo/́dir/file"
+    },
+    {
+      "id": "unicode-mark-unc-share",
+      "operation": "relative",
+      "root": "//server/́share",
+      "target": "//server/́share/file",
+      "expected": "file"
+    },
+    {
+      "id": "unicode-mark-after-wsl-root",
+      "operation": "normalize",
+      "raw": "/mnt/c/́repo/file",
+      "options": {
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "c:/́repo/file"
+    },
+    {
+      "id": "unicode-mark-uri-path",
+      "operation": "normalize",
+      "raw": "file:///́repo/file",
+      "options": {
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "/́repo/file"
+    },
+    {
+      "id": "unicode-mark-to-wsl",
+      "operation": "to-wsl",
+      "raw": "c:/́repo/file",
+      "expected": "/mnt/c/́repo/file"
+    },
+    {
+      "id": "unicode-mark-to-win32",
+      "operation": "to-win32",
+      "raw": "c:/́repo/file",
+      "expected": "C:\\́repo\\file"
     }
   ]
 }

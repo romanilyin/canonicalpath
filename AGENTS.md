@@ -37,7 +37,7 @@
 - URI decoding must happen exactly once; reject encoded `/` and `\` by default.
 - `relative(root, target)` must be component-aware and reject prefix siblings such as `/app` vs `/app-evil` or `c:/repo` vs `c:/repo-evil`.
 - Do not use string prefix checks as a sandbox boundary.
-- Git worktree/branch directory names need collision-resistant encoding such as `slug--shortHash`, not simple slash replacement.
+- Git worktree/branch directory names use `EncodeGitRef` v2: `v2-<ASCII slug up to 80 chars>--<full SHA-256 hex>` over the exact valid Unicode raw UTF-8 input (maximum 149 ASCII bytes). Do not truncate the digest or reuse legacy directories without the ownership checks in `Documentation/IDENTITY_V2_MIGRATION.md`.
 - Unity bridge payload paths must reject absolute paths, NUL, `../` traversal, and anything outside `Assets/...` or `Packages/...` before write commands run.
 
 ## Integration Rules

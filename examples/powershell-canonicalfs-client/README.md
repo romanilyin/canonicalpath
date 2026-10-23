@@ -1,23 +1,15 @@
 # PowerShell CanonicalFS Client Example
 
-PowerShell 5.1 and PowerShell 7 can call the Go canonicalfs daemon over the same JSON HTTP transport.
-
-Start the daemon:
-
-```powershell
-$TokenBytes = New-Object byte[] 32
-$TokenRng = [Security.Cryptography.RandomNumberGenerator]::Create()
-try { $TokenRng.GetBytes($TokenBytes) } finally { $TokenRng.Dispose() }
-$env:CANONICALFS_DAEMON_TOKEN = [Convert]::ToBase64String($TokenBytes)
-go run ./packages/go/cmd/canonicalfs-daemon -listen 127.0.0.1:8765 -allow-root "C:\Users\Alice\Repo"
-```
+Use PowerShell 7 and the bounded managed HTTPS transport. Create a private per-launch bundle and start the daemon with the [bootstrap guide](../../docs/daemon-tls-bootstrap.md). In the client shell, set `$BootstrapDir` to that trusted private instance directory.
 
 Register a project and read a file with the typed PowerShell module client:
 
 ```powershell
 $ProjectId = "project-1"
 Import-Module ./packages/powershell/CanonicalPath/CanonicalPath.psd1
-$Client = New-CanonicalFSDaemonClient -Endpoint "http://127.0.0.1:8765" -Token $env:CANONICALFS_DAEMON_TOKEN
+$Connection = Get-Content -LiteralPath (Join-Path $BootstrapDir 'connection.json') -Raw | ConvertFrom-Json
+$Client = New-CanonicalFSDaemonClient -Endpoint $Connection.endpoint -Token $Connection.token `
+  -CertificateSha256 $Connection.certificate_sha256 -CACertificatePath (Join-Path $BootstrapDir 'ca.pem')
 
 Get-CanonicalFSDaemonCapabilities -Client $Client
 Open-CanonicalFSProject -Client $Client -ProjectId $ProjectId -HostRoot "C:\Users\Alice\Repo"

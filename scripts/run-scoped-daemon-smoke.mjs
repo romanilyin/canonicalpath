@@ -1,3 +1,4 @@
+import { createTlsFixture, tlsFetch } from "./tls-test-fixture.mjs";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -86,11 +87,11 @@ async function expectError(code, action) {
 async function request(daemon, method, urlPath, body, token = daemon.token) {
   const headers = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers["content-type"] = "application/json";
-  const response = await fetch(`${daemon.endpoint}${urlPath}`, {
+  const response = await tlsFetch(`${daemon.endpoint}${urlPath}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  }, daemon.tlsFixture);
   let payload;
   try {
     payload = await response.json();
@@ -112,9 +113,10 @@ async function startDaemon() {
   mkdirSync(path.join(projectRoot, "Packages"), { recursive: true });
   mkdirSync(siblingRoot);
   const port = await freePort();
-  const endpoint = `http://127.0.0.1:${port}`;
+  const tls = createTlsFixture();
+  const endpoint = `https://127.0.0.1:${port}`;
   const token = randomBytes(32).toString("hex");
-  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, "-allow-root", projectRoot], {
+  const child = spawn("go", ["run", "./packages/go/cmd/canonicalfs-daemon", "-listen", `127.0.0.1:${port}`, ...tls.daemonArgs, "-allow-root", projectRoot], {
     cwd: root,
     env: { ...process.env, CANONICALFS_DAEMON_TOKEN: token },
     detached: process.platform !== "win32",
@@ -127,31 +129,34 @@ async function startDaemon() {
   });
 
   try {
-    await waitForHealth(endpoint, child, () => stderr);
+    await waitForHealth(endpoint, child, () => stderr, tls);
   } catch (error) {
     await stopProcessTree(child);
     rmSync(tempParent, { recursive: true, force: true });
+    tls.dispose();
     throw error;
   }
 
   return {
     endpoint,
+    tlsFixture: tls,
     token,
     projectRoot,
     siblingRoot,
     async stop() {
       await stopProcessTree(child);
       rmSync(tempParent, { recursive: true, force: true });
+      tls.dispose();
     },
   };
 }
 
-async function waitForHealth(endpoint, child, stderr) {
+async function waitForHealth(endpoint, child, stderr, tls) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`canonicalfs daemon exited early with ${child.exitCode}: ${stderr()}`);
     try {
-      const response = await fetch(`${endpoint}/healthz`);
+      const response = await tlsFetch(`${endpoint}/healthz`, {}, tls);
       if (response.ok) return;
     } catch {
       // Retry until the daemon starts listening.

@@ -46,11 +46,11 @@ WSL mount roots are explicit options. Do not hard-code `/mnt` as the only possib
 Use collision-resistant branch directory encoding:
 
 ```text
-feature/auth -> feature-auth--fc659bd73585
-feature-auth -> feature-auth--473f3d0e8078
+feature/auth -> v2-feature-auth--fc659bd735856486b656ea75488903eac295b13e5d7cce7f55339ed029ceabc6
+feature-auth -> v2-feature-auth--473f3d0e807867c2452edc63a8c20f348ddb1bf5fdac7a2647d79e120e2c5256
 ```
 
-Do not use simple slash replacement for branch names.
+The v2 suffix is the full SHA-256 of the exact UTF-8 ref; the ASCII slug is bounded to 80 characters. Do not use simple slash replacement for branch names. Existing directories require the [ownership-checked migration](../Documentation/IDENTITY_V2_MIGRATION.md); there is no silent legacy fallback.
 
 ## Current Package Caveats
 

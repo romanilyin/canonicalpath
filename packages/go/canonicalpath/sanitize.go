@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
+	"unicode/utf8"
 )
 
 // SanitizeComponent converts a user string into a filesystem-friendly component.
@@ -38,9 +39,18 @@ func EncodeGitRef(raw string) (string, error) {
 	if strings.ContainsRune(raw, '\x00') {
 		return "", newError(ErrNULByte, "git ref contains NUL")
 	}
+	if !utf8.ValidString(raw) {
+		return "", newError(ErrInvalidComponent, "git ref contains invalid Unicode")
+	}
 	slug := slugGitRef(raw)
+	if len(slug) > 80 {
+		slug = strings.Trim(slug[:80], "._-")
+	}
+	if slug == "" {
+		slug = "ref"
+	}
 	hash := sha256.Sum256([]byte(raw))
-	return slug + "--" + hex.EncodeToString(hash[:])[:12], nil
+	return "v2-" + slug + "--" + hex.EncodeToString(hash[:]), nil
 }
 
 func slugGitRef(raw string) string {

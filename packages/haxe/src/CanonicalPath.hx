@@ -1,5 +1,6 @@
 import haxe.Exception;
 import haxe.crypto.Sha256;
+import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
 
 class CanonicalPathError extends Exception {
@@ -81,7 +82,14 @@ class CanonicalPath {
     if (!opts.windows.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value);
     value = StringTools.replace(value, "\\", "/");
 
-    if (opts.targetProfile != "posix") value = mapWSLDrive(value, opts.wsl);
+    if (opts.targetProfile != "posix" && StringTools.startsWith(value, "/") && !StringTools.startsWith(value, "//")) {
+      if (opts.wsl.enabled && !isUriWindowsDrivePath(value)) {
+        if (opts.windows.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+        if (opts.windows.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+        value = cleanCanonical(value);
+      }
+      value = mapWSLDrive(value, opts.wsl);
+    }
     if (isUriWindowsDrivePath(value)) value = value.substr(1);
     if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
     if (hasDriveRoot(value)) value = lowercaseDriveRoot(value);
@@ -199,9 +207,36 @@ class CanonicalPath {
   public static function encodeGitRef(raw: String): String {
     if (raw.length == 0) throw pathError("ERR_INVALID_COMPONENT", "git ref is empty");
     if (hasNul(raw)) throw pathError("ERR_NUL_BYTE", "git ref contains NUL");
-    var slug = trimComponentEdges(slugGitRef(raw));
+    var utf8 = validateGitRefUnicode(raw);
+    var slug = trimComponentEdges(trimComponentEdges(slugGitRef(raw)).substr(0, 80));
     if (slug.length == 0) slug = "ref";
-    return slug + "--" + Sha256.encode(raw).substr(0, 12);
+    // Hash the validated UTF-8 bytes, independently of the target's String length.
+    return "v2-" + slug + "--" + Sha256.make(utf8).toHex();
+  }
+
+  private static function validateGitRefUnicode(raw: String): Bytes {
+    var decoded: Bytes;
+    try { decoded = Bytes.ofString(raw); }
+    catch (_: Dynamic) { throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode"); }
+    var i = 0;
+    while (i < decoded.length) {
+      var first = decoded.get(i++);
+      if (first < 0x80) continue;
+      var count: Int; var code: Int; var minimum: Int;
+      if (first >= 0xc2 && first <= 0xdf) { count = 1; code = first & 0x1f; minimum = 0x80; }
+      else if (first >= 0xe0 && first <= 0xef) { count = 2; code = first & 0x0f; minimum = 0x800; }
+      else if (first >= 0xf0 && first <= 0xf4) { count = 3; code = first & 0x07; minimum = 0x10000; }
+      else throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+      if (decoded.length - i < count) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+      for (_ in 0...count) {
+        var next = decoded.get(i++);
+        if ((next & 0xc0) != 0x80) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+        code = (code << 6) | (next & 0x3f);
+      }
+      if (code < minimum || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+    }
+    if (decoded.toString() != raw) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
+    return decoded;
   }
 
   private static function optionsOrDefault(options: CanonicalPathNormalizeOptions): CanonicalPathNormalizeOptions {
@@ -296,7 +331,7 @@ class CanonicalPath {
   private static function mapWSLDrive(value: String, options: CanonicalPathWSLOptions): String {
     if (!options.enabled) return value;
     var mountRoot = trimRightSlashes(options.mountRoot.length == 0 ? "/mnt" : options.mountRoot);
-    var prefix = mountRoot + "/";
+    var prefix = (~/\/+/g).replace(mountRoot, "/") + "/";
     if (!StringTools.startsWith(value, prefix)) return value;
     var rest = value.substr(prefix.length);
     if (rest.length == 0 || !isASCIILetter(rest.charAt(0))) return value;

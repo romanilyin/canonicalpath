@@ -89,15 +89,23 @@ try {
         if ($utf8.GetByteCount($json) -gt 1048576) { throw 'ERR_REQUEST_TOO_LARGE: encoded JSON request exceeds 1 MiB.' }
     }
     $base=$env:CANONICALFS_DAEMON_URL
-    if ([string]::IsNullOrEmpty($base)) { $base='http://127.0.0.1:8765' }
+    if ([string]::IsNullOrEmpty($base)) { $base='https://127.0.0.1:8765' }
     if (-not ('CanonicalPath.PowerShell.DaemonClient' -as [type])) {
-        Add-Type -Path (Join-Path $PSScriptRoot '../powershell/CanonicalPath/DaemonClient.cs') -IgnoreWarnings
+        # Compiler warnings must not become part of the JSON/text protocol.
+        # Compilation errors still terminate the command and reach stderr.
+        Add-Type -Path (Join-Path $PSScriptRoot '../powershell/CanonicalPath/DaemonClient.cs') -IgnoreWarnings -WarningAction SilentlyContinue -ErrorAction Stop
     }
     $timeout = 30000
     $cap = 25165824
     if ($env:CANONICALFS_TIMEOUT_MILLISECONDS) { $timeout = [int]$env:CANONICALFS_TIMEOUT_MILLISECONDS }
     if ($env:CANONICALFS_MAX_RESPONSE_BYTES) { $cap = [int]$env:CANONICALFS_MAX_RESPONSE_BYTES }
-    $client = New-Object CanonicalPath.PowerShell.DaemonClient($base, $env:CANONICALFS_DAEMON_TOKEN, $timeout, $cap)
+    $caPem = $null
+    if ($env:CANONICALFS_TLS_CA_FILE) {
+        $caInfo = Get-Item -LiteralPath $env:CANONICALFS_TLS_CA_FILE
+        if ($caInfo.PSIsContainer -or $caInfo.Length -gt 65536) { throw 'ERR_DAEMON_CLIENT: invalid trusted CA file' }
+        $caPem = [IO.File]::ReadAllText($caInfo.FullName)
+    }
+    $client = [CanonicalPath.PowerShell.DaemonClient]::new($base, $env:CANONICALFS_DAEMON_TOKEN, $timeout, $cap, $caPem, $env:CANONICALFS_TLS_CERTIFICATE_SHA256)
     $response = $client.Send($method, $endpoint, $json, ($endpoint -eq '/healthz'))
     $data = $response.Json | ConvertFrom-Json
     if ($data.error) { throw ($data.error.code + ': ' + $data.error.message) }

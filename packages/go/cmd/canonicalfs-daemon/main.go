@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,9 +29,9 @@ func (f *stringListFlag) Set(value string) error {
 }
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8765", "HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:8765", "HTTPS listen address")
 	tokenFile := flag.String("token-file", "", "private file containing the bearer token; alternatively use CANONICALFS_DAEMON_TOKEN")
-	tlsCert := flag.String("tls-cert", "", "TLS certificate file; required for non-loopback listeners")
+	tlsCert := flag.String("tls-cert", "", "TLS certificate file; required for every listener, including loopback")
 	tlsKey := flag.String("tls-key", "", "TLS private key file")
 	maxProjects := flag.Int("max-projects", 128, "maximum retained project roots")
 	projectIdleTimeout := flag.Duration("project-idle-timeout", 30*time.Minute, "idle registration lease duration")
@@ -82,6 +83,7 @@ func main() {
 	defer daemon.Close()
 
 	server := &http.Server{
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 		Addr:              *listen,
 		Handler:           daemon.Handler(),
 		ReadHeaderTimeout: *readHeaderTimeout,
@@ -89,16 +91,8 @@ func main() {
 		WriteTimeout:      *writeTimeout,
 		IdleTimeout:       *idleTimeout,
 	}
-	scheme := "http"
-	if *tlsCert != "" {
-		scheme = "https"
-	}
-	fmt.Fprintf(os.Stderr, "canonicalfs daemon listening on %s://%s\n", scheme, *listen)
-	if *tlsCert != "" {
-		err = server.ListenAndServeTLS(*tlsCert, *tlsKey)
-	} else {
-		err = server.ListenAndServe()
-	}
+	fmt.Fprintf(os.Stderr, "canonicalfs daemon listening on https://%s\n", *listen)
+	err = server.ListenAndServeTLS(*tlsCert, *tlsKey)
 	if err != nil && err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -121,13 +115,12 @@ func validateListener(address, cert, key string) error {
 	if (cert == "") != (key == "") {
 		return errors.New("both -tls-cert and -tls-key are required")
 	}
-	host, _, err := net.SplitHostPort(address)
+	_, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return errors.New("invalid listen address")
 	}
-	ip := net.ParseIP(host)
-	if cert == "" && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return errors.New("non-loopback listeners require TLS")
+	if cert == "" {
+		return errors.New("every listener requires -tls-cert and -tls-key; plaintext loopback does not authenticate the daemon")
 	}
 	return nil
 }

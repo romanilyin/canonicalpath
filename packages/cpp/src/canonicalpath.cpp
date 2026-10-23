@@ -198,7 +198,10 @@ std::string map_wsl_drive(std::string_view value, const WslOptions &options, boo
   *mapped = false;
   if (!options.enabled) return std::string(value);
   std::string mount_root = trim_right_slashes(options.mount_root.empty() ? std::string("/mnt") : options.mount_root);
-  std::string prefix = mount_root + "/";
+  std::string prefix;
+  prefix.reserve(mount_root.size() + 1);
+  for (char ch : mount_root) { if (ch != '/' || prefix.empty() || prefix.back() != '/') prefix.push_back(ch); }
+  prefix += "/";
   if (!starts_with(value, prefix)) return std::string(value);
 
   std::string_view rest = value.substr(prefix.size());
@@ -502,7 +505,12 @@ std::string normalize(std::string_view raw, NormalizeOptions options) {
   if (!options.windows.preserve_extended_length) value = unwrap_windows_extended_prefix(value);
   value = replace_char(value, '\\', '/');
 
-  if (options.target_profile != "posix") {
+  if (options.target_profile != "posix" && value.rfind("/", 0) == 0 && value.rfind("//", 0) != 0) {
+    if (options.wsl.enabled && !is_uri_windows_drive_path(value)) {
+      if (options.windows.reject_ads && has_windows_ads(value)) throw path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+      if (options.windows.reject_device_names && has_reserved_device_name(value)) throw path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+      value = clean_canonical(value);
+    }
     bool mapped = false;
     value = map_wsl_drive(value, options.wsl, &mapped);
   }
@@ -631,11 +639,12 @@ std::string encode_component(std::string_view name, std::string_view profile) {
 std::string encode_git_ref(std::string_view raw) {
   if (raw.empty()) throw path_error("ERR_INVALID_COMPONENT", "git ref is empty");
   if (raw.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "git ref contains NUL");
+  if (!valid_utf8(raw)) throw path_error("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
   std::string slug;
   bool in_replacement = false;
   for (char ch : raw) {
     unsigned char code = static_cast<unsigned char>(ch);
-    bool allowed = std::isalnum(code) || ch == '.' || ch == '_' || ch == '-';
+    bool allowed = (code >= 'A' && code <= 'Z') || (code >= 'a' && code <= 'z') || (code >= '0' && code <= '9') || ch == '.' || ch == '_' || ch == '-';
     if (allowed) {
       slug.push_back(ch);
       in_replacement = false;
@@ -644,9 +653,9 @@ std::string encode_git_ref(std::string_view raw) {
       in_replacement = true;
     }
   }
-  slug = trim_component_edges(slug);
+  slug = trim_component_edges(trim_component_edges(slug).substr(0, 80));
   if (slug.empty()) slug = "ref";
-  return slug + "--" + sha256_hex(raw).substr(0, 12);
+  return "v2-" + slug + "--" + sha256_hex(raw);
 }
 
 } // namespace canonicalpath
