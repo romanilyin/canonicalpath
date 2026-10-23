@@ -11,6 +11,7 @@
 - Preserved exact UTF-8 identities in Swift equality, root checks, slicing and vector assertions.
 - Moved Bash write payloads from argv/environment to bounded stdin and private request files with deterministic cleanup.
 - Selected PowerShell 7/Core for local tools without a Windows PowerShell fallback; kept the historical compatibility lane as explicit CI opt-in.
+- Updated verification/release Go pins and the workspace toolchain recommendation to 1.26.10 for GO-2026-6809, retaining the Go 1.25 module language floor.
 
 - Updated Vite to 8.3.4, Vitest to 5.0.5 and Node types to 26.6.5, reconciling their shared lockfile.
 - Updated setup-node, artifact upload/download actions and all CodeQL steps to compatible pinned revisions; grouped coupled Dependabot updates to prevent mixed CodeQL versions.

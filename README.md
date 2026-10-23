@@ -128,6 +128,7 @@ The earlier full source release plan is tracked in `docs/release-2026.5.18-2.md`
 - Planned language targets and allocation-check gates are tracked in `spec/language-targets.json` and summarized in `docs/language-targets.md`.
 - Planned package directories are skeleton/not implemented placeholders unless listed as supported or as an early bridge target.
 - Go packages require Go 1.25+ as of `2026.10.10-3` for the patched Windows ACL dependency. `canonicalfs.Rename` uses the root-bound implementation on Go 1.26+ and remains unsupported on older runtimes. Do not replace it with `filepath.Join(root, rel)` plus `os.Rename`.
+- Security-sensitive builds must use a supported Go toolchain with current security patches. The workspace recommends Go 1.26.10 and CI/release workflows pin it for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809); the module language floor remains Go 1.25. With standard `GOTOOLCHAIN=auto`, older bundled toolchains select this recommended version. A newer default toolchain must still contain the fix (Go 1.27 requires 1.27.3 or later). If automatic selection is disabled or `GOWORK=off` is used, provision the patched toolchain explicitly.
 
 ## Quick verification
 

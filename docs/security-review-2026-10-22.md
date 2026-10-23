@@ -41,8 +41,9 @@ Both required local gates, `pnpm verify` and `pnpm go:race`, completed successfu
 | Go / TypeScript / JavaScript lexical vectors and exported results | PASS; all three result sets match |
 | Python / Dart / C# / Swift / Kotlin lexical vectors | PASS: 185 / 193 / 185 / 168 / 193 cases respectively |
 | C / Rust / C++ / Haxe / Godot lexical vectors | PASS: C 168 plus 6 invalid-UTF-8 cases; Rust 168; C++ 174; Haxe 168; Godot 168 |
-| `pnpm go:race` in WSL | PASS, exit 0 |
-| Native Windows bootstrap and DACL tests | PASS: 6 top-level test groups and 3 host subcases, no SKIP; fresh private process-local temporary root |
+| `pnpm go:race` in WSL | PASS, exit 0 on Go 1.26.10 |
+| `govulncheck` v1.8.0 on Go 1.26.10 | PASS: no vulnerabilities found |
+| Native Windows bootstrap and DACL tests | PASS on Go 1.26.10: 6 top-level test groups and 3 host subcases, no SKIP; fresh private process-local temporary root |
 | Windows CMD transport smoke | PASS; warning output no longer contaminates protocol stdout |
 | Native Windows PowerShell 7 lexical and live TLS-daemon integration | PASS: 185 lexical cases and live daemon smoke |
 | Optional Unity Burst compiler probe | SKIP by default; opt-in probe, separate from the allocation matrix |
@@ -55,6 +56,8 @@ The Unity matrix covered 2022.3.62f3, 6000.1.17f1, 6000.2.15f1, 6000.3.26f1, 600
 The TypeScript and JavaScript conditional skips above concern vector export, not allocation tests. Haxe now hashes explicit UTF-8 bytes with SHA-256. PowerShell path/URI delimiter comparisons use ordinal semantics, preserving roots before combining characters. The CMD request fixture waits for upload completion and checks the full 1,046,714-byte request; production limits were not relaxed. Windows bootstrap correctly rejected the shared ambient temporary directory. Its native tests passed with a dedicated private temporary root, without changing existing user ACLs or weakening validation.
 
 The existing Windows CI job now includes a dedicated bootstrap/DACL step with the same private temporary-root setup. That setup was validated natively with the compiled bootstrap test executable; the GitHub-hosted execution is a separate CI result.
+
+The first PR security baseline identified [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) in the previously pinned Go 1.26.9 `crypto/x509` implementation. Verification and release workflows now pin Go 1.26.10, and the workspace recommends that patched toolchain without raising the Go 1.25 module language floor. Security-sensitive builds require a supported patched toolchain, including when workspace toolchain selection is disabled. The Windows release-workflow parity fixture also normalizes CRLF to LF before comparison; the original failure was reproduced with CRLF, and all 29 release fixture tests pass with either line-ending form while preserving every content assertion. GitHub check results are attached to [PR #76](https://github.com/romanilyin/canonicalpath/pull/76).
 
 All three Unity launchers use PowerShell `ProcessStartInfo`, wait for their child process and propagate its exit code. A native PS7 check preserved both output streams and returned a deliberately failing child's exit code 7. EditMode additionally requires a fresh per-run completion receipt, so compiler failures cannot be mistaken for passing tests.
 

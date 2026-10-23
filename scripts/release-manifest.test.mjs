@@ -244,10 +244,11 @@ test("Actual preflight checks latest after a missing version and writes no pendi
 });
 
 test("Publisher uses the tested preflight and never rebuilds source on retry", () => {
-  const workflow = readFileSync(path.join(root, ".github/workflows/publish-npm.yml"), "utf8");
+  const readSource = name => readFileSync(path.join(root, name), "utf8").replace(/\r\n/g, "\n");
+  const workflow = readSource(".github/workflows/publish-npm.yml");
   const step = workflow.split("- name: Preflight npm versions")[1].split("- name: Verify npm trusted publishing access")[0];
   const inline = step.match(/node --input-type=module <<'JS'\r?\n([\s\S]*?)\r?\n\s*JS/)[1].replace(/^          /gm, "");
-  assert.equal(inline, readFileSync(path.join(root, "scripts/release-publication-plan.mjs"), "utf8").trimEnd() + "\npreflightNpmPackages(process.env.RUNNER_TEMP + '/npm-packages');");
+  assert.equal(inline, readSource("scripts/release-publication-plan.mjs").trimEnd() + "\npreflightNpmPackages(process.env.RUNNER_TEMP + '/npm-packages');");
   assert.doesNotMatch(workflow, /npm pack\b|pnpm install\b|refs\/tags\/\$|needs: build/);
   const privileged = workflow.split("\n  publish:\n")[1];
   assert.match(privileged, /environment: npm-immutable/);
@@ -255,7 +256,7 @@ test("Publisher uses the tested preflight and never rebuilds source on retry", (
   assert.match(privileged, /artifact-ids: \$\{\{ needs\.verify\.outputs\.artifact_id \}\}/);
   assert.match(privileged, /RELEASE_MANIFEST_SHA256/);
   assert.match(privileged, /--ignore-scripts=true/);
-  const prepare = readFileSync(path.join(root, ".github/workflows/prepare-npm-release.yml"), "utf8");
+  const prepare = readSource(".github/workflows/prepare-npm-release.yml");
   assert.doesNotMatch(prepare.split("\n  draft:\n")[0], /id-token: write/);
   assert.match(prepare, /test "\$SOURCE_COMMIT" = "\$WORKFLOW_COMMIT"/);
   assert.match(prepare, /actions\/attest@[a-f0-9]{40}/);
