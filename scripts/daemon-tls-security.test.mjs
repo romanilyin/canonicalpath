@@ -67,7 +67,7 @@ async function listener(tls, action) {
   finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 
-async function failuresAndSuccess(invoke) {
+async function failuresAndSuccess(kind, invoke, requireReady = false) {
   const trusted = createTlsFixture();
   const wrongName = createTlsFixture({ subjectAltName: "DNS:wrong.invalid" });
   try {
@@ -79,39 +79,55 @@ async function failuresAndSuccess(invoke) {
         if (mode === "wrong-pin") { env.CANONICALFS_TLS_CERTIFICATE_SHA256 = "0".repeat(64); env.CANONICALFS_TLS_PUBLIC_KEY_PIN = "sha256//" + "A".repeat(43) + "="; }
         if (mode === "untrusted-ca") delete env.CANONICALFS_TLS_CA_FILE;
         const result = await invoke(env);
-        assert.equal(result.code === 0, mode === "valid", `${mode}: ${result.stderr || result.stdout}`);
-        assert.deepEqual(received, mode === "valid" ? ["Bearer tls-regression-private-bearer"] : [], `${mode}: unauthenticated peer received HTTP headers`);
-        assert.ok(!(result.stdout + result.stderr).includes("tls-regression-private-bearer"), "bearer appeared in diagnostics");
+        const diagnostics = assertNormalExit(result, `${kind}/${mode}`, requireReady);
+        assert.equal(result.code === 0, mode === "valid", diagnostics);
+        assert.deepEqual(received, mode === "valid" ? ["Bearer tls-regression-private-bearer"] : [], `${kind}/${mode}: unauthenticated peer received HTTP headers`);
       });
     }
   } finally { trusted.dispose(); wrongName.dispose(); }
 }
 
-async function connectionPoolKeepsTrustIsolated(invoke) {
+async function connectionPoolKeepsTrustIsolated(kind, invoke, requireReady = false) {
   const tls = createTlsFixture();
   try {
     await listener(tls, async (endpoint, received) => {
       const env = { ...process.env, ...tls.env, CANONICALFS_DAEMON_URL: endpoint, CANONICALFS_DAEMON_TOKEN: "tls-regression-private-bearer" };
       const result = await invoke(env);
-      assert.equal(result.code, 0, result.stderr || result.stdout);
+      const diagnostics = assertNormalExit(result, `${kind}/reject-next-pin`, requireReady);
+      assert.equal(result.code, 0, diagnostics);
       assert.match(result.stdout, /accepted/);
       assert.deepEqual(received, ["Bearer tls-regression-private-bearer"], "a fresh wrong-pin client reused a connection authenticated under the previous client's pin");
-      assert.ok(!(result.stdout + result.stderr).includes("tls-regression-private-bearer"), "bearer appeared in diagnostics");
     });
   } finally { tls.dispose(); }
 }
 
-const resultOf = promise => promise.then(value => ({ ...value, code: 0 }), error => ({ stdout: error.stdout || "", stderr: error.stderr || "", code: error.code ?? 1 }));
+const managedReadyMarker = "managed-tls-ready";
+const resultOf = promise => promise.then(
+  value => ({ ...value, code: 0, signal: null, killed: false }),
+  error => ({ stdout: error.stdout || "", stderr: error.stderr || "", code: error.code ?? null, signal: error.signal ?? null, killed: error.killed === true }),
+);
+
+function assertNormalExit(result, context, requireReady = false) {
+  // Check privacy before including child output in any failure diagnostic.
+  assert.ok(!(result.stdout + result.stderr).includes("tls-regression-private-bearer"), `${context}: bearer appeared in diagnostics`);
+  const diagnostics = `${context}: code=${JSON.stringify(result.code)}, signal=${JSON.stringify(result.signal)}, killed=${result.killed}; ${result.stderr || result.stdout}`;
+  assert.ok(Number.isInteger(result.code) && result.code >= 0 && result.signal === null && !result.killed,
+    `${diagnostics}; subprocess did not exit normally`);
+  if (requireReady) {
+    assert.ok(result.stdout.split(/\r?\n/).includes(managedReadyMarker), `${diagnostics}; managed TLS fixture did not become ready`);
+  }
+  return diagnostics;
+}
 
 test("Bash authenticates TLS before bearer, including loopback", { skip: !hasBash, timeout: 30000 }, async () => {
-  await failuresAndSuccess(env => resultOf(run("bash", [path.join(root, "packages/bash-wrapper/canonicalfs.sh"), "close-project", "p"], { env, timeout: 5000 })));
+  await failuresAndSuccess("bash", env => resultOf(run("bash", [path.join(root, "packages/bash-wrapper/canonicalfs.sh"), "close-project", "p"], { env, timeout: 5000 })));
 });
 
 for (const shell of shells) {
   const interop = process.platform === "linux" && /\.exe$/i.test(shell);
   const nativePath = interop ? windowsPath : value => value;
   test(`${shell}: managed CMD transport authenticates TLS before bearer`, { timeout: 60000 }, async () => {
-    await failuresAndSuccess(env => resultOf(run(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    await failuresAndSuccess(`${shell} CMD`, env => resultOf(run(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
       nativePath(path.join(root, "packages/windows-cmd-batch-wrapper/canonicalfs.ps1")), "-Operation", "close-project", "-ProjectId", "p"], { env: windowsEnvironment(env, interop), timeout: 8000, windowsHide: true })));
   });
   test(`${shell}: a new wrong-pin client cannot reuse the preceding client's authenticated connection`, { timeout: 30000 }, async () => {
@@ -127,7 +143,7 @@ $rejected = $false
 try { $null = $bad.Send('POST', '/v1/projects/close', '{}', $false) } catch { $rejected = $true }
 if (-not $rejected) { throw 'wrong-pin client reused an authenticated connection' }
 Write-Output 'accepted'`;
-    await connectionPoolKeepsTrustIsolated(env => resultOf(run(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    await connectionPoolKeepsTrustIsolated(shell, env => resultOf(run(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
       env: windowsEnvironment(env, interop), timeout: 12000, windowsHide: true,
     })));
   });
@@ -145,7 +161,7 @@ test("Unity and PowerShell C# production transports authenticate TLS before bear
     writeFileSync(path.join(temp, "Program.cs"), `using System; using System.IO; using CanonicalPath;
 class Program {
  static void Send(string kind,string endpoint,string token,string pin,string ca) {
-  if(kind=="unity") { using(var c=new CanonicalFSDaemonHttpClient(new Uri(endpoint),token,new CanonicalFSTlsOptions(pin,ca))) c.CloseProjectAsync("p").GetAwaiter().GetResult(); }
+  if(kind=="unity") { using(var c=new CanonicalFSDaemonHttpClient(new Uri(endpoint),token,new CanonicalFSTlsOptions(pin,ca),timeoutMilliseconds:3000)) c.CloseProjectAsync("p").GetAwaiter().GetResult(); }
   else { var c=new CanonicalPath.PowerShell.DaemonClient(endpoint,token,3000,1024,ca,pin); var response=c.Send("POST","/v1/projects/close","{}",false); if(response.StatusCode!=200) throw new Exception("Unexpected status"); }
  }
  static int Main(string[] args) {
@@ -155,6 +171,7 @@ class Program {
    string caPath=Environment.GetEnvironmentVariable("CANONICALFS_TLS_CA_FILE");
    string ca=String.IsNullOrEmpty(caPath)?null:File.ReadAllText(caPath);
    string token=Environment.GetEnvironmentVariable("CANONICALFS_DAEMON_TOKEN");
+   Console.WriteLine("${managedReadyMarker}"); Console.Out.Flush();
    Send(args[0],endpoint,token,pin,ca);
    if(args.Length>1 && args[1]=="reject-next-pin") {
     bool rejected=false;
@@ -162,15 +179,18 @@ class Program {
     if(!rejected) throw new Exception("Wrong-pin client reused an authenticated connection");
    }
    Console.WriteLine("accepted"); return 0;
-  } catch { Console.Error.WriteLine("TLS request rejected"); return 1; }
+  } catch(Exception error) { Console.Error.WriteLine("TLS request rejected: "+error.GetType().FullName); return 1; }
  }
 }`);
     await run(dotnet.command, [...dotnet.prefixArgs, "build", dotnet.nativePath(path.join(temp, "Check.csproj")), "-c", "Release", "--nologo", "-o", dotnet.nativePath(path.join(temp, "out"))], { timeout: 60000, windowsHide: true });
+    // This outer limit includes CLR startup/JIT; each request inside the fixture
+    // still has its own 3000 ms deadline, including both requests in the pool test.
+    const managedProcessTimeout = 15000;
     for (const kind of ["unity", "powershell"]) {
-      await failuresAndSuccess(env => resultOf(run(dotnet.command, [...dotnet.prefixArgs, dotnet.nativePath(path.join(temp, "out", "Check.dll")), kind], { env: windowsEnvironment(env, dotnet.interop), timeout: 5000, windowsHide: true })));
-      await connectionPoolKeepsTrustIsolated(env => resultOf(run(dotnet.command, [...dotnet.prefixArgs, dotnet.nativePath(path.join(temp, "out", "Check.dll")), kind, "reject-next-pin"], {
-        env: windowsEnvironment(env, dotnet.interop), timeout: 10000, windowsHide: true,
-      })));
+      await failuresAndSuccess(kind, env => resultOf(run(dotnet.command, [...dotnet.prefixArgs, dotnet.nativePath(path.join(temp, "out", "Check.dll")), kind], { env: windowsEnvironment(env, dotnet.interop), timeout: managedProcessTimeout, windowsHide: true })), true);
+      await connectionPoolKeepsTrustIsolated(kind, env => resultOf(run(dotnet.command, [...dotnet.prefixArgs, dotnet.nativePath(path.join(temp, "out", "Check.dll")), kind, "reject-next-pin"], {
+        env: windowsEnvironment(env, dotnet.interop), timeout: managedProcessTimeout, windowsHide: true,
+      })), true);
     }
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });
