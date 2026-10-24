@@ -140,7 +140,40 @@ enum Program {
             }
         }
 
-        print("Swift CanonicalPath vectors passed: \(count) cases")
+        try runContractChecks()
+        print("Swift CanonicalPath vectors passed: \(count) cases; contract chains passed")
+    }
+
+
+    private static func runContractChecks() throws {
+        func equal(_ actual: String, _ expected: String) throws {
+            if !actual.utf8.elementsEqual(expected.utf8) { throw Failure("contract chain did not preserve exact identity") }
+        }
+        let native = CanonicalPathNormalizeOptions(sourceHost: "posix")
+        let canonical = CanonicalPathNormalizeOptions(sourceHost: "canonical")
+        for raw in ["/repo/a\\b", "/C:/repo", "C:/repo", "C:foo", "x/../C:foo", "file://repo/a"] {
+            let first = try CanonicalPath.normalize(raw, options: native)
+            try equal(CanonicalPath.normalize(first, options: native), first)
+            try equal(CanonicalPath.normalize(first, options: canonical), first)
+            try equal(CanonicalPath.toPOSIX(first), first)
+        }
+        for (root, target) in [
+            ("/repo", "/repo/a\\b"), ("/repo", "/repo/C:/nested"), ("c:/repo", "c:/repo/C:foo"),
+            ("//?/c:/repo", "//?/c:/repo/file"), ("//?/UNC/server/share", "//?/UNC/server/share/file")
+        ] {
+            try equal(CanonicalPath.join(root, CanonicalPath.relative(root, target)), target)
+            try equal(CanonicalPath.normalize(target, options: canonical), target)
+        }
+        for mount in ["", "/", "/foo/../mnt//", "/mnt\\vol", "/C:/drives"] {
+            let wsl = CanonicalPathWSLOptions(enabled: true, mountRoot: mount)
+            let host = try CanonicalPath.toWSL("c:/repo/file", options: wsl)
+            try equal(CanonicalPath.normalize(host, options: CanonicalPathNormalizeOptions(sourceHost: "wsl", wsl: wsl)), "c:/repo/file")
+        }
+        for raw in ["a\\b", "C:foo", "../escape", "/absolute"] {
+            var rejected = false
+            do { _ = try CanonicalPath.normalizeRelative(raw) } catch is CanonicalPathError { rejected = true }
+            if !rejected { throw Failure("strict raw relative validator accepted input") }
+        }
     }
 
     private static func runVector(_ testCase: VectorCase) throws {

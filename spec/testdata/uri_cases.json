@@ -167,6 +167,76 @@
     { "id": "uri-valid-utf8-multibyte", "operation": "normalize", "raw": "file:///tmp/%C3%A9%F0%9F%98%80", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/é😀" },
     { "id": "uri-valid-utf8-mixed-literal-escaped", "operation": "normalize", "raw": "file:///tmp/é%20😀", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/é 😀" },
     { "id": "uri-valid-replacement-character", "operation": "normalize", "raw": "file:///tmp/%EF%BF%BD", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/�" },
-    { "id": "uri-invalid-byte-double-encoded-preserved", "operation": "normalize", "raw": "file:///tmp/%25FF", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/%FF" }
+    { "id": "uri-invalid-byte-double-encoded-preserved", "operation": "normalize", "raw": "file:///tmp/%25FF", "options": { "uri": { "allowFileUri": true } }, "expected": "/tmp/%FF" },
+    {
+      "id": "cp1-posix-uri-like-path-is-literal",
+      "operation": "normalize",
+      "raw": "file://repo/a",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "file:/repo/a"
+    },
+    {
+      "id": "cp1-posix-uri-allowance-does-not-decode",
+      "operation": "normalize",
+      "raw": "file:///C:/repo",
+      "options": {
+        "sourceHost": "posix",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "file:/C:/repo"
+    },
+    {
+      "id": "cp1-posix-percent-component-is-literal",
+      "operation": "normalize",
+      "raw": "/repo/a%2Fb",
+      "options": {
+        "sourceHost": "posix",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "/repo/a%2Fb"
+    },
+    {
+      "id": "cp1-canonical-uri-like-text-is-literal",
+      "operation": "normalize",
+      "raw": "file://repo/a",
+      "options": {
+        "sourceHost": "canonical",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "file:/repo/a"
+    },
+    {
+      "id": "cp1-canonical-percent-not-decoded",
+      "operation": "normalize",
+      "raw": "/repo/a%255Cb",
+      "options": {
+        "sourceHost": "canonical",
+        "uri": {
+          "allowFileUri": true,
+          "rejectEncodedSlash": false
+        }
+      },
+      "expected": "/repo/a%255Cb"
+    },
+    {
+      "id": "cp1-canonical-decoded-posix-drive-component",
+      "operation": "normalize",
+      "raw": "/C:/repo",
+      "options": {
+        "sourceHost": "canonical",
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "/C:/repo"
+    }
   ]
 }

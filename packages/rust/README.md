@@ -9,7 +9,8 @@ Use this package to share CanonicalPath identity with other runtimes. It does no
 Implemented scope:
 
 - `normalize`, `relative`, `join`, `is_equal`, `to_win32`, `to_wsl`, `to_posix`, component sanitization, and Git ref encoding.
-- Shared JSON vector smoke through `pnpm rust:vectors`.
+- Required verification through `pnpm rust:verify`: runner checks, `cargo test --locked` unit/documentation tests, and shared JSON vectors. Missing or broken Cargo fails the gate.
+- Use `pnpm rust:vectors` only to isolate vector failures; `pnpm verify` includes the complete Rust gate.
 - Bounded allocation smoke through `pnpm rust:alloc` using a global allocator counter.
 
 Planned scope:

@@ -451,6 +451,640 @@
         }
       },
       "expected": "/mnt\u0600/c/repo"
+    },
+    {
+      "id": "cp1-native-posix-wsl-conflict",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "sourceHost": "posix",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-canonical-wsl-never-remaps",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "sourceHost": "canonical",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp1-canonical-wsl-keeps-drive",
+      "operation": "normalize",
+      "raw": "c:/repo",
+      "options": {
+        "sourceHost": "canonical",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-empty-mount-default-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": ""
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-empty-mount-default-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": ""
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp3-root-mount-map",
+      "operation": "normalize",
+      "raw": "/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-root-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/"
+        }
+      },
+      "expected": "/c/repo"
+    },
+    {
+      "id": "cp3-root-mount-drive-root",
+      "operation": "to-wsl",
+      "raw": "c:/",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/"
+        }
+      },
+      "expected": "/c"
+    },
+    {
+      "id": "cp3-repeated-mount-separators-map",
+      "operation": "normalize",
+      "raw": "/mount/x/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mount///x///"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-repeated-mount-separators-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mount///x///"
+        }
+      },
+      "expected": "/mount/x/c/repo"
+    },
+    {
+      "id": "cp3-dot-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/foo/../mnt/./"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-dot-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/foo/../mnt/./"
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp3-parent-clamped-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/../../mnt"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-parent-clamped-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/../../mnt"
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp3-triple-leading-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "///mnt"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-triple-leading-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "///mnt"
+        }
+      },
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp3-literal-backslash-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt\\vol/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\\vol"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-literal-backslash-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\\vol"
+        }
+      },
+      "expected": "/mnt\\vol/c/repo"
+    },
+    {
+      "id": "cp3-literal-backslash-mount-wsl-source",
+      "operation": "normalize",
+      "raw": "/mnt\\vol/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\\vol"
+        },
+        "sourceHost": "wsl"
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-literal-backslash-mapped-tail-rejected",
+      "operation": "normalize",
+      "raw": "/mnt/c/a\\b",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-literal-backslash-unmapped-posix",
+      "operation": "normalize",
+      "raw": "/home/a\\b",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt"
+        }
+      },
+      "expected": "/home/a\\b"
+    },
+    {
+      "id": "cp3-literal-drive-component-mount-map",
+      "operation": "normalize",
+      "raw": "/C:/drives/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/C:/drives"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-literal-drive-component-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/C:/drives"
+        }
+      },
+      "expected": "/C:/drives/c/repo"
+    },
+    {
+      "id": "cp3-root-mount-clean-before-drive-choice",
+      "operation": "normalize",
+      "raw": "/c/../d/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/"
+        }
+      },
+      "expected": "d:/repo"
+    },
+    {
+      "id": "cp3-normalized-mount-boundary",
+      "operation": "normalize",
+      "raw": "/mnt-evil/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/foo/../mnt"
+        }
+      },
+      "expected": "/mnt-evil/c/repo"
+    },
+    {
+      "id": "cp3-invalid-relative-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-relative-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-drive-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "C:/mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-drive-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "C:/mnt"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-backslash-unc-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "\\\\server\\share"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-backslash-unc-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "\\\\server\\share"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-slash-unc-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "//server/share"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-slash-unc-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "//server/share"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-double-slash-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "//"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-double-slash-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "//"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-invalid-nul-mount-map",
+      "operation": "normalize",
+      "raw": "/mnt/c/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0000extra"
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "cp3-invalid-nul-mount-host",
+      "operation": "to-wsl",
+      "raw": "c:/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0000extra"
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "cp3-disabled-config-still-validated",
+      "operation": "normalize",
+      "raw": "/repo",
+      "options": {
+        "wsl": {
+          "enabled": false,
+          "mountRoot": "relative"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-posix-config-still-validated",
+      "operation": "normalize",
+      "raw": "/repo",
+      "options": {
+        "wsl": {
+          "enabled": false,
+          "mountRoot": "relative"
+        },
+        "sourceHost": "posix"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-posix-target-config-still-validated",
+      "operation": "normalize",
+      "raw": "/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "relative"
+        },
+        "targetProfile": "posix"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-canonical-config-still-validated",
+      "operation": "normalize",
+      "raw": "/repo",
+      "options": {
+        "wsl": {
+          "enabled": false,
+          "mountRoot": "relative"
+        },
+        "sourceHost": "canonical"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-non-drive-still-validates-mount",
+      "operation": "to-wsl",
+      "raw": "/home/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "relative"
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-non-drive-still-rejects-mount-nul",
+      "operation": "to-wsl",
+      "raw": "/home/repo",
+      "options": {
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/mnt\u0000extra"
+        }
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "cp3-to-wsl-unc-rejected",
+      "operation": "to-wsl",
+      "raw": "//server/share/repo",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp3-to-wsl-posix-backslash-preserved",
+      "operation": "to-wsl",
+      "raw": "/home/a\\b",
+      "expected": "/home/a\\b"
+    },
+    {
+      "id": "cp3-to-wsl-marked-relative-preserved",
+      "operation": "to-wsl",
+      "raw": "./C:/repo",
+      "expected": "./C:/repo"
+    },
+    {
+      "id": "cp3-wsl-posix-profile-preserves-backslash",
+      "operation": "normalize",
+      "raw": "/mnt/c/a\\b",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "/mnt/c/a\\b"
+    },
+    {
+      "id": "cp3-wsl-triple-leading-input-map",
+      "operation": "normalize",
+      "raw": "///mnt/c/repo",
+      "options": {
+        "sourceHost": "wsl",
+        "targetProfile": "win32-drive",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-wsl-triple-posix-profile-preserves-backslash",
+      "operation": "normalize",
+      "raw": "///mnt/c/a\\b",
+      "options": {
+        "targetProfile": "posix",
+        "wsl": {
+          "enabled": true
+        }
+      },
+      "expected": "/mnt/c/a\\b"
+    },
+    {
+      "id": "cp3-wsl-triple-ads-policy-before-cleanup",
+      "operation": "normalize",
+      "raw": "///mnt/c/file:stream/../repo",
+      "options": {
+        "wsl": {
+          "enabled": true
+        },
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "cp3-wsl-triple-device-policy-before-cleanup",
+      "operation": "normalize",
+      "raw": "///mnt/c/CON/../repo",
+      "options": {
+        "sourceHost": "wsl",
+        "wsl": {
+          "enabled": true
+        },
+        "windows": {
+          "rejectDeviceNames": true
+        }
+      },
+      "error": "ERR_RESERVED_DEVICE_NAME"
+    },
+    {
+      "id": "cp3-wsl-vscode-label-does-not-imply-uri-drive",
+      "operation": "normalize",
+      "raw": "/C:/drives/c/repo",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/C:/drives"
+        }
+      },
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp3-wsl-real-uri-drive-exempt-from-mapping",
+      "operation": "normalize",
+      "raw": "file:///C:/drives/c/repo",
+      "options": {
+        "sourceHost": "vscode-file-uri",
+        "wsl": {
+          "enabled": true,
+          "mountRoot": "/C:/drives"
+        },
+        "uri": {
+          "allowFileUri": true
+        }
+      },
+      "expected": "c:/drives/c/repo"
     }
   ]
 }

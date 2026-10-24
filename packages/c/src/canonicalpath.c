@@ -127,17 +127,15 @@ static int cp_has_uri_scheme(const char *value) {
 }
 
 static char *cp_unwrap_windows_extended_prefix(const char *value) {
-  if (cp_starts_with(value, "\\\\?\\UNC\\")) {
-    size_t rest_len = strlen(value + 8);
-    char *result = (char *)malloc(rest_len + 3);
+  if (cp_starts_with(value, "//?/UNC/")) {
+    size_t len = strlen(value + 8);
+    char *result = (char *)malloc(len + 3);
     if (result == NULL) abort();
-    result[0] = '\\';
-    result[1] = '\\';
-    memcpy(result + 2, value + 8, rest_len + 1);
+    memcpy(result, "//", 2);
+    memcpy(result + 2, value + 8, len + 1);
     return result;
   }
-  if (cp_starts_with(value, "\\\\?\\")) return cp_strdup(value + 4);
-  return cp_strdup(value);
+  return cp_strdup(cp_starts_with(value, "//?/") ? value + 4 : value);
 }
 
 static char *cp_replace_char(const char *value, char from, char to) {
@@ -335,38 +333,88 @@ static void cp_split_root_free(cp_split_root *root) {
   root->rest = NULL;
 }
 
+static int cp_is_windows_root(const char *prefix) { return prefix[0] != '\0' && strcmp(prefix, "/") != 0; }
+static int cp_is_drive_root(const char *prefix) {
+  return cp_has_drive_root(prefix) || (cp_starts_with(prefix, "//?/") && cp_has_drive_root(prefix + 4));
+}
+
+static const char *cp_split_unc_root(const char *value, const char *leader, cp_split_root *out) {
+  const char *server = value + strlen(leader);
+  const char *first = strchr(server, '/');
+  if (first == NULL) return "ERR_INVALID_PATH";
+  const char *share = first + 1;
+  const char *second = strchr(share, '/');
+  size_t server_len = (size_t)(first - server);
+  size_t share_len = second == NULL ? strlen(share) : (size_t)(second - share);
+  if (server_len == 0 || share_len == 0 ||
+      (server_len == 1 && server[0] == '.') || (server_len == 2 && server[0] == '.' && server[1] == '.') ||
+      (share_len == 1 && share[0] == '.') || (share_len == 2 && share[0] == '.' && share[1] == '.')) return "ERR_INVALID_PATH";
+  size_t prefix_len = second == NULL ? strlen(value) : (size_t)(second - value);
+  out->prefix = cp_strndup(value, prefix_len);
+  out->rest = cp_strdup(second == NULL ? "" : second + 1);
+  return NULL;
+}
+
 static const char *cp_split_root_parse(const char *value, cp_split_root *out) {
+  if ((cp_has_drive_root(value) || cp_starts_with(value, "//")) && strchr(value, '\\') != NULL) return "ERR_INVALID_PATH";
+  if (cp_starts_with(value, "//?/")) {
+    if (cp_has_drive_root(value + 4)) {
+      out->prefix = cp_strndup(value, 7);
+      out->rest = cp_strdup(value + 7);
+      return NULL;
+    }
+    if (cp_starts_with(value + 4, "UNC/")) return cp_split_unc_root(value, "//?/UNC/", out);
+    return "ERR_INVALID_PATH";
+  }
   if (cp_has_drive_root(value)) {
     out->prefix = cp_strndup(value, 3);
     out->rest = cp_strdup(value + 3);
     return NULL;
   }
-  if (cp_starts_with(value, "//")) {
-    const char *rest = value + 2;
-    const char *first = strchr(rest, '/');
-    if (first == NULL || first == rest) return "ERR_INVALID_PATH";
-    const char *second = strchr(first + 1, '/');
-    size_t server_len = (size_t)(first - rest);
-    size_t share_len = second == NULL ? strlen(first + 1) : (size_t)(second - (first + 1));
-    if (share_len == 0) return "ERR_INVALID_PATH";
-    out->prefix = (char *)malloc(2 + server_len + 1 + share_len + 1);
-    if (out->prefix == NULL) abort();
-    out->prefix[0] = '/';
-    out->prefix[1] = '/';
-    memcpy(out->prefix + 2, rest, server_len);
-    out->prefix[2 + server_len] = '/';
-    memcpy(out->prefix + 3 + server_len, first + 1, share_len);
-    out->prefix[3 + server_len + share_len] = '\0';
-    out->rest = second == NULL ? cp_strdup("") : cp_strdup(second + 1);
-    return NULL;
-  }
+  if (cp_starts_with(value, "//")) return cp_split_unc_root(value, "//", out);
   if (value[0] == '/') {
     out->prefix = cp_strdup("/");
     out->rest = cp_strdup(value + 1);
     return NULL;
   }
+  if (cp_is_drive_relative(value)) return "ERR_DRIVE_RELATIVE_PATH";
   out->prefix = cp_strdup("");
   out->rest = cp_strdup(value);
+  return NULL;
+}
+
+static void cp_lowercase_drive(char *value) {
+  if (cp_has_drive_root(value)) value[0] = cp_lower_ascii(value[0]);
+  else if (cp_starts_with(value, "//?/") && cp_has_drive_root(value + 4)) value[4] = cp_lower_ascii(value[4]);
+}
+
+static int cp_needs_relative_marker(const char *value) { return strlen(value) >= 2 && cp_is_ascii_letter(value[0]) && value[1] == ':'; }
+static int cp_has_relative_marker(const char *value) { return cp_starts_with(value, "./") && cp_needs_relative_marker(value + 2); }
+static const char *cp_without_relative_marker(const char *value) { return cp_has_relative_marker(value) ? value + 2 : value; }
+
+static char *cp_mark_relative(const char *value) {
+  if (!cp_needs_relative_marker(value)) return cp_strdup(value);
+  size_t len = strlen(value);
+  char *result = (char *)malloc(len + 3);
+  if (result == NULL) abort();
+  memcpy(result, "./", 2);
+  memcpy(result + 2, value, len + 1);
+  return result;
+}
+
+static const char *cp_prepare_native_posix(const char *value, char **out) {
+  size_t leading = 0;
+  while (value[leading] == '/') ++leading;
+  if (leading == 2) return "ERR_INVALID_PATH";
+  if (leading > 2) {
+    size_t rest_len = strlen(value + leading);
+    *out = (char *)malloc(rest_len + 2);
+    if (*out == NULL) abort();
+    (*out)[0] = '/';
+    memcpy(*out + 1, value + leading, rest_len + 1);
+  } else {
+    *out = cp_mark_relative(value);
+  }
   return NULL;
 }
 
@@ -422,6 +470,7 @@ static const char *cp_clean_canonical(const char *value, char **out) {
   cp_split_root root = {0};
   const char *error = cp_split_root_parse(value, &root);
   if (error != NULL) return error;
+  cp_lowercase_drive(root.prefix);
 
   cp_string_vec parts;
   cp_vec_init(&parts);
@@ -448,7 +497,7 @@ static const char *cp_clean_canonical(const char *value, char **out) {
   size_t prefix_len = strlen(root.prefix);
   size_t joined_len = strlen(joined);
   if (prefix_len == 0) {
-    *out = joined_len == 0 ? cp_strdup(".") : cp_strdup(joined);
+    *out = joined_len == 0 ? cp_strdup(".") : cp_mark_relative(joined);
   } else if (strcmp(root.prefix, "/") == 0) {
     if (joined_len == 0) *out = cp_strdup("/");
     else {
@@ -482,17 +531,57 @@ static const char *cp_clean_canonical(const char *value, char **out) {
   return NULL;
 }
 
+static const char *cp_clean_native_posix(const char *value, char **out) {
+  char *prepared = NULL;
+  const char *error = cp_prepare_native_posix(value, &prepared);
+  if (error == NULL) error = cp_clean_canonical(prepared, out);
+  free(prepared);
+  return error;
+}
+
+static const char *cp_normalize_mount_root(const canonicalpath_wsl_options *options, char **out) {
+  const char *raw = options->mount_root;
+  size_t len = options->mount_root_len;
+  if (raw == NULL) {
+    if (len != 0) return "ERR_INVALID_PATH";
+    raw = "";
+  }
+  if (len == 0) len = strlen(raw);
+  if (cp_has_nul(raw, len)) return "ERR_NUL_BYTE";
+  char *copy = cp_strndup(raw, len);
+  const char *value = len == 0 ? "/mnt" : copy;
+  const char *error = value[0] == '/' ? cp_clean_native_posix(value, out) : "ERR_INVALID_PATH";
+  free(copy);
+  return error;
+}
+
+static const char *cp_parse_clean_canonical(const char *value, cp_split_root *out) {
+  char *cleaned = NULL;
+  const char *error = cp_clean_canonical(value, &cleaned);
+  if (error != NULL) return error;
+  char *folded = cp_strdup(value);
+  cp_lowercase_drive(folded);
+  int clean = strcmp(cleaned, folded) == 0;
+  free(cleaned);
+  free(folded);
+  if (!clean) return "ERR_INVALID_PATH";
+  error = cp_split_root_parse(value, out);
+  if (error == NULL && out->prefix[0] == '\0') {
+    if (strcmp(out->rest, ".") == 0) out->rest[0] = '\0';
+    else if (cp_has_relative_marker(out->rest)) memmove(out->rest, out->rest + 2, strlen(out->rest + 2) + 1);
+  }
+  return error;
+}
+
 static const char *cp_validate_target_profile(const char *value, const char *target_profile) {
-  if (target_profile == NULL || target_profile[0] == '\0' || strcmp(target_profile, "portable") == 0) return NULL;
-  if (strcmp(target_profile, "posix") == 0) {
-    if (cp_has_drive_root(value) || cp_starts_with(value, "//")) return "ERR_INVALID_PATH";
-    return NULL;
-  }
-  if (strcmp(target_profile, "win32-drive") == 0) {
-    if (value[0] == '/') return "ERR_INVALID_PATH";
-    return NULL;
-  }
-  return "ERR_INVALID_PATH";
+  cp_split_root root = {0};
+  const char *error = cp_split_root_parse(value, &root);
+  if (error != NULL) return error;
+  int accepted = target_profile == NULL || target_profile[0] == '\0' || strcmp(target_profile, "portable") == 0 ||
+    (strcmp(target_profile, "posix") == 0 && !cp_is_windows_root(root.prefix)) ||
+    (strcmp(target_profile, "win32-drive") == 0 && strcmp(root.prefix, "/") != 0 && (!cp_is_windows_root(root.prefix) || cp_is_drive_root(root.prefix)));
+  cp_split_root_free(&root);
+  return accepted ? NULL : "ERR_INVALID_PATH";
 }
 
 static int cp_is_reserved_device_base(const char *base, size_t len) {
@@ -509,16 +598,11 @@ static int cp_is_reserved_device_base(const char *base, size_t len) {
 }
 
 static int cp_has_windows_ads(const char *value) {
-  size_t start = 0;
-  if (cp_has_drive_root(value)) start = 3;
-  else if (cp_starts_with(value, "//")) {
-    cp_split_root root = {0};
-    if (cp_split_root_parse(value, &root) == NULL) {
-      start = strlen(root.prefix);
-      cp_split_root_free(&root);
-    }
-  }
-  return strchr(value + start, ':') != NULL;
+  cp_split_root root = {0};
+  if (cp_split_root_parse(value, &root) != NULL) return 0;
+  int result = strchr(root.rest, ':') != NULL;
+  cp_split_root_free(&root);
+  return result;
 }
 
 static int cp_has_reserved_device_name(const char *value) {
@@ -549,25 +633,18 @@ static int cp_has_reserved_device_name(const char *value) {
 }
 
 static const char *cp_canonical_parts(const char *value, char **prefix, cp_string_vec *parts) {
-  if (cp_has_nul(value, strlen(value))) return "ERR_NUL_BYTE";
   cp_split_root root = {0};
-  const char *error = cp_split_root_parse(value, &root);
+  const char *error = cp_parse_clean_canonical(value, &root);
   if (error != NULL) return error;
   if (root.prefix[0] == '\0') {
     cp_split_root_free(&root);
     return "ERR_INVALID_PATH";
   }
   const char *cursor = root.rest;
-  while (1) {
+  while (*cursor != '\0') {
     const char *slash = strchr(cursor, '/');
     size_t len = slash == NULL ? strlen(cursor) : (size_t)(slash - cursor);
-    if (len > 0) {
-      if ((len == 1 && cursor[0] == '.') || (len == 2 && cursor[0] == '.' && cursor[1] == '.')) {
-        cp_split_root_free(&root);
-        return "ERR_INVALID_PATH";
-      }
-      cp_vec_push(parts, cursor, len);
-    }
+    cp_vec_push(parts, cursor, len);
     if (slash == NULL) break;
     cursor = slash + 1;
   }
@@ -576,24 +653,15 @@ static const char *cp_canonical_parts(const char *value, char **prefix, cp_strin
   return NULL;
 }
 
-static int cp_is_absolute_path_like(const char *value) {
-  if (value[0] == '/' || cp_starts_with(value, "\\\\")) return 1;
-  char *slash = cp_replace_char(value, '\\', '/');
-  int result = cp_has_drive_root(slash);
-  free(slash);
-  return result;
-}
-
-static const char *cp_normalize_relative(const char *raw, char **out) {
+static const char *cp_normalize_canonical_relative(const char *raw, char **out) {
   if (raw[0] == '\0') return "ERR_EMPTY_PATH";
   if (strcmp(raw, ".") == 0) {
     *out = cp_strdup(".");
     return NULL;
   }
   if (cp_has_nul(raw, strlen(raw))) return "ERR_NUL_BYTE";
-  if (cp_is_absolute_path_like(raw)) return "ERR_ABSOLUTE_PATH";
+  if (raw[0] == '/' || cp_has_drive_root(raw)) return "ERR_ABSOLUTE_PATH";
   if (cp_is_drive_relative(raw)) return "ERR_DRIVE_RELATIVE_PATH";
-  if (strchr(raw, '\\') != NULL) return "ERR_INVALID_PATH";
 
   cp_string_vec parts;
   cp_vec_init(&parts);
@@ -616,9 +684,12 @@ static const char *cp_normalize_relative(const char *raw, char **out) {
   }
   if (parts.len == 0) {
     cp_vec_free(&parts);
-    return "ERR_EMPTY_PATH";
+    *out = cp_strdup(".");
+    return NULL;
   }
-  *out = cp_join_parts_range(&parts, 0);
+  char *joined = cp_join_parts_range(&parts, 0);
+  *out = cp_mark_relative(joined);
+  free(joined);
   cp_vec_free(&parts);
   return NULL;
 }
@@ -744,82 +815,81 @@ canonicalpath_result canonicalpath_normalize(const char *raw, const canonicalpat
 canonicalpath_result canonicalpath_normalize_n(const char *raw, size_t raw_len,
                                                const canonicalpath_normalize_options *options) {
   canonicalpath_normalize_options defaults;
-  if (options == NULL) {
-    canonicalpath_normalize_options_init(&defaults);
-    options = &defaults;
-  }
-
-  char *initial = options->trim_outer_whitespace ? cp_trim_outer_ascii_whitespace(raw, raw_len) : cp_strndup(raw, raw_len);
-  cp_string value = {initial, strlen(initial)};
-  if (value.len == 0) {
-    free(value.data);
-    return cp_err("ERR_EMPTY_PATH");
-  }
-  if (cp_has_nul(raw, raw_len)) {
-    free(value.data);
-    return cp_err("ERR_NUL_BYTE");
-  }
-
-  if (cp_has_uri_scheme(value.data) || cp_equals(options->source_host, "vscode-file-uri")) {
-    cp_string parsed = {0};
-    const char *error = cp_parse_file_uri(value, options, &parsed);
-    free(value.data);
-    if (error != NULL) return cp_err(error);
-    value = parsed;
-  }
-  if (cp_has_nul(value.data, value.len)) {
-    free(value.data);
-    return cp_err("ERR_NUL_BYTE");
-  }
-
-  char *unwrapped = options->windows.preserve_extended_length ? cp_strdup(value.data) : cp_unwrap_windows_extended_prefix(value.data);
-  free(value.data);
-  char *slash = cp_replace_char(unwrapped, '\\', '/');
-  free(unwrapped);
-
-  if (!cp_equals(options->target_profile, "posix") && slash[0] == '/' && slash[1] != '/') {
-    if (options->wsl.enabled && !cp_is_uri_windows_drive_path(slash)) {
-      if (options->windows.reject_ads && cp_has_windows_ads(slash)) { free(slash); return cp_err("ERR_ALTERNATE_DATA_STREAM"); }
-      if (options->windows.reject_device_names && cp_has_reserved_device_name(slash)) { free(slash); return cp_err("ERR_RESERVED_DEVICE_NAME"); }
-      char *posix_cleaned = NULL;
-      const char *error = cp_clean_canonical(slash, &posix_cleaned);
-      free(slash);
-      if (error != NULL) return cp_err(error);
-      slash = posix_cleaned;
-    }
-    char *mapped = cp_map_wsl_drive(slash, &options->wsl);
-    free(slash);
-    slash = mapped;
-  }
-  if (cp_is_uri_windows_drive_path(slash)) {
-    char *trimmed = cp_strdup(slash + 1);
-    free(slash);
-    slash = trimmed;
-  }
-  if (cp_is_drive_relative(slash)) {
-    free(slash);
-    return cp_err("ERR_DRIVE_RELATIVE_PATH");
-  }
-  if (cp_has_drive_root(slash)) slash[0] = cp_lower_ascii(slash[0]);
-
-  if (options->windows.reject_ads && cp_has_windows_ads(slash)) {
-    free(slash);
-    return cp_err("ERR_ALTERNATE_DATA_STREAM");
-  }
-  if (options->windows.reject_device_names && cp_has_reserved_device_name(slash)) {
-    free(slash);
-    return cp_err("ERR_RESERVED_DEVICE_NAME");
-  }
-
+  if (options == NULL) { canonicalpath_normalize_options_init(&defaults); options = &defaults; }
+  if (cp_has_nul(raw, raw_len)) return cp_err("ERR_NUL_BYTE");
+  char *value = options->trim_outer_whitespace ? cp_trim_outer_ascii_whitespace(raw, raw_len) : cp_strndup(raw, raw_len);
+  char *mount_root = NULL;
   char *cleaned = NULL;
-  const char *error = cp_clean_canonical(slash, &cleaned);
-  free(slash);
-  if (error != NULL) return cp_err(error);
-  error = cp_validate_target_profile(cleaned, options->target_profile);
-  if (error != NULL) {
-    free(cleaned);
-    return cp_err(error);
+  const char *error = NULL;
+  if (value[0] == '\0') { error = "ERR_EMPTY_PATH"; goto done; }
+  error = cp_normalize_mount_root(&options->wsl, &mount_root);
+  if (error != NULL) goto done;
+  canonicalpath_normalize_options effective = *options;
+  effective.wsl.mount_root = mount_root;
+  effective.wsl.mount_root_len = strlen(mount_root);
+  if (cp_equals(options->source_host, "posix") && options->wsl.enabled) { error = "ERR_INVALID_PATH"; goto done; }
+  if (cp_equals(options->source_host, "posix")) {
+    char *prepared = NULL;
+    error = cp_prepare_native_posix(value, &prepared);
+    if (error != NULL) goto done;
+    free(value); value = prepared;
+  } else if (!cp_equals(options->source_host, "canonical")) {
+    int uri_input = cp_has_uri_scheme(value);
+    if (uri_input || cp_equals(options->source_host, "vscode-file-uri")) {
+      cp_string input = {value, strlen(value)};
+      cp_string parsed = {0};
+      error = cp_parse_file_uri(input, options, &parsed);
+      if (error != NULL) goto done;
+      free(value); value = parsed.data;
+      if (cp_has_nul(value, parsed.len)) { error = "ERR_NUL_BYTE"; goto done; }
+    }
+    if (options->wsl.enabled && value[0] == '/' && (value[1] != '/' || cp_starts_with(value, "///")) && !(uri_input && cp_is_uri_windows_drive_path(value))) {
+      char *prepared = NULL;
+      error = cp_prepare_native_posix(value, &prepared);
+      if (error != NULL) goto done;
+      free(value); value = prepared;
+      if (options->windows.reject_ads && cp_has_windows_ads(value)) { error = "ERR_ALTERNATE_DATA_STREAM"; goto done; }
+      if (options->windows.reject_device_names && cp_has_reserved_device_name(value)) { error = "ERR_RESERVED_DEVICE_NAME"; goto done; }
+      char *posix_cleaned = NULL;
+      error = cp_clean_canonical(value, &posix_cleaned);
+      if (error != NULL) goto done;
+      free(value);
+      if (cp_equals(options->target_profile, "posix")) {
+        value = posix_cleaned;
+      } else {
+        value = cp_map_wsl_drive(posix_cleaned, &effective.wsl);
+        free(posix_cleaned);
+      }
+    } else {
+      char *slash = cp_replace_char(value, '\\', '/');
+      free(value); value = slash;
+      if (cp_starts_with(value, "//?/")) {
+        cp_split_root parsed = {0};
+        error = cp_split_root_parse(value, &parsed);
+        cp_split_root_free(&parsed);
+        if (error != NULL) goto done;
+      }
+      if (!options->windows.preserve_extended_length) {
+        char *unwrapped = cp_unwrap_windows_extended_prefix(value);
+        free(value); value = unwrapped;
+      }
+      if (cp_is_uri_windows_drive_path(value)) memmove(value, value + 1, strlen(value));
+    }
   }
+  {
+    cp_split_root parsed = {0};
+    error = cp_split_root_parse(value, &parsed);
+    cp_split_root_free(&parsed);
+    if (error != NULL) goto done;
+  }
+  if (options->windows.reject_ads && cp_has_windows_ads(value)) { error = "ERR_ALTERNATE_DATA_STREAM"; goto done; }
+  if (options->windows.reject_device_names && cp_has_reserved_device_name(value)) { error = "ERR_RESERVED_DEVICE_NAME"; goto done; }
+  error = cp_clean_canonical(value, &cleaned);
+  if (error == NULL) error = cp_validate_target_profile(cleaned, options->target_profile);
+done:
+  free(value);
+  free(mount_root);
+  if (error != NULL) { free(cleaned); return cp_err(error); }
   return cp_ok(cleaned);
 }
 
@@ -866,7 +936,9 @@ canonicalpath_result canonicalpath_relative_n(const char *root, size_t root_len,
   free(target_prefix);
   cp_vec_free(&root_parts);
   cp_vec_free(&target_parts);
-  return cp_ok(result);
+  char *marked = cp_mark_relative(result);
+  free(result);
+  return cp_ok(marked);
 }
 
 canonicalpath_result canonicalpath_join(const char *root, const char *relative_path) {
@@ -880,27 +952,30 @@ canonicalpath_result canonicalpath_join_n(const char *root, size_t root_len, con
   char *root_copy = cp_strndup(root, root_len);
   char *relative_copy = cp_strndup(relative_path, relative_len);
   char *clean_relative = NULL;
-  const char *error = cp_normalize_relative(relative_copy, &clean_relative);
-  free(relative_copy);
-  if (error != NULL) {
-    free(root_copy);
-    return cp_err(error);
-  }
-  if (strcmp(clean_relative, ".") == 0) {
-    free(clean_relative);
-    return cp_ok(root_copy);
-  }
-  size_t root_copy_len = strlen(root_copy);
-  size_t rel_len = strlen(clean_relative);
-  int needs_slash = !(strcmp(root_copy, "/") == 0 || (root_copy_len > 0 && root_copy[root_copy_len - 1] == '/'));
-  char *result = (char *)malloc(root_copy_len + (needs_slash ? 1 : 0) + rel_len + 1);
-  if (result == NULL) abort();
-  memcpy(result, root_copy, root_copy_len);
-  size_t offset = root_copy_len;
-  if (needs_slash) result[offset++] = '/';
-  memcpy(result + offset, clean_relative, rel_len + 1);
-  free(root_copy);
-  free(clean_relative);
+  char *result = NULL;
+  cp_split_root parsed = {0};
+  const char *error = cp_parse_clean_canonical(root_copy, &parsed);
+  if (error != NULL) goto done;
+  if (cp_is_windows_root(parsed.prefix) && strchr(relative_copy, '\\') != NULL) { error = "ERR_INVALID_PATH"; goto done; }
+  error = cp_normalize_canonical_relative(relative_copy, &clean_relative);
+  if (error != NULL) goto done;
+  if (strcmp(clean_relative, ".") == 0) { result = cp_strdup(root_copy); goto done; }
+  const char *relative = cp_without_relative_marker(clean_relative);
+  const char *base = parsed.prefix[0] == '\0' ? parsed.rest : root_copy;
+  size_t base_len = strlen(base);
+  size_t rel_len = strlen(relative);
+  int needs_slash = base_len > 0 && base[base_len - 1] != '/';
+  char *joined = (char *)malloc(base_len + (needs_slash ? 1 : 0) + rel_len + 1);
+  if (joined == NULL) abort();
+  memcpy(joined, base, base_len);
+  size_t offset = base_len;
+  if (needs_slash) joined[offset++] = '/';
+  memcpy(joined + offset, relative, rel_len + 1);
+  result = parsed.prefix[0] == '\0' ? cp_mark_relative(joined) : cp_strdup(joined);
+  free(joined);
+done:
+  free(root_copy); free(relative_copy); free(clean_relative); cp_split_root_free(&parsed);
+  if (error != NULL) { free(result); return cp_err(error); }
   return cp_ok(result);
 }
 
@@ -932,29 +1007,14 @@ canonicalpath_result canonicalpath_to_win32(const char *canonical) {
 canonicalpath_result canonicalpath_to_win32_n(const char *canonical, size_t canonical_len) {
   if (cp_has_nul(canonical, canonical_len)) return cp_err("ERR_NUL_BYTE");
   char *copy = cp_strndup(canonical, canonical_len);
-  char *result = NULL;
-  if (cp_has_drive_root(copy)) {
-    char *rest = cp_replace_char(copy + 3, '/', '\\');
-    size_t rest_len = strlen(rest);
-    result = (char *)malloc(rest_len + 4);
-    if (result == NULL) abort();
-    result[0] = cp_upper_ascii(copy[0]);
-    result[1] = ':';
-    result[2] = '\\';
-    memcpy(result + 3, rest, rest_len + 1);
-    free(rest);
-  } else if (cp_starts_with(copy, "//")) {
-    char *rest = cp_replace_char(copy + 2, '/', '\\');
-    size_t rest_len = strlen(rest);
-    result = (char *)malloc(rest_len + 3);
-    if (result == NULL) abort();
-    result[0] = '\\';
-    result[1] = '\\';
-    memcpy(result + 2, rest, rest_len + 1);
-    free(rest);
-  } else {
-    result = cp_replace_char(copy, '/', '\\');
-  }
+  cp_split_root root = {0};
+  const char *error = cp_parse_clean_canonical(copy, &root);
+  if (error == NULL && (strcmp(root.prefix, "/") == 0 || strchr(copy, '\\') != NULL || cp_has_relative_marker(copy))) error = "ERR_INVALID_PATH";
+  cp_split_root_free(&root);
+  if (error != NULL) { free(copy); return cp_err(error); }
+  if (cp_has_drive_root(copy)) copy[0] = cp_upper_ascii(copy[0]);
+  else if (cp_starts_with(copy, "//?/") && cp_has_drive_root(copy + 4)) copy[4] = cp_upper_ascii(copy[4]);
+  char *result = cp_replace_char(copy, '/', '\\');
   free(copy);
   return cp_ok(result);
 }
@@ -965,30 +1025,30 @@ canonicalpath_result canonicalpath_to_wsl(const char *canonical, const canonical
 
 canonicalpath_result canonicalpath_to_wsl_n(const char *canonical, size_t canonical_len,
                                            const canonicalpath_wsl_options *options) {
-  if (cp_has_nul(canonical, canonical_len)) return cp_err("ERR_NUL_BYTE");
-  canonicalpath_wsl_options defaults = {0, "/mnt"};
+  canonicalpath_wsl_options defaults = {0, "/mnt", 0};
   if (options == NULL) options = &defaults;
+  char *mount_root = NULL;
+  const char *error = cp_normalize_mount_root(options, &mount_root);
+  if (error != NULL) return cp_err(error);
+  if (cp_has_nul(canonical, canonical_len)) { free(mount_root); return cp_err("ERR_NUL_BYTE"); }
   char *copy = cp_strndup(canonical, canonical_len);
-  if (!cp_has_drive_root(copy)) return cp_ok(copy);
-  char *mount_root = cp_strdup(options->mount_root == NULL || options->mount_root[0] == '\0' ? "/mnt" : options->mount_root);
+  cp_split_root root = {0};
+  error = cp_parse_clean_canonical(copy, &root);
+  if (error == NULL && cp_is_windows_root(root.prefix) && !cp_has_drive_root(root.prefix)) error = "ERR_INVALID_PATH";
+  if (error != NULL) { free(mount_root); free(copy); cp_split_root_free(&root); return cp_err(error); }
+  if (!cp_has_drive_root(root.prefix)) { free(mount_root); cp_split_root_free(&root); return cp_ok(copy); }
   cp_trim_right_slashes(mount_root);
-  const char *rest = copy + 3;
   size_t mount_len = strlen(mount_root);
-  size_t rest_len = strlen(rest);
-  char *result = (char *)malloc(mount_len + 3 + (rest_len > 0 ? 1 + rest_len : 0) + 1);
+  size_t rest_len = strlen(root.rest);
+  char *result = (char *)malloc(mount_len + 3 + (rest_len > 0 ? rest_len + 1 : 0));
   if (result == NULL) abort();
   memcpy(result, mount_root, mount_len);
   result[mount_len] = '/';
   result[mount_len + 1] = cp_lower_ascii(copy[0]);
   size_t offset = mount_len + 2;
-  if (rest_len > 0) {
-    result[offset++] = '/';
-    memcpy(result + offset, rest, rest_len);
-    offset += rest_len;
-  }
+  if (rest_len > 0) { result[offset++] = '/'; memcpy(result + offset, root.rest, rest_len); offset += rest_len; }
   result[offset] = '\0';
-  free(mount_root);
-  free(copy);
+  free(mount_root); free(copy); cp_split_root_free(&root);
   return cp_ok(result);
 }
 
@@ -999,14 +1059,11 @@ canonicalpath_result canonicalpath_to_posix(const char *canonical) {
 canonicalpath_result canonicalpath_to_posix_n(const char *canonical, size_t canonical_len) {
   if (cp_has_nul(canonical, canonical_len)) return cp_err("ERR_NUL_BYTE");
   char *copy = cp_strndup(canonical, canonical_len);
-  if (cp_has_drive_root(copy)) {
-    free(copy);
-    return cp_err("ERR_INVALID_PATH");
-  }
-  if (strchr(copy, '\\') != NULL) {
-    free(copy);
-    return cp_err("ERR_INVALID_PATH");
-  }
+  cp_split_root root = {0};
+  const char *error = cp_parse_clean_canonical(copy, &root);
+  if (error == NULL && cp_is_windows_root(root.prefix)) error = "ERR_INVALID_PATH";
+  cp_split_root_free(&root);
+  if (error != NULL) { free(copy); return cp_err(error); }
   return cp_ok(copy);
 }
 

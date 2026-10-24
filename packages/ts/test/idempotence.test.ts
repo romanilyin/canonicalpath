@@ -34,12 +34,14 @@ describe("canonicalpath normalize idempotence", () => {
   it("holds for arbitrary valid default-normalized strings", () => {
     fc.assert(
       fc.property(fc.string({ maxLength: 120 }), (raw) => {
+        let first;
         try {
-          const first = normalize(raw);
-          expect(normalize(first)).toBe(first);
+          first = normalize(raw);
         } catch {
           // Invalid inputs may be rejected; idempotence only applies to successful normalization.
+          return;
         }
+        expect(normalize(first)).toBe(first);
       }),
       { numRuns: 500 },
     );

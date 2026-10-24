@@ -30,34 +30,25 @@ rmSync(tempRoot, { recursive: true, force: true });
 mkdirSync(tempRoot, { recursive: true });
 writeFileSync(programPath, programFile(cases), "utf8");
 
-const compile = spawnSync(
-  "gcc",
-  [
-    "-std=c11",
-    "-Wall",
-    "-Wextra",
-    "-pedantic",
-    "-I",
-    path.join(root, "packages", "c", "include"),
+const contractProgram = path.join(root, "packages", "c", "test", "contract_test.c");
+const contractBinary = path.join(tempRoot, process.platform === "win32" ? "contract_test.exe" : "contract_test");
+for (const [source, binary] of [[programPath, binaryPath], [contractProgram, contractBinary]]) {
+  const compile = spawnSync("gcc", [
+    "-std=c11", "-Wall", "-Wextra", "-pedantic",
+    "-I", path.join(root, "packages", "c", "include"),
     path.join(root, "packages", "c", "src", "canonicalpath.c"),
-    programPath,
-    "-o",
-    binaryPath,
-  ],
-  { stdio: "inherit" },
-);
-if (compile.error) {
-  console.error(compile.error.message);
-  process.exit(1);
+    source, "-o", binary,
+  ], { stdio: "inherit" });
+  if (compile.error || compile.signal || compile.status !== 0) {
+    console.error(compile.error?.message ?? compile.signal ?? `Compiler exited with status ${compile.status}`);
+    process.exit(compile.status ?? 1);
+  }
+  const run = spawnSync(binary, { stdio: "inherit" });
+  if (run.error || run.signal || run.status !== 0) {
+    console.error(run.error?.message ?? run.signal ?? `Contract check exited with status ${run.status}`);
+    process.exit(run.status ?? 1);
+  }
 }
-if ((compile.status ?? 1) !== 0) process.exit(compile.status ?? 1);
-
-const run = spawnSync(binaryPath, { stdio: "inherit" });
-if (run.error) {
-  console.error(run.error.message);
-  process.exit(1);
-}
-process.exit(run.status ?? 1);
 
 function commandExists(command, args) {
   const probe = spawnSync(command, args, { stdio: "ignore" });
@@ -149,7 +140,10 @@ function optionsFunction(name, options = {}) {
   if (options.targetProfile !== undefined) lines.push(`  options.target_profile = ${cString(options.targetProfile)};`);
   if (options.trimOuterWhitespace !== undefined) lines.push(`  options.trim_outer_whitespace = ${options.trimOuterWhitespace ? "1" : "0"};`);
   if (options.wsl?.enabled !== undefined) lines.push(`  options.wsl.enabled = ${options.wsl.enabled ? "1" : "0"};`);
-  if (options.wsl?.mountRoot !== undefined) lines.push(`  options.wsl.mount_root = ${cString(options.wsl.mountRoot)};`);
+  if (options.wsl?.mountRoot !== undefined) {
+    lines.push(`  options.wsl.mount_root = ${cString(options.wsl.mountRoot)};`);
+    lines.push(`  options.wsl.mount_root_len = ${byteLength(options.wsl.mountRoot)};`);
+  }
   if (options.uri?.allowFileUri !== undefined) lines.push(`  options.uri.allow_file_uri = ${options.uri.allowFileUri ? "1" : "0"};`);
   if (options.uri?.allowVSCodeFileUri !== undefined) lines.push(`  options.uri.allow_vscode_file_uri = ${options.uri.allowVSCodeFileUri ? "1" : "0"};`);
   if (options.uri?.rejectEncodedSlash !== undefined) lines.push(`  options.uri.reject_encoded_slash = ${options.uri.rejectEncodedSlash ? "1" : "0"};`);

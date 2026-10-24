@@ -57,6 +57,9 @@ function resolveGodot() {
 }
 
 function programFile(cases) {
+  const boundaryOnly = cases.filter((testCase) => [testCase.raw, testCase.root, testCase.target, testCase.relative, testCase.profile]
+    .some((value) => typeof value === "string" && value.includes("\0"))).length;
+  const byteMountOptions = cases.filter((testCase) => typeof testCase.options?.wsl?.mountRoot === "string").length;
   const optionHelpers = [];
   const caseLines = [];
   cases.forEach((testCase, index) => {
@@ -86,11 +89,45 @@ func s(bytes: Array) -> String:
 
 func _init() -> void:
 ${caseLines.join("\n")}
+
+    for raw in ["/repo/a\\\\b", "/C:/repo", "C:foo", "./C:/repo", "x/../C:foo", "file://repo/a"]:
+        var native_options := {"sourceHost": "posix"}
+        var once := CanonicalPath.normalize(raw, native_options)
+        if not once.ok:
+            _fail("native chain initial normalization failed")
+            continue
+        _run_value("native idempotence", once.value, CanonicalPath.normalize(once.value, native_options))
+        _run_value("canonical reparse", once.value, CanonicalPath.normalize(once.value, {"sourceHost": "canonical"}))
+    for pair in [["/repo", "/repo/a\\\\b"], ["/repo", "/repo/C:foo"], ["c:/repo", "c:/repo/C:foo"], ["//?/UNC/server/share", "//?/UNC/server/share/repo"]]:
+        var rel := CanonicalPath.relative(pair[0], pair[1])
+        if not rel.ok:
+            _fail("relative chain failed")
+            continue
+        _run_value("relative/join chain", pair[1], CanonicalPath.join(pair[0], rel.value))
+    for mount in ["/", "", "/foo/../mnt/./", "/mnt\\\\vol", "/C:/drives"]:
+        var wsl_options := {"enabled": true, "mountRoot": mount}
+        var host_path := CanonicalPath.to_wsl_result("c:/repo/file", wsl_options)
+        if not host_path.ok:
+            _fail("WSL serialization chain failed")
+            continue
+        _run_value("WSL round trip", "c:/repo/file", CanonicalPath.normalize(host_path.value, {"sourceHost": "wsl", "wsl": wsl_options}))
+    _run_error("raw relative validator remains strict", "ERR_INVALID_PATH", CanonicalPath.normalize_relative_result("a\\\\b"))
+    _run_value("UTF-8 replacement scalar is valid", s([0xef, 0xbf, 0xbd]), CanonicalPath.from_utf8(PackedByteArray([0xef, 0xbf, 0xbd])))
+    _run_value("literal replacement scalar is preserved", "/repo/" + s([0xef, 0xbf, 0xbd]), CanonicalPath.normalize("/repo/" + s([0xef, 0xbf, 0xbd]), {"sourceHost": "posix"}))
+    _run_value("replacement scalar remains distinct", "false", _bool_result(CanonicalPath.is_equal_result("/repo/" + s([0xef, 0xbf, 0xbd]), "/repo", {"sourceHost": "canonical"})))
+    _run_error("UTF-8 NUL is not a replacement scalar", "ERR_NUL_BYTE", CanonicalPath.from_utf8(PackedByteArray([0])))
     if failed:
         quit(1)
         return
-    print("GDScript CanonicalPath vectors passed: ${cases.length} cases")
+    print("GDScript CanonicalPath vectors passed: ${cases.length - boundaryOnly} String API cases; ${boundaryOnly} UTF-8 boundary-only cases; ${byteMountOptions} byte mount options")
     quit(0)
+
+func _checked_input(inputs: Array, action: Callable) -> Dictionary:
+    for input in inputs:
+        var decoded := CanonicalPath.from_utf8(input)
+        if not decoded.ok:
+            return decoded
+    return action.call()
 
 func _run_value(id: String, expected: String, result: Dictionary) -> void:
     if not result.ok:
@@ -129,7 +166,7 @@ function optionsFunction(name, options = {}) {
   if (options.targetProfile !== undefined) lines.push(`    options["targetProfile"] = s(${gdscriptBytes(options.targetProfile)})`);
   if (options.trimOuterWhitespace !== undefined) lines.push(`    options["trimOuterWhitespace"] = ${options.trimOuterWhitespace ? "true" : "false"}`);
   if (options.wsl?.enabled !== undefined) lines.push(`    options["wsl"]["enabled"] = ${options.wsl.enabled ? "true" : "false"}`);
-  if (options.wsl?.mountRoot !== undefined) lines.push(`    options["wsl"]["mountRoot"] = s(${gdscriptBytes(options.wsl.mountRoot)})`);
+  if (options.wsl?.mountRoot !== undefined) lines.push(`    options["wsl"]["mountRoot"] = PackedByteArray(${gdscriptBytes(options.wsl.mountRoot)})`);
   if (options.uri?.allowFileUri !== undefined) lines.push(`    options["uri"]["allowFileUri"] = ${options.uri.allowFileUri ? "true" : "false"}`);
   if (options.uri?.allowVSCodeFileUri !== undefined) lines.push(`    options["uri"]["allowVSCodeFileUri"] = ${options.uri.allowVSCodeFileUri ? "true" : "false"}`);
   if (options.uri?.rejectEncodedSlash !== undefined) lines.push(`    options["uri"]["rejectEncodedSlash"] = ${options.uri.rejectEncodedSlash ? "true" : "false"}`);
@@ -145,9 +182,15 @@ function usesOptions(operation) {
 }
 
 function operationExpression(testCase, optionsName) {
-  if (testCase.error === "ERR_NUL_BYTE" && hasNulInput(testCase)) {
-    return `{"ok": false, "error": "ERR_NUL_BYTE", "message": "input contains NUL before Godot String conversion"}`;
-  }
+  // Validate transported bytes through production code before Godot can replace
+  // NUL with another scalar. This decision never depends on the expected error.
+  const inputs = [testCase.raw, testCase.root, testCase.target, testCase.relative, testCase.profile ]
+    .filter((value) => typeof value === "string")
+    .map((value) => `PackedByteArray(${gdscriptBytes(value)})`);
+  return `_checked_input([${inputs.join(", ")}], func(): return ${uncheckedOperationExpression(testCase, optionsName)})`;
+}
+
+function uncheckedOperationExpression(testCase, optionsName) {
   switch (testCase.operation) {
     case "normalize":
       return `CanonicalPath.normalize(s(${gdscriptBytes(testCase.raw)}), ${optionsName}())`;
@@ -172,12 +215,6 @@ function operationExpression(testCase, optionsName) {
     default:
       throw new Error(`unsupported operation ${testCase.operation}`);
   }
-}
-
-function hasNulInput(testCase) {
-  return [testCase.raw, testCase.root, testCase.target, testCase.relative, testCase.profile].some(
-    (value) => typeof value === "string" && value.includes("\0"),
-  );
 }
 
 function gdscriptBytes(value) {

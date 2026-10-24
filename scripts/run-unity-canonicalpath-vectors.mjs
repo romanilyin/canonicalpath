@@ -110,8 +110,51 @@ internal static class Program
             }
         }
 
+        RunContractChains();
         Console.WriteLine("Unity CanonicalPath C# vectors passed: {0} cases", count);
         return 0;
+    }
+
+
+    private static void RunContractChains()
+    {
+        var native = new CanonicalPathNormalizeOptions { SourceHost = "posix" };
+        var canonical = new CanonicalPathNormalizeOptions { SourceHost = "canonical" };
+        foreach (string raw in new[] { @"/repo/a\b", "/C:/repo", "C:foo", "./C:/repo", "x/../C:foo", "file://repo/a" })
+        {
+            string once = CP.Normalize(raw, native);
+            if (CP.Normalize(once, native) != once || CP.Normalize(once, canonical) != once) throw new Exception("native/canonical idempotence: " + raw);
+        }
+        if (CP.IsEqual(@"/repo/a\b", "/repo/a/b", canonical)) throw new Exception("literal backslash identity collapsed");
+        foreach (string[] pair in new[] { new[] { "/repo", @"/repo/a\b" }, new[] { "/repo", "/repo/C:foo" }, new[] { "c:/repo", "c:/repo/C:foo" }, new[] { "//?/UNC/server/share", "//?/UNC/server/share/repo" } })
+            if (CP.Join(pair[0], CP.Relative(pair[0], pair[1])) != pair[1]) throw new Exception("relative/join round trip: " + pair[1]);
+        foreach (string mount in new[] { "/", "", "/foo/../mnt/./", @"/mnt\vol", "/C:/drives" })
+        {
+            var wsl = new CanonicalPathWSLOptions { Enabled = true, MountRoot = mount };
+            string host = CP.ToWSL("c:/repo/file", wsl);
+            if (CP.Normalize(host, new CanonicalPathNormalizeOptions { SourceHost = "wsl", WSL = wsl }) != "c:/repo/file") throw new Exception("WSL round trip: " + mount);
+        }
+        if (CP.Join(new[] { "/repo", "./C:foo", "file" }) != "/repo/C:foo/file") throw new Exception("params Join marker handling");
+        bool rejected = false;
+        try { CP.Join(new[] { "/repo", "/outside", "file" }); }
+        catch (CanonicalPathException error) { rejected = error.Code == "ERR_ABSOLUTE_PATH"; }
+        if (!rejected) throw new Exception("params Join accepted an absolute later part");
+        foreach (string dirtyRoot in new[] { "c:/repo/", "c:/repo//file", "c:/repo/./file", "c:/repo/../file", "//server/share/", "./safe", "./C:foo/./file", "../file", "C:/repo" })
+        {
+            rejected = false;
+            try { CP.Join(dirtyRoot, "file"); }
+            catch (CanonicalPathException error) { rejected = error.Code == "ERR_INVALID_PATH"; }
+            if (!rejected) throw new Exception("canonical root validation accepted " + dirtyRoot);
+        }
+        var service = BridgeCanonicalPathService.Instance;
+        var project = new CanonicalPathValue(@"/repo/a\b");
+        var asset = service.FromUnityAssetPath(project, @"Assets\Scripts//App.cs");
+        if (asset.Value != @"/repo/a\b/Assets/Scripts/App.cs" || service.ToUnityAssetPath(project, asset) != "Assets/Scripts/App.cs") throw new Exception("bridge changed canonical root identity");
+        service.AssertInsideProject(project, asset);
+        rejected = false;
+        try { service.AssertInsideProject(project, new CanonicalPathValue("/repo/a/b/Assets/Scripts/App.cs")); }
+        catch (CanonicalPathException error) { rejected = error.Code == "ERR_OUTSIDE_ROOT"; }
+        if (!rejected) throw new Exception("bridge collapsed literal backslash root into slash components");
     }
 
     private static void RunVector(CanonicalPathVectorCase testCase)

@@ -94,4 +94,43 @@ if ($failures.Count -gt 0) {
     throw ($failures.Count.ToString() + ' CanonicalPath vector test(s) failed')
 }
 
+
+# Operation chains exercise persisted identity, not just isolated vector results.
+$nativeOptions = @{ sourceHost = 'posix' }
+$canonicalOptions = @{ sourceHost = 'canonical' }
+foreach ($raw in @('/repo/a\b', '/C:/repo', 'C:foo', './C:/repo', 'x/../C:foo', 'file://repo/a')) {
+    $once = ConvertTo-CanonicalPath $raw $nativeOptions
+    if (-not [string]::Equals((ConvertTo-CanonicalPath $once $nativeOptions), $once, [StringComparison]::Ordinal) -or -not [string]::Equals((ConvertTo-CanonicalPath $once $canonicalOptions), $once, [StringComparison]::Ordinal)) { throw ('native/canonical idempotence: ' + $raw) }
+}
+foreach ($pair in @(@('/repo', '/repo/a\b'), @('/repo', '/repo/C:foo'), @('c:/repo', 'c:/repo/C:foo'), @('//?/UNC/server/share', '//?/UNC/server/share/repo'))) {
+    if (-not [string]::Equals((Join-CanonicalPath $pair[0] (Get-CanonicalRelativePath $pair[0] $pair[1])), $pair[1], [StringComparison]::Ordinal)) { throw ('relative/join chain: ' + $pair[1]) }
+}
+foreach ($mount in @('/', '', '/foo/../mnt/./', '/mnt\vol', '/C:/drives')) {
+    $wslOptions = @{ enabled = $true; mountRoot = $mount }
+    $hostPath = ConvertTo-CanonicalWSLPath 'c:/repo/file' $wslOptions
+    if (-not [string]::Equals((ConvertTo-CanonicalPath $hostPath @{ sourceHost = 'wsl'; wsl = $wslOptions }), 'c:/repo/file', [StringComparison]::Ordinal)) { throw ('WSL round trip: ' + $mount) }
+}
+
+# PowerShell's case-sensitive comparison operators still use linguistic
+# equality. Canonical components, roots, and dot tokens require ordinal checks.
+$composed = 'caf' + [char] 0x00e9
+$decomposed = 'cafe' + [char] 0x0301
+$rejected = $false
+try { Get-CanonicalRelativePath ('//' + $composed + '/share') ('//' + $decomposed + '/share/file') } catch { $rejected = (& $errorCodeCommand $_) -eq 'ERR_OUTSIDE_ROOT' }
+if (-not $rejected) { throw 'Unicode-equivalent UNC roots were treated as identical' }
+$ignorable = [string] [char] 0x00ad
+foreach ($component in @(('.' + $ignorable), ('..' + $ignorable))) {
+    $path = '/repo/' + $component + '/file'
+    if (-not [string]::Equals((ConvertTo-CanonicalPath $path $nativeOptions), $path, [StringComparison]::Ordinal)) { throw 'literal Unicode component was interpreted as a dot segment' }
+}
+$relativeRoot = '.' + $ignorable
+if (-not [string]::Equals((Join-CanonicalPath $relativeRoot 'file'), ($relativeRoot + '/file'), [StringComparison]::Ordinal)) { throw 'literal relative root was interpreted as dot' }
+$unicodeMount = '/' + $ignorable
+if (-not [string]::Equals((ConvertTo-CanonicalWSLPath 'c:/repo' @{ mountRoot = $unicodeMount }), ($unicodeMount + '/c/repo'), [StringComparison]::Ordinal)) { throw 'literal Unicode mount root was interpreted as slash' }
+
+$rawRelative = $module.Invoke({ Get-Command ConvertTo-CanonicalRelativePath })
+$rejected = $false
+try { & $rawRelative 'a\b' } catch { $rejected = (& $errorCodeCommand $_) -eq 'ERR_INVALID_PATH' }
+if (-not $rejected) { throw 'raw relative validator accepted literal backslash' }
+
 Write-Host ('CanonicalPath PowerShell vectors passed: ' + $count)

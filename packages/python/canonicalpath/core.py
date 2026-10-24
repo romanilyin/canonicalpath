@@ -28,67 +28,72 @@ def normalize(raw: str, options: Mapping[str, Any] | None = None) -> str:
         raise _path_error("ERR_EMPTY_PATH", "path is empty")
     if _has_nul(raw):
         raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-
-    value = raw
-    if _has_uri_scheme(value) or _option(opts, "sourceHost") == "vscode-file-uri":
-        value = _parse_file_uri(value, opts)
-    if _has_nul(value):
-        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-    if not _option(_nested(opts, "windows"), "preserveExtendedLength", False):
-        value = _unwrap_windows_extended_prefix(value)
-    value = value.replace("\\", "/")
-
-    target_profile = _option(opts, "targetProfile")
-    if target_profile != "posix" and value.startswith("/") and not value.startswith("//"):
-        if _option(_nested(opts, "wsl"), "enabled", False) and not _is_uri_windows_drive_path(value):
-            if _option(_nested(opts, "windows"), "rejectADS", False) and _has_windows_ads(value):
-                raise _path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-            if _option(_nested(opts, "windows"), "rejectDeviceNames", False) and _has_reserved_device_name(value):
-                raise _path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-            value = _clean_canonical(value)
-        value = _map_wsl_drive(value, _nested(opts, "wsl"))
-    if _is_uri_windows_drive_path(value):
-        value = value[1:]
-
-    if _is_drive_relative(value):
-        raise _path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
-    if _has_drive_root(value):
-        value = value[0].lower() + value[1:]
-
-    windows = _nested(opts, "windows")
-    if _option(windows, "rejectADS", False) and _has_windows_ads(value):
-        raise _path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-    if _option(windows, "rejectDeviceNames", False) and _has_reserved_device_name(value):
-        raise _path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-
-    cleaned = _clean_canonical(value)
-    _validate_target_profile(cleaned, target_profile)
+    source = _option(opts, "sourceHost")
+    wsl = _nested(opts, "wsl")
+    enabled = bool(_option(wsl, "enabled", False))
+    mount = _normalize_mount_root(_option(wsl, "mountRoot"))
+    profile = _option(opts, "targetProfile")
+    if source == "posix":
+        if enabled:
+            raise _path_error("ERR_INVALID_PATH", "native POSIX input does not allow WSL mapping")
+        _check_windows_policy(raw, opts, native_posix=True)
+        cleaned = _clean_posix(raw)
+    elif source == "canonical":
+        if _is_drive_relative(raw):
+            raise _path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+        _check_windows_policy(raw, opts)
+        cleaned = _clean_canonical(raw)
+    else:
+        value = raw
+        parsed_uri = _has_uri_scheme(value)
+        if parsed_uri or source == "vscode-file-uri":
+            value = _parse_file_uri(value, opts)
+        uri_drive = parsed_uri and _is_uri_windows_drive_path(value)
+        posix_candidate = value.startswith("/") and (not value.startswith("//") or value.startswith("///"))
+        if enabled and posix_candidate and not uri_drive:
+            # The configured WSL input mode uses POSIX components before mapping.
+            _check_windows_policy(value, opts)
+            cleaned = _clean_posix(value)
+            if profile != "posix":
+                cleaned = _map_wsl_drive(cleaned, mount)
+        else:
+            value = value.replace("\\", "/")
+            if value.startswith("//?/"):
+                _split_root(value)  # Reject unsupported namespaces before unwrapping.
+                if not _option(_nested(opts, "windows"), "preserveExtendedLength", False):
+                    value = _unwrap_windows_extended_prefix(value)
+            if _is_uri_windows_drive_path(value):
+                value = value[1:]
+            if _is_drive_relative(value):
+                raise _path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+            _check_windows_policy(value, opts)
+            cleaned = _clean_canonical(value)
+    _validate_target_profile(cleaned, profile)
     return cleaned
-
 
 def relative(root: str, target: str) -> str:
     root_prefix, root_parts = _canonical_parts(root)
     target_prefix, target_parts = _canonical_parts(target)
     if root_prefix != target_prefix or len(target_parts) < len(root_parts):
         raise _path_error("ERR_OUTSIDE_ROOT", "target is outside root")
-    for index, part in enumerate(root_parts):
-        if target_parts[index] != part:
-            raise _path_error("ERR_OUTSIDE_ROOT", "target is outside root")
-    if len(target_parts) == len(root_parts):
-        return "."
-    return "/".join(target_parts[len(root_parts) :])
-
+    if target_parts[:len(root_parts)] != root_parts:
+        raise _path_error("ERR_OUTSIDE_ROOT", "target is outside root")
+    return _serialize("", target_parts[len(root_parts):])
 
 def join(root: str, relative_path: str) -> str:
-    clean_relative = normalize_relative(relative_path)
-    if _has_nul(root):
-        raise _path_error("ERR_NUL_BYTE", "root contains NUL")
-    if clean_relative == ".":
-        return root
-    if root == "/" or root.endswith("/"):
-        return root + clean_relative
-    return f"{root}/{clean_relative}"
-
+    prefix, root_parts = _validated_canonical(root)
+    if relative_path == "":
+        raise _path_error("ERR_EMPTY_PATH", "relative path is empty")
+    if _has_nul(relative_path):
+        raise _path_error("ERR_NUL_BYTE", "relative path contains NUL")
+    if relative_path.startswith("/") or _has_drive_root(relative_path):
+        raise _path_error("ERR_ABSOLUTE_PATH", "relative path must not be absolute")
+    if _is_drive_relative(relative_path):
+        raise _path_error("ERR_DRIVE_RELATIVE_PATH", "drive-relative path is not allowed")
+    if prefix not in ("", "/") and "\\" in relative_path:
+        raise _path_error("ERR_INVALID_PATH", "relative data is not representable under a Windows root")
+    parts = _clean_parts("", relative_path, "ERR_OUTSIDE_ROOT")
+    return _serialize(prefix, root_parts + parts)
 
 def join_parts(parts: list[str] | tuple[str, ...]) -> str:
     result = ""
@@ -135,38 +140,32 @@ def is_equal(left: str, right: str, options: Mapping[str, Any] | None = None) ->
 
 
 def to_win32(canonical: str) -> str:
-    if _has_nul(canonical):
-        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-    if _has_drive_root(canonical):
-        return canonical[0].upper() + ":\\" + canonical[3:].replace("/", "\\")
-    if canonical.startswith("//"):
-        return "\\\\" + canonical[2:].replace("/", "\\")
-    return canonical.replace("/", "\\")
-
+    prefix, parts = _validated_canonical(canonical)
+    if prefix == "/" or (prefix == "" and ("\\" in canonical or _is_marked_relative(canonical))):
+        raise _path_error("ERR_INVALID_PATH", "canonical path has no lossless Windows representation")
+    value = _serialize(prefix, parts)
+    if prefix.startswith("//?/") and _has_drive_root(prefix[4:]):
+        value = "//?/" + value[4].upper() + value[5:]
+    elif _has_drive_root(prefix):
+        value = value[0].upper() + value[1:]
+    return value.replace("/", "\\")
 
 def to_wsl(canonical: str, options: Mapping[str, Any] | None = None) -> str:
     opts = _as_mapping(options)
-    if _has_nul(canonical):
-        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-    if not _has_drive_root(canonical):
+    mount = _normalize_mount_root(_option(opts, "mountRoot"))
+    prefix, parts = _validated_canonical(canonical)
+    if prefix.startswith("//"):
+        raise _path_error("ERR_INVALID_PATH", "UNC and preserved extended roots require an explicit host mapping")
+    if not _has_drive_root(prefix):
         return canonical
-    mount_root = str(_option(opts, "mountRoot", "/mnt") or "/mnt").rstrip("/")
-    result = f"{mount_root}/{canonical[0].lower()}"
-    rest = canonical[3:]
-    if rest != "":
-        result += f"/{rest}"
-    return result
-
+    mount_prefix = "" if mount == "/" else mount
+    return mount_prefix + "/" + prefix[0] + ("/" + "/".join(parts) if parts else "")
 
 def to_posix(canonical: str) -> str:
-    if _has_nul(canonical):
-        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-    if _has_drive_root(canonical):
-        raise _path_error("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl")
-    if "\\" in canonical:
-        raise _path_error("ERR_INVALID_PATH", "canonical paths must use slash separators")
+    prefix, _ = _validated_canonical(canonical)
+    if prefix not in ("", "/"):
+        raise _path_error("ERR_INVALID_PATH", "Windows roots require an explicit host mapping")
     return canonical
-
 
 def sanitize_component(name: str, profile: str) -> str:
     if name == "":
@@ -247,12 +246,11 @@ def _has_uri_scheme(value: str) -> bool:
 
 
 def _unwrap_windows_extended_prefix(value: str) -> str:
-    if value.startswith("\\\\?\\UNC\\"):
-        return "\\\\" + value[len("\\\\?\\UNC\\") :]
-    if value.startswith("\\\\?\\"):
-        return value[len("\\\\?\\") :]
+    if value.startswith("//?/UNC/"):
+        return "//" + value[8:]
+    if value.startswith("//?/"):
+        return value[4:]
     return value
-
 
 def _percent_decode(value: str) -> str:
     result = bytearray()
@@ -317,114 +315,80 @@ def _parse_file_uri(uri: str, options: Mapping[str, Any]) -> str:
     return uri
 
 
-def _map_wsl_drive(value: str, options: Mapping[str, Any]) -> str:
-    if not _option(options, "enabled", False):
-        return value
-    mount_root = str(_option(options, "mountRoot", "/mnt") or "/mnt").rstrip("/")
-    prefix = re.sub(r"/+", "/", mount_root) + "/"
+def _map_wsl_drive(value: str, mount_root: str) -> str:
+    prefix = "/" if mount_root == "/" else mount_root + "/"
     if not value.startswith(prefix):
         return value
-    rest = value[len(prefix) :]
-    if len(rest) < 1 or not _is_ascii_letter(rest[0]):
+    rest = value[len(prefix):]
+    if not rest or not _is_ascii_letter(rest[0]) or (len(rest) > 1 and rest[1] != "/"):
         return value
-    if len(rest) > 1 and rest[1] != "/":
-        return value
-    if len(rest) == 1:
-        return f"{rest[0].lower()}:/"
-    return f"{rest[0].lower()}:/{rest[2:]}"
-
+    tail = rest[2:] if len(rest) > 1 else ""
+    if "\\" in tail:
+        raise _path_error("ERR_INVALID_PATH", "literal backslash cannot be mapped to a Windows component")
+    return rest[0].lower() + ":/" + tail
 
 def _split_root(value: str) -> tuple[str, str]:
-    if _has_drive_root(value):
-        return value[:3], value[3:]
-    if value.startswith("//"):
-        rest = value[2:]
-        first = rest.find("/")
-        if first <= 0:
-            raise _path_error("ERR_INVALID_PATH", "UNC path requires server and share")
-        server = rest[:first]
-        after_first = rest[first + 1 :]
-        second = after_first.find("/")
-        if second >= 0:
-            share = after_first[:second]
-            tail = after_first[second + 1 :]
+    if _has_nul(value):
+        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
+    if value.startswith("//?/"):
+        inner = value[4:]
+        if _has_drive_root(inner):
+            prefix, rest = "//?/" + inner[0].lower() + inner[1:3], inner[3:]
+        elif inner.startswith("UNC/"):
+            unc_prefix, rest = _split_unc(inner[4:])
+            prefix = "//?/UNC/" + unc_prefix
         else:
-            share = after_first
-            tail = ""
-        if share == "":
-            raise _path_error("ERR_INVALID_PATH", "UNC path requires server and share")
-        return f"//{server}/{share}", tail
-    if value.startswith("/"):
+            raise _path_error("ERR_INVALID_PATH", "unsupported extended Windows root")
+    elif _has_drive_root(value):
+        prefix, rest = value[0].lower() + value[1:3], value[3:]
+    elif _is_drive_relative(value):
+        raise _path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+    elif value.startswith("///"):
+        return "/", value.lstrip("/")
+    elif value.startswith("//"):
+        unc_prefix, rest = _split_unc(value[2:])
+        prefix = "//" + unc_prefix
+    elif value.startswith("/"):
         return "/", value[1:]
-    return "", value
-
+    else:
+        return "", value
+    if "\\" in value:
+        raise _path_error("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash")
+    return prefix, rest
 
 def _clean_canonical(value: str) -> str:
     if value == "":
         raise _path_error("ERR_EMPTY_PATH", "path is empty")
     prefix, rest = _split_root(value)
-    parts: list[str] = []
-    for part in rest.split("/"):
-        if part == "" or part == ".":
-            continue
-        if part == "..":
-            if len(parts) > 0:
-                parts.pop()
-                continue
-            if prefix != "":
-                continue
-            raise _path_error("ERR_INVALID_PATH", "relative path escapes above its root")
-        parts.append(part)
-
-    joined = "/".join(parts)
-    if prefix == "":
-        return "." if joined == "" else joined
-    if prefix == "/":
-        return "/" if joined == "" else f"/{joined}"
-    if prefix.endswith("/"):
-        return prefix if joined == "" else f"{prefix}{joined}"
-    return prefix if joined == "" else f"{prefix}/{joined}"
-
+    return _serialize(prefix, _clean_parts(prefix, rest))
 
 def _validate_target_profile(value: str, target_profile: Any) -> None:
+    prefix, _ = _split_root(value)
     if target_profile is None or target_profile == "portable":
         return
-    if target_profile == "posix":
-        if _has_drive_root(value) or value.startswith("//"):
-            raise _path_error("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots")
+    drive = _has_drive_root(prefix) or (prefix.startswith("//?/") and _has_drive_root(prefix[4:]))
+    if target_profile == "posix" and prefix in ("", "/"):
         return
-    if target_profile == "win32-drive":
-        if value.startswith("/"):
-            raise _path_error("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots")
+    if target_profile == "win32-drive" and (prefix == "" or drive):
         return
-    raise _path_error("ERR_INVALID_PATH", "unsupported targetProfile")
-
+    raise _path_error("ERR_INVALID_PATH", "path root is not allowed by targetProfile")
 
 def _canonical_parts(value: str) -> tuple[str, list[str]]:
-    if _has_nul(value):
-        raise _path_error("ERR_NUL_BYTE", "path contains NUL")
-    prefix, rest = _split_root(value)
+    prefix, parts = _validated_canonical(value)
     if prefix == "":
         raise _path_error("ERR_INVALID_PATH", "path must be canonical absolute")
-    parts = [part for part in rest.split("/") if part != ""]
-    if any(part == "." or part == ".." for part in parts):
-        raise _path_error("ERR_INVALID_PATH", "path is not lexically cleaned")
     return prefix, parts
 
-
 def _has_windows_ads(value: str) -> bool:
-    start = 3 if _has_drive_root(value) else 0
-    if value.startswith("//"):
-        try:
-            start = len(_split_root(value)[0])
-        except CanonicalPathError:
-            start = 0
-    return ":" in value[start:]
-
-
-def _has_reserved_device_name(value: str) -> bool:
     try:
-        rest = _split_root(value)[1]
+        prefix, rest = _split_root(value)
+    except CanonicalPathError:
+        return ":" in value
+    return ":" in (rest if prefix not in ("", "/") else value)
+
+def _has_reserved_device_name(value: str, native_posix: bool = False) -> bool:
+    try:
+        rest = value if native_posix else _split_root(value)[1]
     except CanonicalPathError:
         return False
     for part in rest.split("/"):
@@ -451,3 +415,80 @@ def _escape_reserved_win32_component(value: str) -> str:
     if _is_reserved_device_base(base):
         return f"{base}-{suffix}"
     return value
+
+
+def _drive_component(value: str) -> bool:
+    return len(value) >= 2 and _is_ascii_letter(value[0]) and value[1] == ":"
+
+
+def _is_marked_relative(value: str) -> bool:
+    return value.startswith("./") and _drive_component(value[2:])
+
+
+def _split_unc(value: str) -> tuple[str, str]:
+    parts = value.split("/", 2)
+    if len(parts) < 2 or any(part in ("", ".", "..") for part in parts[:2]):
+        raise _path_error("ERR_INVALID_PATH", "UNC path requires a valid server and share")
+    return parts[0] + "/" + parts[1], parts[2] if len(parts) == 3 else ""
+
+
+def _serialize(prefix: str, parts: list[str]) -> str:
+    joined = "/".join(parts)
+    if prefix == "":
+        if not parts:
+            return "."
+        return ("./" if _drive_component(parts[0]) else "") + joined
+    return prefix + (("" if prefix.endswith("/") else "/") + joined if joined else "")
+
+
+def _clean_parts(prefix: str, rest: str, escape_code: str = "ERR_INVALID_PATH") -> list[str]:
+    parts: list[str] = []
+    for part in rest.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            elif not prefix:
+                raise _path_error(escape_code, "relative path escapes above its root")
+        else:
+            parts.append(part)
+    return parts
+
+
+def _clean_posix(value: str) -> str:
+    if value.startswith("//") and not value.startswith("///"):
+        raise _path_error("ERR_INVALID_PATH", "double-leading-slash POSIX roots are unsupported")
+    prefix = "/" if value.startswith("/") else ""
+    return _serialize(prefix, _clean_parts(prefix, value))
+
+
+def _normalize_mount_root(raw: Any) -> str:
+    value = "/mnt" if raw is None or raw == "" else str(raw)
+    if _has_nul(value):
+        raise _path_error("ERR_NUL_BYTE", "mount root contains NUL")
+    if not value.startswith("/"):
+        raise _path_error("ERR_INVALID_PATH", "mount root must be absolute POSIX")
+    return _clean_posix(value)
+
+
+def _validated_canonical(value: str) -> tuple[str, list[str]]:
+    if value == "":
+        raise _path_error("ERR_EMPTY_PATH", "path is empty")
+    prefix, rest = _split_root(value)
+    if prefix == "" and value == ".":
+        return "", []
+    if prefix == "" and _is_marked_relative(rest):
+        rest = rest[2:]
+    parts = rest.split("/") if rest else []
+    if any(part in ("", ".", "..") for part in parts):
+        raise _path_error("ERR_INVALID_PATH", "path is not lexically cleaned")
+    return prefix, parts
+
+
+def _check_windows_policy(value: str, options: Mapping[str, Any], native_posix: bool = False) -> None:
+    windows = _nested(options, "windows")
+    if _option(windows, "rejectADS", False) and ((":" in value) if native_posix else _has_windows_ads(value)):
+        raise _path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+    if _option(windows, "rejectDeviceNames", False) and _has_reserved_device_name(value, native_posix):
+        raise _path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")

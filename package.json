@@ -8,7 +8,7 @@
     "check:error-taxonomy": "node scripts/check-error-taxonomy.mjs",
     "check:licenses": "node scripts/check-package-license-layout.mjs",
     "check:unity-mcp-contract": "pnpm spec:validate && pnpm check:error-taxonomy && pnpm unity:mcp:path-scopes:vectors && node scripts/check-unity-mcp-contract.mjs",
-    "verify": "pnpm security:regressions && pnpm spec:validate && pnpm check:error-taxonomy && pnpm check:licenses && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm go:unsupported-platforms && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:vectors && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
+    "verify": "pnpm security:regressions && pnpm spec:validate && pnpm check:error-taxonomy && pnpm check:licenses && node scripts/check-unity-mcp-contract.mjs && pnpm -C packages/ts typecheck && pnpm -C packages/ts test && pnpm ts:build && pnpm ts:package:smoke && pnpm ts:pack:dry-run && pnpm js:standalone:typecheck && pnpm js:standalone:build && pnpm js:standalone:build:smoke && pnpm js:standalone:test && pnpm unity:pack:dry-run && go test ./packages/go/... && pnpm go:unsupported-platforms && pnpm scoped-daemon:smoke && pnpm vectors && pnpm python:vectors && pnpm dart:vectors && pnpm csharp:vectors && pnpm swift:vectors && pnpm kotlin:vectors && pnpm c:vectors && pnpm rust:verify && pnpm cpp:vectors && pnpm haxe:vectors && pnpm gdscript:vectors && pnpm bash:smoke && pnpm cmd:smoke && pnpm unity:canonicalpath:vectors && pnpm unity:bridge:vectors && pnpm unity:mcp:path-scopes:vectors && pnpm unity:canonicalfs:transport:smoke && pnpm unity:burst:surface && pnpm unity:burst:probe && pnpm unity:editmode:matrix && pnpm ps:test",
     "test": "pnpm verify",
     "typecheck": "pnpm -C packages/ts typecheck",
     "lint": "pnpm -C packages/ts lint",
@@ -93,7 +93,10 @@
     "vectors:compare": "node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/ts.json && node scripts/compare-results.mjs tmp/vector-results/go.json tmp/vector-results/js-standalone.json",
     "ps:test": "node scripts/run-powershell-tests.mjs",
     "security:regressions": "node --test scripts/security-regression.test.mjs scripts/daemon-client-security.test.mjs scripts/daemon-tls-security.test.mjs scripts/bash-payload-security.test.mjs scripts/powershell-shell.test.mjs scripts/unity-editor-execution.test.mjs scripts/release-manifest.test.mjs scripts/gitref-migration-inventory.test.mjs",
-    "go:unsupported-platforms": "node scripts/run-go-unsupported-platform-tests.mjs"
+    "go:unsupported-platforms": "node scripts/run-go-unsupported-platform-tests.mjs",
+    "rust:verify": "pnpm rust:runner:test && pnpm rust:test && pnpm rust:vectors",
+    "rust:runner:test": "node --test scripts/rust-verification.test.mjs",
+    "rust:test": "node scripts/run-rust-tests.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

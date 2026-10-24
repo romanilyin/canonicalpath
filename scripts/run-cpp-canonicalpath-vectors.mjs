@@ -30,34 +30,25 @@ rmSync(tempRoot, { recursive: true, force: true });
 mkdirSync(tempRoot, { recursive: true });
 writeFileSync(programPath, programFile(cases), "utf8");
 
-const compile = spawnSync(
-  "g++",
-  [
-    "-std=c++20",
-    "-Wall",
-    "-Wextra",
-    "-pedantic",
-    "-I",
-    path.join(root, "packages", "cpp", "include"),
+const contractProgram = path.join(root, "packages", "cpp", "test", "contract_test.cpp");
+const contractBinary = path.join(tempRoot, process.platform === "win32" ? "contract_test.exe" : "contract_test");
+for (const [source, binary] of [[programPath, binaryPath], [contractProgram, contractBinary]]) {
+  const compile = spawnSync("g++", [
+    "-std=c++20", "-Wall", "-Wextra", "-pedantic",
+    "-I", path.join(root, "packages", "cpp", "include"),
     path.join(root, "packages", "cpp", "src", "canonicalpath.cpp"),
-    programPath,
-    "-o",
-    binaryPath,
-  ],
-  { stdio: "inherit" },
-);
-if (compile.error) {
-  console.error(compile.error.message);
-  process.exit(1);
+    source, "-o", binary,
+  ], { stdio: "inherit" });
+  if (compile.error || compile.signal || compile.status !== 0) {
+    console.error(compile.error?.message ?? compile.signal ?? `Compiler exited with status ${compile.status}`);
+    process.exit(compile.status ?? 1);
+  }
+  const run = spawnSync(binary, { stdio: "inherit" });
+  if (run.error || run.signal || run.status !== 0) {
+    console.error(run.error?.message ?? run.signal ?? `Contract check exited with status ${run.status}`);
+    process.exit(run.status ?? 1);
+  }
 }
-if ((compile.status ?? 1) !== 0) process.exit(compile.status ?? 1);
-
-const run = spawnSync(binaryPath, { stdio: "inherit" });
-if (run.error) {
-  console.error(run.error.message);
-  process.exit(1);
-}
-process.exit(run.status ?? 1);
 
 function commandExists(command, args) {
   const probe = spawnSync(command, args, { stdio: "ignore" });

@@ -295,7 +295,9 @@ namespace CanonicalPath
 
         public string ToUnityAssetPath(CanonicalPathValue projectRoot, CanonicalPathValue fullPath)
         {
-            return PathGuard.NormalizeUnityPath(Relative(projectRoot.Value, fullPath.Value));
+            string relative = Relative(projectRoot.Value, fullPath.Value);
+            if (relative.IndexOf('\\') >= 0) throw new CanonicalPathException("ERR_INVALID_PATH", "Canonical asset components cannot contain literal backslash.");
+            return PathGuard.NormalizeUnityPath(relative);
         }
 
         public void AssertInsideProject(CanonicalPathValue projectRoot, CanonicalPathValue candidate)
@@ -310,73 +312,18 @@ namespace CanonicalPath
 
         internal static string CleanCanonical(string raw)
         {
-            if (string.IsNullOrEmpty(raw)) throw new ArgumentException("Path must not be empty.", "raw");
-            if (raw.IndexOf('\0') >= 0) throw new ArgumentException("Path must not contain NUL.", "raw");
-
-            string value = raw.Replace('\\', '/');
-            if (IsUriWindowsDrivePath(value)) value = value.Substring(1);
-            if (IsDriveRelative(value)) throw new ArgumentException("Windows drive-relative paths are not canonical.", "raw");
-            if (HasDriveRoot(value)) value = char.ToLowerInvariant(value[0]) + value.Substring(1);
-
-            string prefix;
-            string rest;
-            SplitRoot(value, out prefix, out rest);
-
-            List<string> parts = new List<string>();
-            string[] rawParts = rest.Split('/');
-            for (int i = 0; i < rawParts.Length; i++)
-            {
-                string part = rawParts[i];
-                if (part.Length == 0 || part == ".") continue;
-                if (part == "..")
-                {
-                    if (parts.Count > 0)
-                    {
-                        parts.RemoveAt(parts.Count - 1);
-                        continue;
-                    }
-                    if (prefix.Length != 0) continue;
-                    throw new ArgumentException("Relative path escapes above its root.", "raw");
-                }
-                parts.Add(part);
-            }
-
-            string joined = string.Join("/", parts.ToArray());
-            if (prefix.Length == 0) return joined.Length == 0 ? "." : joined;
-            if (prefix == "/") return joined.Length == 0 ? "/" : "/" + joined;
-            if (prefix.EndsWith("/", StringComparison.Ordinal)) return joined.Length == 0 ? prefix : prefix + joined;
-            return joined.Length == 0 ? prefix : prefix + "/" + joined;
+            return CanonicalPath.Normalize(raw);
         }
 
         internal static string Join(string root, string relative)
         {
             string cleanRelative = PathGuard.NormalizeUnityPath(relative);
-            if (root == "/" || root.EndsWith("/", StringComparison.Ordinal)) return root + cleanRelative;
-            return root + "/" + cleanRelative;
+            return CanonicalPath.Join(root, cleanRelative);
         }
 
         internal static string Relative(string root, string target)
         {
-            string rootPrefix;
-            string rootRest;
-            string targetPrefix;
-            string targetRest;
-            SplitRoot(CleanCanonical(root), out rootPrefix, out rootRest);
-            SplitRoot(CleanCanonical(target), out targetPrefix, out targetRest);
-            if (!string.Equals(rootPrefix, targetPrefix, StringComparison.Ordinal)) throw new ArgumentException("Target is outside project root.");
-
-            string[] rootParts = SplitNonEmpty(rootRest);
-            string[] targetParts = SplitNonEmpty(targetRest);
-            if (targetParts.Length < rootParts.Length) throw new ArgumentException("Target is outside project root.");
-            for (int i = 0; i < rootParts.Length; i++)
-            {
-                if (!string.Equals(rootParts[i], targetParts[i], StringComparison.Ordinal)) throw new ArgumentException("Target is outside project root.");
-            }
-            if (targetParts.Length == rootParts.Length) return ".";
-
-            string[] rel = new string[targetParts.Length - rootParts.Length];
-            Array.Copy(targetParts, rootParts.Length, rel, 0, rel.Length);
-            return string.Join("/", rel);
+            return CanonicalPath.Relative(root, target);
         }
 
         private static void SplitRoot(string value, out string prefix, out string rest)
@@ -584,6 +531,121 @@ namespace CanonicalPath
 
     public static class CanonicalPath
     {
+        private sealed class GrammarRoot
+        {
+            public string Kind;
+            public string Prefix;
+            public string Rest;
+            public GrammarRoot(string kind, string prefix, string rest) { Kind = kind; Prefix = prefix; Rest = rest; }
+            public bool Windows { get { return Kind != "relative" && Kind != "posix"; } }
+        }
+
+        private static string MarkRelative(string value)
+        {
+            return value.Length >= 2 && IsAsciiLetter(value[0]) && value[1] == ':' ? "./" + value : value;
+        }
+
+        private static GrammarRoot ParseGrammar(string value, bool nativePosix = false)
+        {
+            if (string.IsNullOrEmpty(value)) throw PathError("ERR_EMPTY_PATH", "path is empty");
+            if (value.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "path contains NUL");
+            if (nativePosix)
+            {
+                if (value.StartsWith("//", StringComparison.Ordinal) && !value.StartsWith("///", StringComparison.Ordinal)) throw PathError("ERR_INVALID_PATH", "double-leading-slash POSIX paths are unsupported");
+                return value[0] == '/' ? new GrammarRoot("posix", "/", value.TrimStart('/')) : new GrammarRoot("relative", "", value);
+            }
+            GrammarRoot result;
+            if (value.StartsWith("//?/", StringComparison.Ordinal))
+            {
+                string tail = value.Substring(4);
+                if (HasDriveRoot(tail)) result = new GrammarRoot("extended-drive", "//?/" + char.ToLowerInvariant(tail[0]) + ":/", tail.Substring(3));
+                else if (tail.StartsWith("UNC/", StringComparison.Ordinal)) result = ParseUNCRoot(tail.Substring(4), "//?/UNC/", "extended-unc");
+                else throw PathError("ERR_INVALID_PATH", "unsupported or incomplete extended root");
+            }
+            else if (HasDriveRoot(value)) result = new GrammarRoot("drive", char.ToLowerInvariant(value[0]) + ":/", value.Substring(3));
+            else if (IsDriveRelative(value)) throw PathError("ERR_DRIVE_RELATIVE_PATH", "unmarked drive-relative path");
+            else if (value.StartsWith("//", StringComparison.Ordinal)) result = ParseUNCRoot(value.Substring(2), "//", "unc");
+            else if (value[0] == '/') result = new GrammarRoot("posix", "/", value.Substring(1));
+            else result = new GrammarRoot("relative", "", value);
+            if (result.Windows && value.IndexOf('\\') >= 0) throw PathError("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash");
+            return result;
+        }
+
+        private static GrammarRoot ParseUNCRoot(string value, string prefix, string kind)
+        {
+            string[] parts = value.Split('/');
+            if (parts.Length < 2 || parts[0].Length == 0 || parts[1].Length == 0 || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == "..") throw PathError("ERR_INVALID_PATH", "UNC requires a server and share");
+            return new GrammarRoot(kind, prefix + parts[0] + "/" + parts[1], string.Join("/", parts, 2, parts.Length - 2));
+        }
+
+        private static string CleanGrammar(string value, bool nativePosix = false, string escapeCode = "ERR_INVALID_PATH")
+        {
+            GrammarRoot parsed = ParseGrammar(value, nativePosix);
+            List<string> parts = new List<string>();
+            foreach (string part in parsed.Rest.Split('/'))
+            {
+                if (part.Length == 0 || part == ".") continue;
+                if (part == "..")
+                {
+                    if (parts.Count > 0) parts.RemoveAt(parts.Count - 1);
+                    else if (parsed.Prefix.Length == 0) throw PathError(escapeCode, "relative path escapes its root");
+                }
+                else parts.Add(part);
+            }
+            string joined = string.Join("/", parts.ToArray());
+            if (parsed.Prefix.Length == 0) return joined.Length == 0 ? "." : MarkRelative(joined);
+            return parsed.Prefix + (joined.Length == 0 || parsed.Prefix.EndsWith("/", StringComparison.Ordinal) ? "" : "/") + joined;
+        }
+
+        private static GrammarRoot RequireCanonical(string value, bool allowDriveCase = false)
+        {
+            GrammarRoot parsed = ParseGrammar(value);
+            bool driveCase = allowDriveCase && (parsed.Kind == "drive" || parsed.Kind == "extended-drive");
+            int separatorLength = parsed.Prefix.Length > 0 && parsed.Rest.Length > 0 && !parsed.Prefix.EndsWith("/", StringComparison.Ordinal) ? 1 : 0;
+            if ((!driveCase && !value.StartsWith(parsed.Prefix, StringComparison.Ordinal)) || value.Length != parsed.Prefix.Length + separatorLength + parsed.Rest.Length)
+                throw PathError("ERR_INVALID_PATH", "path must be lexically cleaned canonical data");
+            if (parsed.Rest.Length == 0 || (parsed.Kind == "relative" && value == ".")) return parsed;
+
+            // Validate components in place. Rebuilding a cleaned string here allocates
+            // arrays and component strings for every relative/join/serializer call.
+            int start = 0;
+            if (parsed.Kind == "relative" && value.StartsWith("./", StringComparison.Ordinal))
+            {
+                if (value.Length < 4 || !IsAsciiLetter(value[2]) || value[3] != ':')
+                    throw PathError("ERR_INVALID_PATH", "relative marker must disambiguate a drive-like component");
+                start = 2;
+            }
+            for (int index = start; index <= parsed.Rest.Length; index++)
+            {
+                if (index < parsed.Rest.Length && parsed.Rest[index] != '/') continue;
+                int length = index - start;
+                if (length == 0 || (parsed.Rest[start] == '.' && (length == 1 || (length == 2 && parsed.Rest[start + 1] == '.'))))
+                    throw PathError("ERR_INVALID_PATH", "path must be lexically cleaned canonical data");
+                start = index + 1;
+            }
+            return parsed;
+        }
+
+        private static string NormalizeMount(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "/mnt";
+            if (value == "/mnt" || value == "/") return value;
+            GrammarRoot parsed = ParseGrammar(value, true);
+            if (parsed.Kind != "posix") throw PathError("ERR_INVALID_PATH", "WSL mount root must be absolute POSIX");
+            return CleanGrammar(value, true);
+        }
+
+        private static void ValidateWindowsComponents(string value, CanonicalPathNormalizeOptions options, bool nativePosix = false)
+        {
+            if (!RejectADS(options) && !RejectDeviceNames(options)) return;
+            string rest = ParseGrammar(value, nativePosix).Rest;
+            if (RejectADS(options) && rest.IndexOf(':') >= 0) throw PathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+            if (RejectDeviceNames(options)) foreach (string part in rest.Split('/'))
+            {
+                if (IsReservedDeviceBase(SplitComponentBase(part).ToUpperInvariant())) throw PathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+            }
+        }
+
         public static string Normalize(string raw)
         {
             return Normalize(raw, null);
@@ -594,75 +656,89 @@ namespace CanonicalPath
             if (options != null && options.TrimOuterWhitespace && raw != null) raw = raw.Trim();
             if (string.IsNullOrEmpty(raw)) throw PathError("ERR_EMPTY_PATH", "path is empty");
             if (raw.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "path contains NUL");
-
+            CanonicalPathWSLOptions wsl = options == null ? null : options.WSL;
+            string mount = NormalizeMount(wsl == null ? null : wsl.MountRoot);
+            string host = OptionSourceHost(options);
             string value = raw;
-            if (HasUriScheme(value) || OptionSourceHost(options) == "vscode-file-uri") value = ParseFileUri(value, options);
-            if (!PreserveExtendedLength(options)) value = UnwrapWindowsExtendedPrefix(value);
-            value = value.Replace('\\', '/');
-
-            if (OptionTargetProfile(options) != "posix" && value.StartsWith("/", StringComparison.Ordinal) && !value.StartsWith("//", StringComparison.Ordinal))
+            if (host == "posix")
             {
-                if (options != null && options.WSL != null && options.WSL.Enabled && !IsUriWindowsDrivePath(value))
+                if (wsl != null && wsl.Enabled) throw PathError("ERR_INVALID_PATH", "native POSIX input cannot enable WSL mapping");
+                ValidateWindowsComponents(value, options, true);
+                value = CleanGrammar(value, true);
+            }
+            else if (host == "canonical")
+            {
+                ValidateWindowsComponents(value, options);
+                value = CleanGrammar(value);
+            }
+            else
+            {
+                bool uriInput = HasUriScheme(value);
+                if (uriInput || host == "vscode-file-uri") value = ParseFileUri(value, options);
+                bool wslCandidate = wsl != null && wsl.Enabled && value.StartsWith("/", StringComparison.Ordinal) && (!value.StartsWith("//", StringComparison.Ordinal) || value.StartsWith("///", StringComparison.Ordinal)) && !(uriInput && IsUriWindowsDrivePath(value));
+                if (wslCandidate)
                 {
-                    if (RejectADS(options) && HasWindowsADS(value)) throw PathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
-                    if (RejectDeviceNames(options) && HasReservedDeviceName(value)) throw PathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
-                    value = BridgeCanonicalPathService.CleanCanonical(value);
+                    ValidateWindowsComponents(value, options, true);
+                    value = CleanGrammar(value, true);
+                    string prefix = mount == "/" ? "/" : mount + "/";
+                    if (OptionTargetProfile(options) != "posix" && value.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        string tail = value.Substring(prefix.Length);
+                        if (tail.Length > 0 && IsAsciiLetter(tail[0]) && (tail.Length == 1 || tail[1] == '/'))
+                            value = char.ToLowerInvariant(tail[0]) + ":/" + (tail.Length == 1 ? "" : tail.Substring(2));
+                    }
+                    value = CleanGrammar(value);
                 }
-                string mapped = MapWSLDrive(value, options == null ? null : options.WSL);
-                if (mapped != null) value = mapped;
+                else
+                {
+                    value = value.Replace('\\', '/');
+                    if (IsUriWindowsDrivePath(value)) value = value.Substring(1);
+                    GrammarRoot parsed = ParseGrammar(value);
+                    if (!PreserveExtendedLength(options))
+                    {
+                        if (parsed.Kind == "extended-drive") value = value.Substring(4);
+                        else if (parsed.Kind == "extended-unc") value = "//" + value.Substring(8);
+                    }
+                    ValidateWindowsComponents(value, options);
+                    value = CleanGrammar(value);
+                }
             }
-            if (IsUriWindowsDrivePath(value)) value = value.Substring(1);
-            if (IsDriveRelative(value)) throw PathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
-            if (HasDriveRoot(value)) value = char.ToLowerInvariant(value[0]) + value.Substring(1);
-
-            if (RejectADS(options) && HasWindowsADS(value)) throw PathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
-            if (RejectDeviceNames(options) && HasReservedDeviceName(value)) throw PathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
-
-            string cleaned;
-            try
-            {
-                cleaned = BridgeCanonicalPathService.CleanCanonical(value);
-            }
-            catch (ArgumentException ex)
-            {
-                if (Contains(ex.Message, "NUL")) throw PathError("ERR_NUL_BYTE", ex.Message);
-                if (Contains(ex.Message, "empty")) throw PathError("ERR_EMPTY_PATH", ex.Message);
-                throw PathError("ERR_INVALID_PATH", ex.Message);
-            }
-            ValidateTargetProfile(cleaned, OptionTargetProfile(options));
-            return cleaned;
+            ValidateTargetProfile(value, OptionTargetProfile(options));
+            return value;
         }
 
         public static string Relative(string root, string target)
         {
-            try
-            {
-                return BridgeCanonicalPathService.Relative(root, target);
-            }
-            catch (ArgumentException ex)
-            {
-                if (Contains(ex.Message, "outside")) throw PathError("ERR_OUTSIDE_ROOT", ex.Message);
-                if (Contains(ex.Message, "NUL")) throw PathError("ERR_NUL_BYTE", ex.Message);
-                if (Contains(ex.Message, "empty")) throw PathError("ERR_EMPTY_PATH", ex.Message);
-                throw PathError("ERR_INVALID_PATH", ex.Message);
-            }
+            GrammarRoot left = RequireCanonical(root);
+            GrammarRoot right = RequireCanonical(target);
+            if (left.Prefix.Length == 0 || right.Prefix.Length == 0) throw PathError("ERR_INVALID_PATH", "relative operands must be absolute canonical paths");
+            string[] leftParts = left.Rest.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] rightParts = right.Rest.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (left.Prefix != right.Prefix || rightParts.Length < leftParts.Length) throw PathError("ERR_OUTSIDE_ROOT", "target is outside root");
+            for (int i = 0; i < leftParts.Length; i++) if (leftParts[i] != rightParts[i]) throw PathError("ERR_OUTSIDE_ROOT", "target is outside root");
+            return rightParts.Length == leftParts.Length ? "." : MarkRelative(string.Join("/", rightParts, leftParts.Length, rightParts.Length - leftParts.Length));
         }
 
         public static string Join(string root, string relative)
         {
-            string cleanRelative = NormalizeRelativePath(relative);
-            if (root == null || root.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "root contains NUL");
-            if (cleanRelative == ".") return root;
-            if (root == "/" || root.EndsWith("/", StringComparison.Ordinal)) return root + cleanRelative;
-            return root + "/" + cleanRelative;
+            GrammarRoot parsedRoot = RequireCanonical(root);
+            GrammarRoot parsedRelative = ParseGrammar(relative);
+            if (parsedRelative.Prefix.Length != 0) throw PathError("ERR_ABSOLUTE_PATH", "join argument must be relative");
+            if (parsedRoot.Windows && relative.IndexOf('\\') >= 0) throw PathError("ERR_INVALID_PATH", "relative data is not representable under a Windows root");
+            string clean = CleanGrammar(relative, false, "ERR_OUTSIDE_ROOT");
+            if (clean == ".") return root;
+            if (clean.StartsWith("./", StringComparison.Ordinal)) clean = clean.Substring(2);
+            string combined = root == "." ? clean : root.TrimEnd('/') + "/" + clean;
+            return CleanGrammar(combined, parsedRoot.Kind == "relative");
         }
 
         public static string Join(params string[] parts)
         {
-            if (parts == null || parts.Length == 0) throw new ArgumentException("At least one path part is required.", "parts");
+            if (parts == null || parts.Length == 0) throw PathError("ERR_EMPTY_PATH", "join requires at least one path part");
+            RequireCanonical(parts[0]);
             string value = parts[0];
-            for (int i = 1; i < parts.Length; i++) value = value.TrimEnd('/') + "/" + parts[i].TrimStart('/', '\\');
-            return BridgeCanonicalPathService.CleanCanonical(value);
+            for (int i = 1; i < parts.Length; i++) value = Join(value, parts[i]);
+            return value;
         }
 
         public static bool IsEqual(string left, string right, CanonicalPathNormalizeOptions options)
@@ -672,29 +748,26 @@ namespace CanonicalPath
 
         public static string ToWin32(string canonical)
         {
-            if (canonical == null || canonical.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "path contains NUL");
-            if (HasDriveRoot(canonical)) return char.ToUpperInvariant(canonical[0]) + ":\\" + canonical.Substring(3).Replace('/', '\\');
-            if (canonical.StartsWith("//", StringComparison.Ordinal)) return "\\\\" + canonical.Substring(2).Replace('/', '\\');
-            return canonical.Replace('/', '\\');
+            GrammarRoot parsed = RequireCanonical(canonical, true);
+            if (parsed.Kind == "posix" || canonical.IndexOf('\\') >= 0 || canonical.StartsWith("./", StringComparison.Ordinal)) throw PathError("ERR_INVALID_PATH", "canonical path is not representable as a Windows path");
+            string value = canonical;
+            if (parsed.Kind == "drive") value = char.ToUpperInvariant(value[0]) + value.Substring(1);
+            if (parsed.Kind == "extended-drive") value = value.Substring(0, 4) + char.ToUpperInvariant(value[4]) + value.Substring(5);
+            return value.Replace('/', '\\');
         }
 
         public static string ToWSL(string canonical, CanonicalPathWSLOptions options)
         {
-            if (canonical == null || canonical.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "path contains NUL");
-            if (!HasDriveRoot(canonical)) return canonical;
-            string mountRoot = options == null || string.IsNullOrEmpty(options.MountRoot) ? "/mnt" : options.MountRoot;
-            mountRoot = mountRoot.TrimEnd('/');
-            string drive = char.ToLowerInvariant(canonical[0]).ToString();
-            string rest = canonical.Substring(3);
-            if (rest.Length == 0) return mountRoot + "/" + drive;
-            return mountRoot + "/" + drive + "/" + rest;
+            string mount = NormalizeMount(options == null ? null : options.MountRoot);
+            GrammarRoot parsed = RequireCanonical(canonical, true);
+            if (parsed.Kind == "posix" || parsed.Kind == "relative") return canonical;
+            if (parsed.Kind != "drive") throw PathError("ERR_INVALID_PATH", "WSL serialization requires an ordinary drive");
+            return (mount == "/" ? "" : mount) + "/" + parsed.Prefix[0] + (parsed.Rest.Length == 0 ? "" : "/" + parsed.Rest);
         }
 
         public static string ToPOSIX(string canonical)
         {
-            if (canonical == null || canonical.IndexOf('\0') >= 0) throw PathError("ERR_NUL_BYTE", "path contains NUL");
-            if (HasDriveRoot(canonical)) throw PathError("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as toWSL");
-            if (canonical.IndexOf('\\') >= 0) throw PathError("ERR_INVALID_PATH", "canonical paths must use slash separators");
+            if (RequireCanonical(canonical).Windows) throw PathError("ERR_INVALID_PATH", "Windows root requires an explicit host mapping");
             return canonical;
         }
 
@@ -863,18 +936,11 @@ namespace CanonicalPath
 
         private static void ValidateTargetProfile(string value, string targetProfile)
         {
+            GrammarRoot parsed = ParseGrammar(value);
             if (string.IsNullOrEmpty(targetProfile) || targetProfile == "portable") return;
-            if (targetProfile == "posix")
-            {
-                if (HasDriveRoot(value) || value.StartsWith("//", StringComparison.Ordinal)) throw PathError("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots");
-                return;
-            }
-            if (targetProfile == "win32-drive")
-            {
-                if (value.StartsWith("/", StringComparison.Ordinal)) throw PathError("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots");
-                return;
-            }
-            throw PathError("ERR_INVALID_PATH", "unsupported targetProfile");
+            if (targetProfile == "posix" && !parsed.Windows) return;
+            if (targetProfile == "win32-drive" && (parsed.Kind == "relative" || parsed.Kind == "drive" || parsed.Kind == "extended-drive")) return;
+            throw PathError("ERR_INVALID_PATH", "canonical root is incompatible with target profile");
         }
 
         private static bool HasWindowsADS(string value)

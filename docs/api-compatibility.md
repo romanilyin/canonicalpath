@@ -10,6 +10,12 @@ All daemon endpoints require HTTPS plus chain/hostname verification and an out-o
 
 Go `canonicalfs` now rejects unsupported operating-system targets at every filesystem entrypoint with `ErrUnsupportedOperation`; see the platform list below. Daemon startup retains the first allowed-root handle and verifies that configured and resolved aliases identify that same object. An alias identifying a different object, or one that cannot be verified, makes construction fail. TypeScript fake-bridge scoped list/glob queries also enforce examined-entry and aggregate-work limits independently of the returned-entry cap. The [2026-10-24 security review](security-review-2026-10-24.md) records these changes and their verification status.
 
+## Canonical path identity changes
+
+The current [path contract](path-identity-contract.md) distinguishes native POSIX input (`sourceHost: "posix"`) from stored canonical representation (`sourceHost: "canonical"`). Native POSIX backslashes and drive-like components retain their identity; canonical operations and host serializers do not reinterpret that data as raw Windows paths or URI transport. Preserved extended drive/UNC roots and both directions of WSL `mountRoot` handling share explicit grammar rules across ports.
+
+Before reusing persisted keys or aliases, follow the [path identity migration guide](path-identity-migration.md). In particular, review keys previously made from native POSIX names containing backslashes or drive-like components, preserved extended roots, or non-default mount configurations. C callers and FFI bindings must also rebuild against the updated WSL options structure, whose explicit `mount_root_len` field changes its ABI. Raw filesystem and Unity payload validation remains strict.
+
 ## Stable For MVP
 
 - `spec/testdata/*_cases.json` shape: `version`, `cases`, `id`, `operation`, `raw`, `root`, `target`, `relative`, `expected`, `error`, and `options`.

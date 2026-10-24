@@ -22,79 +22,64 @@ String normalize(String raw, [Map<String, dynamic>? options]) {
   if (_optionBool(opts, 'trimOuterWhitespace', false)) raw = raw.trim();
   if (raw.isEmpty) throw _pathError('ERR_EMPTY_PATH', 'path is empty');
   if (_hasNul(raw)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-
-  var value = raw;
-  if (_hasUriScheme(value) ||
-      _option(opts, 'sourceHost') == 'vscode-file-uri') {
-    value = _parseFileUri(value, opts);
-  }
-  if (_hasNul(value)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-  if (!_optionBool(_nested(opts, 'windows'), 'preserveExtendedLength', false)) {
-    value = _unwrapWindowsExtendedPrefix(value);
-  }
-  value = value.replaceAll('\\', '/');
-
-  final targetProfile = _option(opts, 'targetProfile');
-  if (targetProfile != 'posix' && value.startsWith('/') && !value.startsWith('//')) {
-    if (_optionBool(_nested(opts, 'wsl'), 'enabled', false) && !_isUriWindowsDrivePath(value)) {
-      if (_optionBool(_nested(opts, 'windows'), 'rejectADS', false) && _hasWindowsAds(value)) throw _pathError('ERR_ALTERNATE_DATA_STREAM', 'Windows alternate data stream is not allowed');
-      if (_optionBool(_nested(opts, 'windows'), 'rejectDeviceNames', false) && _hasReservedDeviceName(value)) throw _pathError('ERR_RESERVED_DEVICE_NAME', 'Windows reserved device name is not allowed');
-      value = _cleanCanonical(value);
+  final source = _option(opts, 'sourceHost');
+  final wsl = _nested(opts, 'wsl');
+  final enabled = _optionBool(wsl, 'enabled', false);
+  final mount = _normalizeMountRoot(_option(wsl, 'mountRoot'));
+  final profile = _option(opts, 'targetProfile');
+  String cleaned;
+  if (source == 'posix') {
+    if (enabled) throw _pathError('ERR_INVALID_PATH', 'native POSIX input does not allow WSL mapping');
+    _checkWindowsPolicy(raw, opts, true);
+    cleaned = _cleanPosix(raw);
+  } else if (source == 'canonical') {
+    if (_isDriveRelative(raw)) throw _pathError('ERR_DRIVE_RELATIVE_PATH', 'Windows drive-relative paths are not canonical');
+    _checkWindowsPolicy(raw, opts);
+    cleaned = _cleanCanonical(raw);
+  } else {
+    var value = raw;
+    final parsedUri = _hasUriScheme(value);
+    if (parsedUri || source == 'vscode-file-uri') value = _parseFileUri(value, opts);
+    final uriDrive = parsedUri && _isUriWindowsDrivePath(value);
+    final posixCandidate = value.startsWith('/') && (!value.startsWith('//') || value.startsWith('///'));
+    if (enabled && posixCandidate && !uriDrive) {
+      _checkWindowsPolicy(value, opts);
+      cleaned = _cleanPosix(value);
+      if (profile != 'posix') cleaned = _mapWslDrive(cleaned, mount);
+    } else {
+      value = value.replaceAll('\\', '/');
+      if (value.startsWith('//?/')) {
+        _splitRoot(value);
+        if (!_optionBool(_nested(opts, 'windows'), 'preserveExtendedLength', false)) value = _unwrapWindowsExtendedPrefix(value);
+      }
+      if (_isUriWindowsDrivePath(value)) value = value.substring(1);
+      if (_isDriveRelative(value)) throw _pathError('ERR_DRIVE_RELATIVE_PATH', 'Windows drive-relative paths are not canonical');
+      _checkWindowsPolicy(value, opts);
+      cleaned = _cleanCanonical(value);
     }
-    value = _mapWslDrive(value, _nested(opts, 'wsl'));
   }
-  if (_isUriWindowsDrivePath(value)) value = value.substring(1);
-
-  if (_isDriveRelative(value)) {
-    throw _pathError(
-      'ERR_DRIVE_RELATIVE_PATH',
-      'Windows drive-relative paths are not canonical',
-    );
-  }
-  if (_hasDriveRoot(value)) value = value[0].toLowerCase() + value.substring(1);
-
-  final windows = _nested(opts, 'windows');
-  if (_optionBool(windows, 'rejectADS', false) && _hasWindowsAds(value)) {
-    throw _pathError(
-      'ERR_ALTERNATE_DATA_STREAM',
-      'Windows alternate data stream is not allowed',
-    );
-  }
-  if (_optionBool(windows, 'rejectDeviceNames', false) &&
-      _hasReservedDeviceName(value)) {
-    throw _pathError(
-      'ERR_RESERVED_DEVICE_NAME',
-      'Windows reserved device name is not allowed',
-    );
-  }
-
-  final cleaned = _cleanCanonical(value);
-  _validateTargetProfile(cleaned, targetProfile);
+  _validateTargetProfile(cleaned, profile);
   return cleaned;
 }
 
 String relative(String root, String target) {
-  final rootParts = _canonicalParts(root);
-  final targetParts = _canonicalParts(target);
-  if (rootParts.prefix != targetParts.prefix ||
-      targetParts.parts.length < rootParts.parts.length) {
-    throw _pathError('ERR_OUTSIDE_ROOT', 'target is outside root');
+  final a = _canonicalParts(root);
+  final b = _canonicalParts(target);
+  if (a.prefix != b.prefix || b.parts.length < a.parts.length) throw _pathError('ERR_OUTSIDE_ROOT', 'target is outside root');
+  for (var i = 0; i < a.parts.length; i++) {
+    if (a.parts[i] != b.parts[i]) throw _pathError('ERR_OUTSIDE_ROOT', 'target is outside root');
   }
-  for (var index = 0; index < rootParts.parts.length; index++) {
-    if (rootParts.parts[index] != targetParts.parts[index]) {
-      throw _pathError('ERR_OUTSIDE_ROOT', 'target is outside root');
-    }
-  }
-  if (targetParts.parts.length == rootParts.parts.length) return '.';
-  return targetParts.parts.sublist(rootParts.parts.length).join('/');
+  return _serialize('', b.parts.sublist(a.parts.length));
 }
 
 String join(String root, String relativePath) {
-  final cleanRelative = normalizeRelative(relativePath);
-  if (_hasNul(root)) throw _pathError('ERR_NUL_BYTE', 'root contains NUL');
-  if (cleanRelative == '.') return root;
-  if (root == '/' || root.endsWith('/')) return root + cleanRelative;
-  return '$root/$cleanRelative';
+  final parsed = _validatedCanonical(root);
+  if (relativePath.isEmpty) throw _pathError('ERR_EMPTY_PATH', 'relative path is empty');
+  if (_hasNul(relativePath)) throw _pathError('ERR_NUL_BYTE', 'relative path contains NUL');
+  if (relativePath.startsWith('/') || _hasDriveRoot(relativePath)) throw _pathError('ERR_ABSOLUTE_PATH', 'relative path must not be absolute');
+  if (_isDriveRelative(relativePath)) throw _pathError('ERR_DRIVE_RELATIVE_PATH', 'drive-relative path is not allowed');
+  if (parsed.prefix.isNotEmpty && parsed.prefix != '/' && relativePath.contains('\\')) throw _pathError('ERR_INVALID_PATH', 'relative data is not representable under a Windows root');
+  return _serialize(parsed.prefix, [...parsed.parts, ..._cleanParts('', relativePath, 'ERR_OUTSIDE_ROOT')]);
 }
 
 String joinParts(List<String> parts) {
@@ -150,42 +135,30 @@ bool isEqual(String left, String right, [Map<String, dynamic>? options]) {
 }
 
 String toWin32(String canonical) {
-  if (_hasNul(canonical)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-  if (_hasDriveRoot(canonical)) {
-    return '${canonical[0].toUpperCase()}:\\${canonical.substring(3).replaceAll('/', '\\')}';
+  final parsed = _validatedCanonical(canonical);
+  if (parsed.prefix == '/' || (parsed.prefix.isEmpty && (canonical.contains('\\') || _isMarkedRelative(canonical)))) throw _pathError('ERR_INVALID_PATH', 'canonical path has no lossless Windows representation');
+  var value = _serialize(parsed.prefix, parsed.parts);
+  if (parsed.prefix.startsWith('//?/') && _hasDriveRoot(parsed.prefix.substring(4))) {
+    value = '//?/${value[4].toUpperCase()}${value.substring(5)}';
+  } else if (_hasDriveRoot(parsed.prefix)) {
+    value = value[0].toUpperCase() + value.substring(1);
   }
-  if (canonical.startsWith('//'))
-    return '\\\\${canonical.substring(2).replaceAll('/', '\\')}';
-  return canonical.replaceAll('/', '\\');
+  return value.replaceAll('/', '\\');
 }
 
 String toWSL(String canonical, [Map<String, dynamic>? options]) {
-  final opts = options ?? const <String, dynamic>{};
-  if (_hasNul(canonical)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-  if (!_hasDriveRoot(canonical)) return canonical;
-  final mountRoot = _rstripSlashes(
-    (_option(opts, 'mountRoot') ?? '/mnt').toString(),
-  );
-  var result = '$mountRoot/${canonical[0].toLowerCase()}';
-  final rest = canonical.substring(3);
-  if (rest.isNotEmpty) result += '/$rest';
-  return result;
+  final mount = _normalizeMountRoot(_option(options ?? const <String, dynamic>{}, 'mountRoot'));
+  final parsed = _validatedCanonical(canonical);
+  if (parsed.prefix.startsWith('//')) throw _pathError('ERR_INVALID_PATH', 'UNC and preserved extended roots require an explicit host mapping');
+  if (!_hasDriveRoot(parsed.prefix)) return canonical;
+  final mountPrefix = mount == '/' ? '' : mount;
+  final tail = parsed.parts.isEmpty ? '' : '/${parsed.parts.join('/')}';
+  return '$mountPrefix/${parsed.prefix[0]}$tail';
 }
 
 String toPOSIX(String canonical) {
-  if (_hasNul(canonical)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-  if (_hasDriveRoot(canonical)) {
-    throw _pathError(
-      'ERR_INVALID_PATH',
-      'win32 drive paths require an explicit host mapping such as to_wsl',
-    );
-  }
-  if (canonical.contains('\\')) {
-    throw _pathError(
-      'ERR_INVALID_PATH',
-      'canonical paths must use slash separators',
-    );
-  }
+  final parsed = _validatedCanonical(canonical);
+  if (parsed.prefix.isNotEmpty && parsed.prefix != '/') throw _pathError('ERR_INVALID_PATH', 'Windows roots require an explicit host mapping');
   return canonical;
 }
 
@@ -285,9 +258,8 @@ bool _hasUriScheme(String value) {
 }
 
 String _unwrapWindowsExtendedPrefix(String value) {
-  if (value.startsWith('\\\\?\\UNC\\'))
-    return '\\\\${value.substring('\\\\?\\UNC\\'.length)}';
-  if (value.startsWith('\\\\?\\')) return value.substring('\\\\?\\'.length);
+  if (value.startsWith('//?/UNC/')) return '//${value.substring(8)}';
+  if (value.startsWith('//?/')) return value.substring(4);
   return value;
 }
 
@@ -397,128 +369,85 @@ String _parseFileUri(String uri, Map<String, dynamic> options) {
   return uri;
 }
 
-String _mapWslDrive(String value, Map<String, dynamic> options) {
-  if (!_optionBool(options, 'enabled', false)) return value;
-  final mountRoot = _rstripSlashes(
-    (_option(options, 'mountRoot') ?? '/mnt').toString(),
-  );
-  final prefix = '${mountRoot.replaceAll(RegExp(r"/+"), "/")}/';
+String _mapWslDrive(String value, String mountRoot) {
+  final prefix = mountRoot == '/' ? '/' : '$mountRoot/';
   if (!value.startsWith(prefix)) return value;
   final rest = value.substring(prefix.length);
-  if (rest.isEmpty || !_isAsciiLetter(rest[0])) return value;
-  if (rest.length > 1 && rest[1] != '/') return value;
-  if (rest.length == 1) return '${rest[0].toLowerCase()}:/';
-  return '${rest[0].toLowerCase()}:/${rest.substring(2)}';
+  if (rest.isEmpty || !_isAsciiLetter(rest[0]) || (rest.length > 1 && rest[1] != '/')) return value;
+  final tail = rest.length > 1 ? rest.substring(2) : '';
+  if (tail.contains('\\')) throw _pathError('ERR_INVALID_PATH', 'literal backslash cannot be mapped to a Windows component');
+  return '${rest[0].toLowerCase()}:/$tail';
 }
 
 String _rstripSlashes(String value) => value.replaceAll(RegExp(r'/+$'), '');
 
 _Root _splitRoot(String value) {
-  if (_hasDriveRoot(value))
-    return _Root(value.substring(0, 3), value.substring(3));
-  if (value.startsWith('//')) {
-    final rest = value.substring(2);
-    final first = rest.indexOf('/');
-    if (first <= 0)
-      throw _pathError(
-        'ERR_INVALID_PATH',
-        'UNC path requires server and share',
-      );
-    final server = rest.substring(0, first);
-    final afterFirst = rest.substring(first + 1);
-    final second = afterFirst.indexOf('/');
-    final share = second >= 0 ? afterFirst.substring(0, second) : afterFirst;
-    final tail = second >= 0 ? afterFirst.substring(second + 1) : '';
-    if (share.isEmpty)
-      throw _pathError(
-        'ERR_INVALID_PATH',
-        'UNC path requires server and share',
-      );
-    return _Root('//$server/$share', tail);
+  if (_hasNul(value)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
+  _Root root;
+  if (value.startsWith('//?/')) {
+    final inner = value.substring(4);
+    if (_hasDriveRoot(inner)) {
+      root = _Root('//?/${inner[0].toLowerCase()}${inner.substring(1, 3)}', inner.substring(3));
+    } else if (inner.startsWith('UNC/')) {
+      final unc = _splitUnc(inner.substring(4));
+      root = _Root('//?/UNC/${unc.prefix}', unc.rest);
+    } else {
+      throw _pathError('ERR_INVALID_PATH', 'unsupported extended Windows root');
+    }
+  } else if (_hasDriveRoot(value)) {
+    root = _Root(value[0].toLowerCase() + value.substring(1, 3), value.substring(3));
+  } else if (_isDriveRelative(value)) {
+    throw _pathError('ERR_DRIVE_RELATIVE_PATH', 'Windows drive-relative paths are not canonical');
+  } else if (value.startsWith('///')) {
+    var start = 0;
+    while (start < value.length && value[start] == '/') start++;
+    return _Root('/', value.substring(start));
+  } else if (value.startsWith('//')) {
+    final unc = _splitUnc(value.substring(2));
+    root = _Root('//${unc.prefix}', unc.rest);
+  } else if (value.startsWith('/')) {
+    return _Root('/', value.substring(1));
+  } else {
+    return _Root('', value);
   }
-  if (value.startsWith('/')) return _Root('/', value.substring(1));
-  return _Root('', value);
+  if (value.contains('\\')) throw _pathError('ERR_INVALID_PATH', 'Windows canonical components cannot contain backslash');
+  return root;
 }
 
 String _cleanCanonical(String value) {
   if (value.isEmpty) throw _pathError('ERR_EMPTY_PATH', 'path is empty');
   final root = _splitRoot(value);
-  final parts = <String>[];
-  for (final part in root.rest.split('/')) {
-    if (part.isEmpty || part == '.') continue;
-    if (part == '..') {
-      if (parts.isNotEmpty) {
-        parts.removeLast();
-        continue;
-      }
-      if (root.prefix.isNotEmpty) continue;
-      throw _pathError(
-        'ERR_INVALID_PATH',
-        'relative path escapes above its root',
-      );
-    }
-    parts.add(part);
-  }
-
-  final joined = parts.join('/');
-  if (root.prefix.isEmpty) return joined.isEmpty ? '.' : joined;
-  if (root.prefix == '/') return joined.isEmpty ? '/' : '/$joined';
-  if (root.prefix.endsWith('/'))
-    return joined.isEmpty ? root.prefix : '${root.prefix}$joined';
-  return joined.isEmpty ? root.prefix : '${root.prefix}/$joined';
+  return _serialize(root.prefix, _cleanParts(root.prefix, root.rest));
 }
 
-void _validateTargetProfile(String value, Object? targetProfile) {
-  if (targetProfile == null || targetProfile == 'portable') return;
-  if (targetProfile == 'posix') {
-    if (_hasDriveRoot(value) || value.startsWith('//')) {
-      throw _pathError(
-        'ERR_INVALID_PATH',
-        'targetProfile posix does not allow Windows drive or UNC roots',
-      );
-    }
-    return;
-  }
-  if (targetProfile == 'win32-drive') {
-    if (value.startsWith('/')) {
-      throw _pathError(
-        'ERR_INVALID_PATH',
-        'targetProfile win32-drive does not allow POSIX or UNC roots',
-      );
-    }
-    return;
-  }
-  throw _pathError('ERR_INVALID_PATH', 'unsupported targetProfile');
+void _validateTargetProfile(String value, Object? profile) {
+  final prefix = _splitRoot(value).prefix;
+  if (profile == null || profile == 'portable') return;
+  final drive = _hasDriveRoot(prefix) || (prefix.startsWith('//?/') && _hasDriveRoot(prefix.substring(4)));
+  if (profile == 'posix' && (prefix.isEmpty || prefix == '/')) return;
+  if (profile == 'win32-drive' && (prefix.isEmpty || drive)) return;
+  throw _pathError('ERR_INVALID_PATH', 'path root is not allowed by targetProfile');
 }
 
 _CanonicalParts _canonicalParts(String value) {
-  if (_hasNul(value)) throw _pathError('ERR_NUL_BYTE', 'path contains NUL');
-  final root = _splitRoot(value);
-  if (root.prefix.isEmpty)
-    throw _pathError('ERR_INVALID_PATH', 'path must be canonical absolute');
-  final parts = root.rest.split('/').where((part) => part.isNotEmpty).toList();
-  if (parts.any((part) => part == '.' || part == '..')) {
-    throw _pathError('ERR_INVALID_PATH', 'path is not lexically cleaned');
-  }
-  return _CanonicalParts(root.prefix, parts);
+  final parsed = _validatedCanonical(value);
+  if (parsed.prefix.isEmpty) throw _pathError('ERR_INVALID_PATH', 'path must be canonical absolute');
+  return parsed;
 }
 
 bool _hasWindowsAds(String value) {
-  var start = _hasDriveRoot(value) ? 3 : 0;
-  if (value.startsWith('//')) {
-    try {
-      start = _splitRoot(value).prefix.length;
-    } on CanonicalPathError catch (_) {
-      start = 0;
-    }
+  try {
+    final parsed = _splitRoot(value);
+    return (parsed.prefix.isNotEmpty && parsed.prefix != '/' ? parsed.rest : value).contains(':');
+  } on CanonicalPathError catch (_) {
+    return value.contains(':');
   }
-  return value.substring(start).contains(':');
 }
 
-bool _hasReservedDeviceName(String value) {
+bool _hasReservedDeviceName(String value, [bool nativePosix = false]) {
   String rest;
   try {
-    rest = _splitRoot(value).rest;
+    rest = nativePosix ? value : _splitRoot(value).rest;
   } on CanonicalPathError catch (_) {
     return false;
   }
@@ -726,4 +655,74 @@ class _CanonicalParts {
   final List<String> parts;
 
   const _CanonicalParts(this.prefix, this.parts);
+}
+
+
+bool _driveComponent(String value) => value.length >= 2 && _isAsciiLetter(value[0]) && value[1] == ':';
+bool _isMarkedRelative(String value) => value.startsWith('./') && _driveComponent(value.substring(2));
+
+_Root _splitUnc(String value) {
+  final first = value.indexOf('/');
+  if (first <= 0) throw _pathError('ERR_INVALID_PATH', 'UNC path requires a valid server and share');
+  final second = value.indexOf('/', first + 1);
+  final server = value.substring(0, first);
+  final share = second < 0 ? value.substring(first + 1) : value.substring(first + 1, second);
+  if (share.isEmpty || server == '.' || server == '..' || share == '.' || share == '..') throw _pathError('ERR_INVALID_PATH', 'UNC path requires a valid server and share');
+  return _Root('$server/$share', second < 0 ? '' : value.substring(second + 1));
+}
+
+String _serialize(String prefix, List<String> parts) {
+  final joined = parts.join('/');
+  if (prefix.isEmpty) {
+    if (parts.isEmpty) return '.';
+    return '${_driveComponent(parts.first) ? './' : ''}$joined';
+  }
+  if (joined.isEmpty) return prefix;
+  return '$prefix${prefix.endsWith('/') ? '' : '/'}$joined';
+}
+
+List<String> _cleanParts(String prefix, String rest, [String escapeCode = 'ERR_INVALID_PATH']) {
+  final parts = <String>[];
+  for (final part in rest.split('/')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      if (parts.isNotEmpty) {
+        parts.removeLast();
+      } else if (prefix.isEmpty) {
+        throw _pathError(escapeCode, 'relative path escapes above its root');
+      }
+    } else {
+      parts.add(part);
+    }
+  }
+  return parts;
+}
+
+String _cleanPosix(String value) {
+  if (value.startsWith('//') && !value.startsWith('///')) throw _pathError('ERR_INVALID_PATH', 'double-leading-slash POSIX roots are unsupported');
+  final prefix = value.startsWith('/') ? '/' : '';
+  return _serialize(prefix, _cleanParts(prefix, value));
+}
+
+String _normalizeMountRoot(Object? raw) {
+  final value = raw == null || raw == '' ? '/mnt' : raw.toString();
+  if (_hasNul(value)) throw _pathError('ERR_NUL_BYTE', 'mount root contains NUL');
+  if (!value.startsWith('/')) throw _pathError('ERR_INVALID_PATH', 'mount root must be absolute POSIX');
+  return _cleanPosix(value);
+}
+
+_CanonicalParts _validatedCanonical(String value) {
+  if (value.isEmpty) throw _pathError('ERR_EMPTY_PATH', 'path is empty');
+  final root = _splitRoot(value);
+  if (root.prefix.isEmpty && value == '.') return const _CanonicalParts('', []);
+  final rest = root.prefix.isEmpty && _isMarkedRelative(root.rest) ? root.rest.substring(2) : root.rest;
+  final parts = rest.isEmpty ? <String>[] : rest.split('/');
+  if (parts.any((part) => part.isEmpty || part == '.' || part == '..')) throw _pathError('ERR_INVALID_PATH', 'path is not lexically cleaned');
+  return _CanonicalParts(root.prefix, parts);
+}
+
+void _checkWindowsPolicy(String value, Map<String, dynamic> options, [bool nativePosix = false]) {
+  final windows = _nested(options, 'windows');
+  if (_optionBool(windows, 'rejectADS', false) && (nativePosix ? value.contains(':') : _hasWindowsAds(value))) throw _pathError('ERR_ALTERNATE_DATA_STREAM', 'Windows alternate data stream is not allowed');
+  if (_optionBool(windows, 'rejectDeviceNames', false) && _hasReservedDeviceName(value, nativePosix)) throw _pathError('ERR_RESERVED_DEVICE_NAME', 'Windows reserved device name is not allowed');
 }

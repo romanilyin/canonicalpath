@@ -103,6 +103,360 @@
       "operation": "to-posix",
       "raw": "c:/Users/Alice/Repo",
       "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-posix-literal-backslash",
+      "operation": "normalize",
+      "raw": "/repo/a\\b",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "/repo/a\\b"
+    },
+    {
+      "id": "cp1-posix-backslash-does-not-form-parent",
+      "operation": "normalize",
+      "raw": "/repo/..\\outside",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "/repo/..\\outside"
+    },
+    {
+      "id": "cp1-posix-drive-like-absolute-component",
+      "operation": "normalize",
+      "raw": "/C:/repo",
+      "options": {
+        "sourceHost": "posix",
+        "targetProfile": "posix"
+      },
+      "expected": "/C:/repo"
+    },
+    {
+      "id": "cp1-posix-drive-like-relative-root",
+      "operation": "normalize",
+      "raw": "C:/repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "./C:/repo"
+    },
+    {
+      "id": "cp1-posix-drive-like-relative-component",
+      "operation": "normalize",
+      "raw": "C:foo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-posix-marked-relative-idempotent",
+      "operation": "normalize",
+      "raw": "./C:/repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "./C:/repo"
+    },
+    {
+      "id": "cp1-posix-marker-after-dot-cleanup",
+      "operation": "normalize",
+      "raw": "x/../C:foo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-posix-drive-component-can-be-popped",
+      "operation": "normalize",
+      "raw": "C:/../repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "repo"
+    },
+    {
+      "id": "cp1-posix-drive-like-relative-backslash",
+      "operation": "normalize",
+      "raw": "C:/a\\b",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "./C:/a\\b"
+    },
+    {
+      "id": "cp1-posix-double-leading-slash-rejected",
+      "operation": "normalize",
+      "raw": "//server/share",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-posix-double-slash-root-rejected",
+      "operation": "normalize",
+      "raw": "//",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-posix-triple-leading-slash",
+      "operation": "normalize",
+      "raw": "///C:/repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "/C:/repo"
+    },
+    {
+      "id": "cp1-posix-relative-leading-backslash",
+      "operation": "normalize",
+      "raw": "\\repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "\\repo"
+    },
+    {
+      "id": "cp1-posix-nul-rejected",
+      "operation": "normalize",
+      "raw": "/repo/a\u0000b",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "error": "ERR_NUL_BYTE"
+    },
+    {
+      "id": "cp1-canonical-literal-backslash",
+      "operation": "normalize",
+      "raw": "/repo/a\\b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "/repo/a\\b"
+    },
+    {
+      "id": "cp1-canonical-posix-drive-component",
+      "operation": "normalize",
+      "raw": "/C:/repo",
+      "options": {
+        "sourceHost": "canonical",
+        "targetProfile": "posix"
+      },
+      "expected": "/C:/repo"
+    },
+    {
+      "id": "cp1-canonical-marker-retained",
+      "operation": "normalize",
+      "raw": "./C:foo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-canonical-marker-cleaned-once",
+      "operation": "normalize",
+      "raw": "././C:/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "./C:/repo"
+    },
+    {
+      "id": "cp1-canonical-redundant-marker-removed",
+      "operation": "normalize",
+      "raw": "./safe",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "safe"
+    },
+    {
+      "id": "cp1-canonical-dot-cleanup",
+      "operation": "normalize",
+      "raw": "/repo/a/../b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "/repo/b"
+    },
+    {
+      "id": "cp1-canonical-drive-letter-lowercase",
+      "operation": "normalize",
+      "raw": "C:/Repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "c:/Repo"
+    },
+    {
+      "id": "cp1-canonical-drive-relative-rejected",
+      "operation": "normalize",
+      "raw": "C:foo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "cp1-canonical-window-tail-backslash-rejected",
+      "operation": "normalize",
+      "raw": "c:/a\\b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-auto-marker-after-dot-cleanup",
+      "operation": "normalize",
+      "raw": "src/../C:foo",
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-to-posix-literal-backslash",
+      "operation": "to-posix",
+      "raw": "/repo/a\\b",
+      "expected": "/repo/a\\b"
+    },
+    {
+      "id": "cp1-to-posix-drive-component",
+      "operation": "to-posix",
+      "raw": "/C:/repo",
+      "expected": "/C:/repo"
+    },
+    {
+      "id": "cp1-to-posix-marked-relative",
+      "operation": "to-posix",
+      "raw": "./C:/repo",
+      "expected": "./C:/repo"
+    },
+    {
+      "id": "cp1-to-posix-relative-backslash",
+      "operation": "to-posix",
+      "raw": "a\\b",
+      "expected": "a\\b"
+    },
+    {
+      "id": "cp1-to-posix-unc-rejected",
+      "operation": "to-posix",
+      "raw": "//server/share/repo",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-to-win32-posix-rejected",
+      "operation": "to-win32",
+      "raw": "/repo/file",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-to-win32-literal-backslash-rejected",
+      "operation": "to-win32",
+      "raw": "a\\b",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-to-win32-marked-relative-rejected",
+      "operation": "to-win32",
+      "raw": "./C:/repo",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-to-win32-ordinary-relative",
+      "operation": "to-win32",
+      "raw": "src/file",
+      "expected": "src\\file"
+    },
+    {
+      "id": "cp1-posix-explicit-ads-policy",
+      "operation": "normalize",
+      "raw": "/C:/repo",
+      "options": {
+        "sourceHost": "posix",
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "cp1-posix-relative-explicit-ads-policy",
+      "operation": "normalize",
+      "raw": "C:/repo",
+      "options": {
+        "sourceHost": "posix",
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "cp1-posix-ads-policy-before-cleanup",
+      "operation": "normalize",
+      "raw": "/repo/file:stream/../safe",
+      "options": {
+        "sourceHost": "posix",
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "cp1-posix-device-policy-before-cleanup",
+      "operation": "normalize",
+      "raw": "/repo/CON/../safe",
+      "options": {
+        "sourceHost": "posix",
+        "windows": {
+          "rejectDeviceNames": true
+        }
+      },
+      "error": "ERR_RESERVED_DEVICE_NAME"
+    },
+    {
+      "id": "cp1-posix-device-default-literal-cleanup",
+      "operation": "normalize",
+      "raw": "/repo/CON/../safe",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "/repo/safe"
+    },
+    {
+      "id": "cp1-join-parent-cleaned-empty",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "a/..",
+      "expected": "/repo"
+    },
+    {
+      "id": "cp1-join-dot-cleaned-empty",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "./",
+      "expected": "/repo"
+    },
+    {
+      "id": "cp1-join-empty-input-still-invalid",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "",
+      "error": "ERR_EMPTY_PATH"
+    },
+    {
+      "id": "cp1-join-win-backslash-before-cleanup",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": "a\\b/../file",
+      "error": "ERR_INVALID_PATH"
     }
   ]
 }

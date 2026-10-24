@@ -2,43 +2,37 @@ package canonicalpath
 
 import "strings"
 
-// ToWin32 serializes a canonical path using Windows separators.
+// ToWin32 serializes a representable canonical path using Windows separators.
 func ToWin32(path Path) (string, error) {
 	value := string(path)
-	if strings.ContainsRune(value, '\x00') {
-		return "", newError(ErrNULByte, "path contains NUL")
+	prefix, _, err := parseCleanCanonical(value)
+	if err != nil {
+		return "", err
+	}
+	if prefix == "/" || strings.ContainsRune(value, '\\') || hasRelativeMarker(value) {
+		return "", newError(ErrInvalidPath, "canonical path has no lossless Windows representation")
 	}
 	if hasDriveRoot(value) {
-		drive := strings.ToUpper(value[:1])
-		return drive + ":\\" + strings.ReplaceAll(value[3:], "/", "\\"), nil
-	}
-	if strings.HasPrefix(value, "//") {
-		return "\\\\" + strings.ReplaceAll(value[2:], "/", "\\"), nil
+		value = strings.ToUpper(value[:1]) + value[1:]
+	} else if strings.HasPrefix(value, "//?/") && hasDriveRoot(value[4:]) {
+		value = value[:4] + strings.ToUpper(value[4:5]) + value[5:]
 	}
 	return strings.ReplaceAll(value, "/", "\\"), nil
 }
 
 func unwrapWindowsExtendedPrefix(value string) string {
-	if strings.HasPrefix(value, "\\\\?\\UNC\\") {
-		return "\\\\" + strings.TrimPrefix(value, "\\\\?\\UNC\\")
+	if strings.HasPrefix(value, "//?/UNC/") {
+		return "//" + value[8:]
 	}
-	if strings.HasPrefix(value, "\\\\?\\") {
-		return strings.TrimPrefix(value, "\\\\?\\")
+	if strings.HasPrefix(value, "//?/") {
+		return value[4:]
 	}
 	return value
 }
 
 func hasWindowsADS(value string) bool {
-	start := 0
-	if hasDriveRoot(value) {
-		start = 3
-	} else if strings.HasPrefix(value, "//") {
-		parts := strings.Split(value[2:], "/")
-		if len(parts) >= 2 {
-			start = len("//" + parts[0] + "/" + parts[1])
-		}
-	}
-	return strings.Contains(value[start:], ":")
+	_, rest, err := splitRoot(value)
+	return err == nil && strings.ContainsRune(rest, ':')
 }
 
 func hasReservedDeviceName(value string) bool {

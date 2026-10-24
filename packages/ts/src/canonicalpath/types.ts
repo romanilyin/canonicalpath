@@ -1,7 +1,7 @@
 export type CanonicalPath = string & { readonly __canonicalPath: unique symbol };
 export type CanonicalRelativePath = string & { readonly __canonicalRelativePath: unique symbol };
 
-export type HostKind = "posix" | "win32" | "wsl" | "vscode-file-uri" | "dev-container" | "ssh-remote";
+export type HostKind = "posix" | "win32" | "wsl" | "vscode-file-uri" | "dev-container" | "ssh-remote" | "canonical";
 
 export interface WSLOptions {
   enabled?: boolean;

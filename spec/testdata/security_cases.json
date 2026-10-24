@@ -96,6 +96,153 @@
       "root": "c:/repo",
       "relative": "d:/escape.txt",
       "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "cp1-relative-literal-backslash",
+      "operation": "relative",
+      "root": "/repo",
+      "target": "/repo/a\\b",
+      "expected": "a\\b"
+    },
+    {
+      "id": "cp1-join-literal-backslash",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "a\\b",
+      "expected": "/repo/a\\b"
+    },
+    {
+      "id": "cp1-relative-drive-like-component-marker",
+      "operation": "relative",
+      "root": "/repo",
+      "target": "/repo/C:foo",
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-join-drive-like-marker-embedded",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "./C:foo",
+      "expected": "/repo/C:foo"
+    },
+    {
+      "id": "cp1-relative-drive-like-directory-marker",
+      "operation": "relative",
+      "root": "/repo",
+      "target": "/repo/C:/nested",
+      "expected": "./C:/nested"
+    },
+    {
+      "id": "cp1-join-drive-like-directory-marker",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "./C:/nested",
+      "expected": "/repo/C:/nested"
+    },
+    {
+      "id": "cp1-relative-backslash-not-directory-separator",
+      "operation": "relative",
+      "root": "/repo/a\\b",
+      "target": "/repo/a/b/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "cp1-join-window-literal-backslash-rejected",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": "a\\b",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-join-window-marker-embedded",
+      "operation": "join",
+      "root": "c:/repo",
+      "relative": "./C:foo",
+      "expected": "c:/repo/C:foo"
+    },
+    {
+      "id": "cp1-join-unmarked-drive-still-absolute",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "c:/escape",
+      "error": "ERR_ABSOLUTE_PATH"
+    },
+    {
+      "id": "cp1-join-traversal-still-rejected",
+      "operation": "join",
+      "root": "/repo",
+      "relative": "a/../../escape",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "cp1-join-relative-root-marker-retained",
+      "operation": "join",
+      "root": "./C:/repo",
+      "relative": "file",
+      "expected": "./C:/repo/file"
+    },
+    {
+      "id": "cp1-join-dot-root-marker",
+      "operation": "join",
+      "root": ".",
+      "relative": "./C:foo",
+      "expected": "./C:foo"
+    },
+    {
+      "id": "cp1-join-dot-root-normal-relative",
+      "operation": "join",
+      "root": ".",
+      "relative": "safe",
+      "expected": "safe"
+    },
+    {
+      "id": "cp2-relative-preserved-unc",
+      "operation": "relative",
+      "root": "//?/UNC/server/share",
+      "target": "//?/UNC/server/share/repo/file",
+      "expected": "repo/file"
+    },
+    {
+      "id": "cp2-join-preserved-unc",
+      "operation": "join",
+      "root": "//?/UNC/server/share",
+      "relative": "repo/file",
+      "expected": "//?/UNC/server/share/repo/file"
+    },
+    {
+      "id": "cp2-relative-preserved-drive",
+      "operation": "relative",
+      "root": "//?/c:/repo",
+      "target": "//?/c:/repo/file",
+      "expected": "file"
+    },
+    {
+      "id": "cp2-join-preserved-drive",
+      "operation": "join",
+      "root": "//?/c:/repo",
+      "relative": "file",
+      "expected": "//?/c:/repo/file"
+    },
+    {
+      "id": "cp2-relative-preserved-unc-share-mismatch",
+      "operation": "relative",
+      "root": "//?/UNC/server/share",
+      "target": "//?/UNC/server/other/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "cp2-relative-prefix-preservation-mismatch",
+      "operation": "relative",
+      "root": "//?/c:/repo",
+      "target": "c:/repo/file",
+      "error": "ERR_OUTSIDE_ROOT"
+    },
+    {
+      "id": "cp1-relative-window-drive-like-component-marker",
+      "operation": "relative",
+      "root": "c:/repo",
+      "target": "c:/repo/C:foo",
+      "expected": "./C:foo"
     }
   ]
 }

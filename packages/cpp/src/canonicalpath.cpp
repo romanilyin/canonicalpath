@@ -86,10 +86,8 @@ bool has_uri_scheme(std::string_view value) {
 }
 
 std::string unwrap_windows_extended_prefix(std::string_view value) {
-  if (starts_with(value, "\\\\?\\UNC\\")) {
-    return std::string("\\\\") + std::string(value.substr(8));
-  }
-  if (starts_with(value, "\\\\?\\")) return std::string(value.substr(4));
+  if (starts_with(value, "//?/UNC/")) return "//" + std::string(value.substr(8));
+  if (starts_with(value, "//?/")) return std::string(value.substr(4));
   return std::string(value);
 }
 
@@ -194,48 +192,78 @@ std::string parse_file_uri(std::string_view uri, const NormalizeOptions &options
   return std::string(uri);
 }
 
-std::string map_wsl_drive(std::string_view value, const WslOptions &options, bool *mapped) {
-  *mapped = false;
-  if (!options.enabled) return std::string(value);
-  std::string mount_root = trim_right_slashes(options.mount_root.empty() ? std::string("/mnt") : options.mount_root);
-  std::string prefix;
-  prefix.reserve(mount_root.size() + 1);
-  for (char ch : mount_root) { if (ch != '/' || prefix.empty() || prefix.back() != '/') prefix.push_back(ch); }
-  prefix += "/";
+std::string map_wsl_drive(std::string_view value, const WslOptions &options) {
+  const std::string prefix = trim_right_slashes(options.mount_root) + "/";
   if (!starts_with(value, prefix)) return std::string(value);
-
   std::string_view rest = value.substr(prefix.size());
-  if (rest.empty() || !is_ascii_letter(rest[0])) return std::string(value);
-  if (rest.size() > 1 && rest[1] != '/') return std::string(value);
-
-  *mapped = true;
-  std::string result;
-  result.push_back(to_lower_ascii(rest[0]));
+  if (rest.empty() || !is_ascii_letter(rest[0]) || (rest.size() > 1 && rest[1] != '/')) return std::string(value);
+  std::string result(1, to_lower_ascii(rest[0]));
   result += ":/";
-  if (rest.size() > 1) result += std::string(rest.substr(2));
+  if (rest.size() > 1) result += rest.substr(2);
   return result;
 }
 
-SplitRoot split_root(std::string_view value) {
-  if (has_drive_root(value)) return {std::string(value.substr(0, 3)), std::string(value.substr(3))};
-  if (starts_with(value, "//")) {
-    std::string_view rest = value.substr(2);
-    std::size_t first = rest.find('/');
-    if (first == std::string_view::npos || first == 0) {
-      throw path_error("ERR_INVALID_PATH", "UNC path requires server and share");
-    }
-    std::size_t second = rest.find('/', first + 1);
-    std::string_view server = rest.substr(0, first);
-    std::string_view share = second == std::string_view::npos
-                                 ? rest.substr(first + 1)
-                                 : rest.substr(first + 1, second - first - 1);
-    if (share.empty()) throw path_error("ERR_INVALID_PATH", "UNC path requires server and share");
-    std::string prefix = "//" + std::string(server) + "/" + std::string(share);
-    std::string tail = second == std::string_view::npos ? "" : std::string(rest.substr(second + 1));
-    return {prefix, tail};
+bool is_windows_root(std::string_view prefix) { return !prefix.empty() && prefix != "/"; }
+bool is_drive_root(std::string_view prefix) {
+  return has_drive_root(prefix) || (starts_with(prefix, "//?/") && has_drive_root(prefix.substr(4)));
+}
+
+SplitRoot split_unc_root(std::string_view value, std::string_view leader) {
+  std::string_view rest = value.substr(leader.size());
+  std::size_t first = rest.find('/');
+  if (first == std::string_view::npos) throw path_error("ERR_INVALID_PATH", "UNC root requires server and share");
+  std::size_t second = rest.find('/', first + 1);
+  std::string_view server = rest.substr(0, first);
+  std::string_view share = second == std::string_view::npos ? rest.substr(first + 1) : rest.substr(first + 1, second - first - 1);
+  if (server.empty() || share.empty() || server == "." || server == ".." || share == "." || share == "..") {
+    throw path_error("ERR_INVALID_PATH", "UNC root requires non-dot server and share components");
   }
-  if (starts_with(value, "/")) return {"/", std::string(value.substr(1))};
-  return {"", std::string(value)};
+  return {std::string(leader) + std::string(server) + "/" + std::string(share), second == std::string_view::npos ? "" : std::string(rest.substr(second + 1))};
+}
+
+SplitRoot split_root(std::string_view value) {
+  SplitRoot result;
+  if (starts_with(value, "//?/")) {
+    if (has_drive_root(value.substr(4))) result = {std::string(value.substr(0, 7)), std::string(value.substr(7))};
+    else if (starts_with(value.substr(4), "UNC/")) result = split_unc_root(value, "//?/UNC/");
+    else throw path_error("ERR_INVALID_PATH", "extended root requires an absolute drive or UNC server and share");
+  } else if (has_drive_root(value)) {
+    result = {std::string(value.substr(0, 3)), std::string(value.substr(3))};
+  } else if (starts_with(value, "//")) {
+    result = split_unc_root(value, "//");
+  } else if (starts_with(value, "/")) {
+    result = {"/", std::string(value.substr(1))};
+  } else if (is_drive_relative(value)) {
+    throw path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
+  } else {
+    result = {"", std::string(value)};
+  }
+  if (is_windows_root(result.prefix) && value.find('\\') != std::string_view::npos) {
+    throw path_error("ERR_INVALID_PATH", "Windows canonical components cannot contain a literal backslash");
+  }
+  return result;
+}
+
+std::string lowercase_drive(std::string_view value) {
+  std::string result(value);
+  if (has_drive_root(value)) result[0] = to_lower_ascii(result[0]);
+  else if (starts_with(value, "//?/") && has_drive_root(value.substr(4))) result[4] = to_lower_ascii(result[4]);
+  return result;
+}
+
+bool needs_relative_marker(std::string_view value) {
+  return value.size() >= 2 && is_ascii_letter(value[0]) && value[1] == ':';
+}
+std::string mark_relative(std::string_view value) { return needs_relative_marker(value) ? "./" + std::string(value) : std::string(value); }
+bool has_relative_marker(std::string_view value) { return starts_with(value, "./") && needs_relative_marker(value.substr(2)); }
+std::string_view without_relative_marker(std::string_view value) { return has_relative_marker(value) ? value.substr(2) : value; }
+
+std::string prepare_native_posix(std::string_view value) {
+  std::size_t leading = 0;
+  while (leading < value.size() && value[leading] == '/') ++leading;
+  if (leading == 2) throw path_error("ERR_INVALID_PATH", "native POSIX paths with exactly two leading slashes are unsupported");
+  if (leading > 2) return "/" + std::string(value.substr(leading));
+  return mark_relative(value);
 }
 
 std::vector<std::string_view> split_slash_views(std::string_view value) {
@@ -255,7 +283,9 @@ std::vector<std::string_view> split_slash_views(std::string_view value) {
 
 std::string clean_canonical(std::string_view value) {
   if (value.empty()) throw path_error("ERR_EMPTY_PATH", "path is empty");
+  if (value.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
   SplitRoot root = split_root(value);
+  root.prefix = lowercase_drive(root.prefix);
   std::vector<std::string> parts;
   for (std::string_view part : split_slash_views(root.rest)) {
     if (part.empty() || part == ".") continue;
@@ -275,7 +305,7 @@ std::string clean_canonical(std::string_view value) {
     if (i > 0) joined.push_back('/');
     joined += parts[i];
   }
-  if (root.prefix.empty()) return joined.empty() ? "." : joined;
+  if (root.prefix.empty()) return joined.empty() ? "." : mark_relative(joined);
   if (root.prefix == "/") return joined.empty() ? "/" : "/" + joined;
   if (!root.prefix.empty() && root.prefix.back() == '/') {
     return joined.empty() ? root.prefix : root.prefix + joined;
@@ -283,21 +313,28 @@ std::string clean_canonical(std::string_view value) {
   return joined.empty() ? root.prefix : root.prefix + "/" + joined;
 }
 
+std::string clean_native_posix(std::string_view value) { return clean_canonical(prepare_native_posix(value)); }
+
+std::string normalize_mount_root(std::string_view value) {
+  if (value.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "WSL mount root contains NUL");
+  if (value.empty()) value = "/mnt";
+  if (!starts_with(value, "/")) throw path_error("ERR_INVALID_PATH", "WSL mount root must be an absolute native POSIX path");
+  return clean_native_posix(value);
+}
+
+SplitRoot parse_clean_canonical(std::string_view value) {
+  if (clean_canonical(value) != lowercase_drive(value)) throw path_error("ERR_INVALID_PATH", "path is not lexically cleaned canonical input");
+  SplitRoot root = split_root(value);
+  if (root.prefix.empty()) root.rest = root.rest == "." ? "" : std::string(without_relative_marker(root.rest));
+  return root;
+}
+
 void validate_target_profile(std::string_view value, std::string_view target_profile) {
+  SplitRoot root = split_root(value);
   if (target_profile.empty() || target_profile == "portable") return;
-  if (target_profile == "posix") {
-    if (has_drive_root(value) || starts_with(value, "//")) {
-      throw path_error("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots");
-    }
-    return;
-  }
-  if (target_profile == "win32-drive") {
-    if (starts_with(value, "/")) {
-      throw path_error("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots");
-    }
-    return;
-  }
-  throw path_error("ERR_INVALID_PATH", "unsupported targetProfile");
+  if (target_profile == "posix" && !is_windows_root(root.prefix)) return;
+  if (target_profile == "win32-drive" && root.prefix != "/" && (!is_windows_root(root.prefix) || is_drive_root(root.prefix))) return;
+  throw path_error("ERR_INVALID_PATH", "unsupported targetProfile or root kind");
 }
 
 bool is_reserved_device_base(std::string_view base) {
@@ -311,16 +348,8 @@ bool is_reserved_device_base(std::string_view base) {
 }
 
 bool has_windows_ads(std::string_view value) {
-  std::size_t start = 0;
-  if (has_drive_root(value)) start = 3;
-  else if (starts_with(value, "//")) {
-    try {
-      start = split_root(value).prefix.size();
-    } catch (const path_error &) {
-      start = 0;
-    }
-  }
-  return value.find(':', start) != std::string_view::npos;
+  try { return split_root(value).rest.find(':') != std::string::npos; }
+  catch (const path_error &) { return false; }
 }
 
 bool has_reserved_device_name(std::string_view value) {
@@ -340,32 +369,20 @@ bool has_reserved_device_name(std::string_view value) {
 }
 
 std::vector<std::string> canonical_parts(std::string_view value, std::string *prefix) {
-  if (value.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
-  SplitRoot root = split_root(value);
+  SplitRoot root = parse_clean_canonical(value);
   if (root.prefix.empty()) throw path_error("ERR_INVALID_PATH", "path must be canonical absolute");
-  std::vector<std::string> result;
-  for (std::string_view part : split_slash_views(root.rest)) {
-    if (part.empty()) continue;
-    if (part == "." || part == "..") throw path_error("ERR_INVALID_PATH", "path is not lexically cleaned");
-    result.emplace_back(part);
-  }
   *prefix = root.prefix;
+  std::vector<std::string> result;
+  if (!root.rest.empty()) for (std::string_view part : split_slash_views(root.rest)) result.emplace_back(part);
   return result;
 }
 
-bool is_absolute_path_like(std::string_view value) {
-  if (starts_with(value, "/") || starts_with(value, "\\\\")) return true;
-  std::string slash = replace_char(value, '\\', '/');
-  return has_drive_root(slash);
-}
-
-std::string normalize_relative(std::string_view raw) {
+std::string normalize_canonical_relative(std::string_view raw) {
   if (raw.empty()) throw path_error("ERR_EMPTY_PATH", "relative path is empty");
   if (raw == ".") return ".";
   if (raw.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "relative path contains NUL");
-  if (is_absolute_path_like(raw)) throw path_error("ERR_ABSOLUTE_PATH", "relative path must not be absolute");
+  if (starts_with(raw, "/") || has_drive_root(raw)) throw path_error("ERR_ABSOLUTE_PATH", "relative path must not be absolute");
   if (is_drive_relative(raw)) throw path_error("ERR_DRIVE_RELATIVE_PATH", "drive-relative path is not allowed");
-  if (raw.find('\\') != std::string_view::npos) throw path_error("ERR_INVALID_PATH", "relative path must use slash separators");
 
   std::vector<std::string> parts;
   for (std::string_view part : split_slash_views(raw)) {
@@ -377,13 +394,13 @@ std::string normalize_relative(std::string_view raw) {
     }
     parts.emplace_back(part);
   }
-  if (parts.empty()) throw path_error("ERR_EMPTY_PATH", "relative path is empty after cleaning");
+  if (parts.empty()) return ".";
   std::string joined;
   for (std::size_t i = 0; i < parts.size(); ++i) {
     if (i > 0) joined.push_back('/');
     joined += parts[i];
   }
-  return joined;
+  return mark_relative(joined);
 }
 
 std::string trim_component_edges(std::string value) {
@@ -500,31 +517,29 @@ std::string normalize(std::string_view raw, NormalizeOptions options) {
   if (options.trim_outer_whitespace) value = trim_outer_ascii_whitespace(value);
   if (value.empty()) throw path_error("ERR_EMPTY_PATH", "path is empty");
   if (value.find('\0') != std::string::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
-
-  if (has_uri_scheme(value) || options.source_host == "vscode-file-uri") value = parse_file_uri(value, options);
-  if (!options.windows.preserve_extended_length) value = unwrap_windows_extended_prefix(value);
-  value = replace_char(value, '\\', '/');
-
-  if (options.target_profile != "posix" && value.rfind("/", 0) == 0 && value.rfind("//", 0) != 0) {
-    if (options.wsl.enabled && !is_uri_windows_drive_path(value)) {
+  options.wsl.mount_root = normalize_mount_root(options.wsl.mount_root);
+  if (options.source_host == "posix" && options.wsl.enabled) throw path_error("ERR_INVALID_PATH", "native POSIX input cannot request WSL drive mapping");
+  if (options.source_host == "posix") {
+    value = prepare_native_posix(value);
+  } else if (options.source_host != "canonical") {
+    const bool uri_input = has_uri_scheme(value);
+    if (uri_input || options.source_host == "vscode-file-uri") value = parse_file_uri(value, options);
+    if (options.wsl.enabled && starts_with(value, "/") && (!starts_with(value, "//") || starts_with(value, "///")) && !(uri_input && is_uri_windows_drive_path(value))) {
+      value = prepare_native_posix(value);
       if (options.windows.reject_ads && has_windows_ads(value)) throw path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
       if (options.windows.reject_device_names && has_reserved_device_name(value)) throw path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
       value = clean_canonical(value);
+      if (options.target_profile != "posix") value = map_wsl_drive(value, options.wsl);
+    } else {
+      value = replace_char(value, '\\', '/');
+      if (starts_with(value, "//?/")) split_root(value);
+      if (!options.windows.preserve_extended_length) value = unwrap_windows_extended_prefix(value);
+      if (is_uri_windows_drive_path(value)) value = value.substr(1);
     }
-    bool mapped = false;
-    value = map_wsl_drive(value, options.wsl, &mapped);
   }
-  if (is_uri_windows_drive_path(value)) value = value.substr(1);
-  if (is_drive_relative(value)) throw path_error("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
-  if (has_drive_root(value)) value[0] = to_lower_ascii(value[0]);
-
-  if (options.windows.reject_ads && has_windows_ads(value)) {
-    throw path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
-  }
-  if (options.windows.reject_device_names && has_reserved_device_name(value)) {
-    throw path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
-  }
-
+  split_root(value);
+  if (options.windows.reject_ads && has_windows_ads(value)) throw path_error("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+  if (options.windows.reject_device_names && has_reserved_device_name(value)) throw path_error("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
   std::string cleaned = clean_canonical(value);
   validate_target_profile(cleaned, options.target_profile);
   return cleaned;
@@ -547,15 +562,17 @@ std::string relative(std::string_view root, std::string_view target) {
     if (!result.empty()) result.push_back('/');
     result += target_parts[i];
   }
-  return result;
+  return mark_relative(result);
 }
 
 std::string join(std::string_view root, std::string_view relative_path) {
-  std::string clean_relative = normalize_relative(relative_path);
-  if (root.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "root contains NUL");
+  SplitRoot parsed = parse_clean_canonical(root);
+  if (is_windows_root(parsed.prefix) && relative_path.find('\\') != std::string_view::npos) throw path_error("ERR_INVALID_PATH", "Windows canonical components cannot contain a literal backslash");
+  const std::string clean_relative = normalize_canonical_relative(relative_path);
   if (clean_relative == ".") return std::string(root);
-  if (root == "/" || (!root.empty() && root.back() == '/')) return std::string(root) + clean_relative;
-  return std::string(root) + "/" + clean_relative;
+  const std::string relative(without_relative_marker(clean_relative));
+  if (parsed.prefix.empty()) return mark_relative(parsed.rest.empty() ? relative : parsed.rest + "/" + relative);
+  return std::string(root) + (root.back() == '/' ? "" : "/") + relative;
 }
 
 std::string join(std::initializer_list<std::string_view> parts) {
@@ -563,6 +580,7 @@ std::string join(std::initializer_list<std::string_view> parts) {
   for (std::string_view part : parts) {
     if (part.empty()) continue;
     if (result.empty()) {
+      parse_clean_canonical(part);
       result = std::string(part);
     } else {
       result = join(result, part);
@@ -577,37 +595,27 @@ bool is_equal(std::string_view left, std::string_view right, NormalizeOptions op
 }
 
 std::string to_win32(std::string_view canonical) {
-  if (canonical.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
-  if (has_drive_root(canonical)) {
-    std::string result;
-    result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(canonical[0]))));
-    result += ":\\";
-    result += replace_char(canonical.substr(3), '/', '\\');
-    return result;
-  }
-  if (starts_with(canonical, "//")) return "\\\\" + replace_char(canonical.substr(2), '/', '\\');
-  return replace_char(canonical, '/', '\\');
+  SplitRoot root = parse_clean_canonical(canonical);
+  if (root.prefix == "/" || canonical.find('\\') != std::string_view::npos || has_relative_marker(canonical)) throw path_error("ERR_INVALID_PATH", "canonical path has no lossless Windows representation");
+  std::string value(canonical);
+  if (has_drive_root(value)) value[0] = to_upper_ascii(value.substr(0, 1))[0];
+  else if (starts_with(value, "//?/") && has_drive_root(std::string_view(value).substr(4))) value[4] = to_upper_ascii(value.substr(4, 1))[0];
+  return replace_char(value, '/', '\\');
 }
 
 std::string to_wsl(std::string_view canonical, WslOptions options) {
-  if (canonical.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
-  if (!has_drive_root(canonical)) return std::string(canonical);
-  std::string mount_root = trim_right_slashes(options.mount_root.empty() ? std::string("/mnt") : options.mount_root);
-  std::string result = mount_root + "/";
-  result.push_back(to_lower_ascii(canonical[0]));
-  std::string_view rest = canonical.substr(3);
-  if (!rest.empty()) result += "/" + std::string(rest);
+  const std::string mount_root = normalize_mount_root(options.mount_root);
+  SplitRoot root = parse_clean_canonical(canonical);
+  if (is_windows_root(root.prefix) && !has_drive_root(root.prefix)) throw path_error("ERR_INVALID_PATH", "WSL mapping requires an ordinary Windows drive root");
+  if (!has_drive_root(root.prefix)) return std::string(canonical);
+  std::string result = trim_right_slashes(mount_root) + "/" + to_lower_ascii(canonical[0]);
+  if (!root.rest.empty()) result += "/" + root.rest;
   return result;
 }
 
 std::string to_posix(std::string_view canonical) {
-  if (canonical.find('\0') != std::string_view::npos) throw path_error("ERR_NUL_BYTE", "path contains NUL");
-  if (has_drive_root(canonical)) {
-    throw path_error("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl");
-  }
-  if (canonical.find('\\') != std::string_view::npos) {
-    throw path_error("ERR_INVALID_PATH", "canonical paths must use slash separators");
-  }
+  SplitRoot root = parse_clean_canonical(canonical);
+  if (is_windows_root(root.prefix)) throw path_error("ERR_INVALID_PATH", "Windows roots require an explicit host mapping");
   return std::string(canonical);
 }
 

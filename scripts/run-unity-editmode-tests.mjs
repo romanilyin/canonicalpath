@@ -119,6 +119,7 @@ public static class CanonicalPathUnityEditModeRunner
         {
             ManagedCanonicalPathMatchesRepresentativeSharedVectors();
             ManagedCanonicalPathRejectsSecurityCases();
+            ManagedCanonicalPathPreservesContractChains();
             ${gitRefChecks}
             PathGuardMatchesBridgePayloadRules();
             UnityBridgeEditorEffectsFailClosed();
@@ -157,6 +158,43 @@ public static class CanonicalPathUnityEditModeRunner
         PathError("ERR_DRIVE_RELATIVE_PATH", delegate { CP.Normalize("C:foo", new CanonicalPathNormalizeOptions { SourceHost = "win32", TargetProfile = "win32-drive" }); });
         PathError("ERR_OUTSIDE_ROOT", delegate { CP.Relative("/tmp/project", "/tmp/project-evil/file.txt"); });
         PathError("ERR_ABSOLUTE_PATH", delegate { CP.Join("c:/repo", "d:/escape.txt"); });
+    }
+
+    private static void ManagedCanonicalPathPreservesContractChains()
+    {
+        CanonicalPathNormalizeOptions native = new CanonicalPathNormalizeOptions { SourceHost = "posix" };
+        CanonicalPathNormalizeOptions canonical = new CanonicalPathNormalizeOptions { SourceHost = "canonical" };
+        foreach (string raw in new[] { @"/repo/a\b", "/C:/repo", "C:foo", "x/../C:foo" })
+        {
+            string normalized = CP.Normalize(raw, native);
+            Equal(normalized, CP.Normalize(normalized, native));
+            Equal(normalized, CP.Normalize(normalized, canonical));
+        }
+        Equal("./C:foo", CP.Normalize("x/../C:foo", native));
+        True(!CP.IsEqual(@"/repo/a\b", "/repo/a/b", canonical));
+        foreach (string[] pair in new[] { new[] { "/repo", @"/repo/a\b" }, new[] { "/repo", "/repo/C:foo" }, new[] { "c:/repo", "c:/repo/C:foo" }, new[] { "//?/UNC/server/share", "//?/UNC/server/share/repo" } })
+            Equal(pair[1], CP.Join(pair[0], CP.Relative(pair[0], pair[1])));
+        Equal("/repo/C:foo/file", CP.Join(new[] { "/repo", "./C:foo", "file" }));
+        PathError("ERR_INVALID_PATH", delegate { CP.Join("c:/repo", @"a\b/../file"); });
+
+        Equal("//?/UNC/server/share", CP.Normalize(@"\\?\UNC\server\share\a\..\..", new CanonicalPathNormalizeOptions { SourceHost = "win32", Windows = new CanonicalPathWindowsOptions { PreserveExtendedLength = true } }));
+        Equal("//?/c:/", CP.Normalize("//?/C:/a/../..", canonical));
+        Equal(@"\\?\C:\repo", CP.ToWin32("//?/c:/repo"));
+        foreach (string mount in new[] { "/", "", "/foo/../mnt/./", @"/mnt\vol", "/C:/drives" })
+        {
+            CanonicalPathWSLOptions wsl = new CanonicalPathWSLOptions { Enabled = true, MountRoot = mount };
+            string hostPath = CP.ToWSL("c:/repo/file", wsl);
+            Equal("c:/repo/file", CP.Normalize(hostPath, new CanonicalPathNormalizeOptions { SourceHost = "wsl", WSL = wsl }));
+        }
+        Equal(@"/mnt/c/a\b", CP.Normalize(@"///mnt/c/a\b", new CanonicalPathNormalizeOptions { SourceHost = "wsl", TargetProfile = "posix", WSL = new CanonicalPathWSLOptions { Enabled = true } }));
+
+        BridgeCanonicalPathService service = BridgeCanonicalPathService.Instance;
+        CanonicalPathValue project = new CanonicalPathValue(@"/repo/a\b");
+        CanonicalPathValue asset = service.FromUnityAssetPath(project, @"Assets\Scripts/App.cs");
+        Equal(@"/repo/a\b/Assets/Scripts/App.cs", asset.Value);
+        Equal("Assets/Scripts/App.cs", service.ToUnityAssetPath(project, asset));
+        PathError("ERR_INVALID_PATH", delegate { service.ToUnityAssetPath(project, new CanonicalPathValue(@"/repo/a\b/Assets/a\b")); });
+        PathError("ERR_OUTSIDE_ROOT", delegate { service.AssertInsideProject(project, new CanonicalPathValue("/repo/a/b/Assets/App.cs")); });
     }
 
     private static void PathGuardMatchesBridgePayloadRules()

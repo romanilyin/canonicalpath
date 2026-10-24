@@ -7,6 +7,7 @@
 [English](./README.md) |
 [Language coverage](./docs/language-coverage.md) |
 [Targets](./docs/language-targets.md) |
+[Path contract](./docs/path-identity-contract.md) |
 [Verification](./docs/verification.md) |
 [Security](./SECURITY.md)
 
@@ -54,6 +55,29 @@ The key idea:
 | Client/runtime ports | Lexical helpers, wrappers, transports, Unity bridge adapters. | Usually no | Lexical/client-only unless explicitly documented otherwise. |
 
 The split is intentional: **path identity is not file access**.
+
+## Path identity contract
+
+Choose the grammar of the input explicitly. `sourceHost: "posix"` preserves native POSIX component data, including literal backslash and a component such as `C:`. Read saved canonical strings with `sourceHost: "canonical"`; that mode performs no URI decoding, raw separator rewriting, WSL mapping, or extended-prefix removal. The default remains the raw cross-host grammar.
+
+```ts
+import { isEqual, join, normalize, relative, toPOSIX } from "@romanilyin/canonicalpath";
+
+const root = normalize("/repo", { sourceHost: "posix" });
+const path = normalize(String.raw`/repo/a\b`, { sourceHost: "posix" });
+const saved = normalize(path, { sourceHost: "canonical" });
+
+join(root, relative(root, saved)) === saved; // true
+toPOSIX(saved) === path;                    // true
+isEqual(saved, "/repo/a/b", { sourceHost: "canonical" }); // false
+
+normalize("C:/repo", { sourceHost: "posix" }); // ./C:/repo (relative)
+normalize("/C:/repo", { sourceHost: "posix" }); // /C:/repo (absolute)
+```
+
+The required `./` marker distinguishes a drive-like relative component from a Windows root. Canonical operations preserve this distinction. Extended drive/UNC cleanup retains the complete root, and WSL mapping uses one validated POSIX mount-root contract in both directions. Host serializers reject conversions that would change identity.
+
+See the [complete path contract](./docs/path-identity-contract.md) for grammar, policies, and API errors, and the [migration guide](./docs/path-identity-migration.md) before changing persisted identities. The migration guide also covers the C options layout change and Godot byte validation. Existing strict raw filesystem validators remain in force.
 
 ## Why not just use `path.normalize`, `realpath`, or safe-join code?
 
@@ -138,6 +162,8 @@ After installing dependencies, run:
 pnpm install
 pnpm verify
 ```
+
+Rust is required by `pnpm verify`: its runner checks, unit/documentation tests, and shared vectors must pass. A missing or broken Cargo toolchain fails the gate. Run that portion independently with `pnpm rust:verify`.
 
 For Go race-sensitive filesystem tests, also run:
 

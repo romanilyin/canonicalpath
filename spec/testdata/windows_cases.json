@@ -75,6 +75,328 @@
       "operation": "to-win32",
       "raw": "//server/share/Repo/file.txt",
       "expected": "\\\\server\\share\\Repo\\file.txt"
+    },
+    {
+      "id": "cp2-preserved-drive-native",
+      "operation": "normalize",
+      "raw": "\\\\?\\C:\\repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        },
+        "targetProfile": "win32-drive"
+      },
+      "expected": "//?/c:/repo"
+    },
+    {
+      "id": "cp2-preserved-drive-slash",
+      "operation": "normalize",
+      "raw": "//?/C:/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        },
+        "targetProfile": "win32-drive"
+      },
+      "expected": "//?/c:/repo"
+    },
+    {
+      "id": "cp2-preserved-drive-root-floor",
+      "operation": "normalize",
+      "raw": "//?/C:/a/../..",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        },
+        "targetProfile": "win32-drive"
+      },
+      "expected": "//?/c:/"
+    },
+    {
+      "id": "cp2-preserved-unc-native",
+      "operation": "normalize",
+      "raw": "\\\\?\\UNC\\server\\share\\repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "expected": "//?/UNC/server/share/repo"
+    },
+    {
+      "id": "cp2-preserved-unc-share-floor",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/a/../..",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "expected": "//?/UNC/server/share"
+    },
+    {
+      "id": "cp2-preserved-unc-extra-parents-floor",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/../../x",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "expected": "//?/UNC/server/share/x"
+    },
+    {
+      "id": "cp2-preserved-unc-drive-profile-rejected",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        },
+        "targetProfile": "win32-drive"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-preserved-drive-posix-profile-rejected",
+      "operation": "normalize",
+      "raw": "//?/c:/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        },
+        "targetProfile": "posix"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-unwrapped-drive-slash",
+      "operation": "normalize",
+      "raw": "//?/C:/repo",
+      "expected": "c:/repo"
+    },
+    {
+      "id": "cp2-unwrapped-unc-slash",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/repo",
+      "expected": "//server/share/repo"
+    },
+    {
+      "id": "cp2-canonical-keeps-preserved-drive",
+      "operation": "normalize",
+      "raw": "//?/C:/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "//?/c:/repo"
+    },
+    {
+      "id": "cp2-canonical-keeps-preserved-unc",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "//?/UNC/server/share/repo"
+    },
+    {
+      "id": "cp2-canonical-extended-dot-cleanup",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/a/../..",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "//?/UNC/server/share"
+    },
+    {
+      "id": "cp2-canonical-preservation-false-still-keeps-prefix",
+      "operation": "normalize",
+      "raw": "//?/c:/repo",
+      "options": {
+        "sourceHost": "canonical",
+        "windows": {
+          "preserveExtendedLength": false
+        }
+      },
+      "expected": "//?/c:/repo"
+    },
+    {
+      "id": "cp2-preserved-drive-colon-not-ads",
+      "operation": "normalize",
+      "raw": "//?/C:/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true,
+          "rejectADS": true
+        }
+      },
+      "expected": "//?/c:/repo"
+    },
+    {
+      "id": "cp2-preserved-drive-ads-before-cleanup",
+      "operation": "normalize",
+      "raw": "//?/C:/file:stream/../repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true,
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_ALTERNATE_DATA_STREAM"
+    },
+    {
+      "id": "cp2-preserved-unc-device-before-cleanup",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/share/CON/../repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true,
+          "rejectDeviceNames": true
+        }
+      },
+      "error": "ERR_RESERVED_DEVICE_NAME"
+    },
+    {
+      "id": "cp2-extended-unc-missing-share",
+      "operation": "normalize",
+      "raw": "//?/UNC/server",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-extended-unknown-namespace",
+      "operation": "normalize",
+      "raw": "//?/Volume/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-extended-drive-missing-root-slash",
+      "operation": "normalize",
+      "raw": "//?/C:",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-extended-unc-dot-share-invalid",
+      "operation": "normalize",
+      "raw": "//?/UNC/server/../repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-canonical-extended-backslash-tail-invalid",
+      "operation": "normalize",
+      "raw": "//?/c:/a\\b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-to-win32-preserved-drive",
+      "operation": "to-win32",
+      "raw": "//?/c:/repo",
+      "expected": "\\\\?\\C:\\repo"
+    },
+    {
+      "id": "cp2-to-win32-preserved-unc",
+      "operation": "to-win32",
+      "raw": "//?/UNC/server/share/repo",
+      "expected": "\\\\?\\UNC\\server\\share\\repo"
+    },
+    {
+      "id": "cp2-to-posix-preserved-drive-rejected",
+      "operation": "to-posix",
+      "raw": "//?/c:/repo",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-to-posix-preserved-unc-rejected",
+      "operation": "to-posix",
+      "raw": "//?/UNC/server/share",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-to-wsl-preserved-drive-rejected",
+      "operation": "to-wsl",
+      "raw": "//?/c:/repo",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-to-wsl-preserved-unc-rejected",
+      "operation": "to-wsl",
+      "raw": "//?/UNC/server/share",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-raw-drive-relative-policy-priority",
+      "operation": "normalize",
+      "raw": "C:foo",
+      "options": {
+        "windows": {
+          "rejectADS": true
+        }
+      },
+      "error": "ERR_DRIVE_RELATIVE_PATH"
+    },
+    {
+      "id": "cp1-to-win32-uppercase-drive-compatible",
+      "operation": "to-win32",
+      "raw": "C:/repo",
+      "expected": "C:\\repo"
+    },
+    {
+      "id": "cp1-to-wsl-uppercase-drive-compatible",
+      "operation": "to-wsl",
+      "raw": "C:/repo",
+      "expected": "/mnt/c/repo"
+    },
+    {
+      "id": "cp2-to-win32-uppercase-extended-drive-compatible",
+      "operation": "to-win32",
+      "raw": "//?/C:/repo",
+      "expected": "\\\\?\\C:\\repo"
+    },
+    {
+      "id": "cp1-canonical-unc-question-share",
+      "operation": "normalize",
+      "raw": "//server/?",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "//server/?"
+    },
+    {
+      "id": "cp2-lowercase-unc-marker-raw-rejected",
+      "operation": "normalize",
+      "raw": "\\\\?\\unc\\server\\share",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp2-mixedcase-unc-marker-canonical-rejected",
+      "operation": "normalize",
+      "raw": "//?/UnC/server/share",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "error": "ERR_INVALID_PATH"
     }
   ]
 }

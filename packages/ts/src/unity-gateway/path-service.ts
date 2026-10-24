@@ -1,4 +1,4 @@
-import { isAbsolutePathLike, trimBoundaryCharacters } from "../canonicalpath/internal.js";
+import { validateCanonical, trimBoundaryCharacters } from "../canonicalpath/internal.js";
 import { createHash } from "node:crypto";
 import { join, normalize, normalizeRelative, relative } from "../canonicalpath/index.js";
 import { pathError } from "../canonicalpath/errors.js";
@@ -21,7 +21,7 @@ export class CanonicalPathService {
 
   normalizeProjectRoot(raw: string, options: NormalizeOptions = {}): CanonicalPath {
     const projectRoot = normalize(raw, options);
-    if (!isAbsolutePathLike(projectRoot)) throw pathError("ERR_INVALID_PATH", "Unity project root must be absolute");
+    if (validateCanonical(projectRoot).kind === "relative") throw pathError("ERR_INVALID_PATH", "Unity project root must be absolute");
     return projectRoot;
   }
 
@@ -62,7 +62,9 @@ export class CanonicalPathService {
   }
 
   toUnityAssetPath(projectRoot: CanonicalPath, fullPath: CanonicalPath): CanonicalRelativePath {
-    return this.normalizeUnityAssetPath(relative(projectRoot, fullPath));
+    const assetPath = relative(projectRoot, fullPath);
+    if (assetPath.includes("\\")) throw pathError("ERR_INVALID_PATH", "Unity asset paths cannot represent literal backslash components");
+    return this.normalizeUnityAssetPath(assetPath);
   }
 
   assertInsideProject(projectRoot: CanonicalPath, candidate: CanonicalPath): void {

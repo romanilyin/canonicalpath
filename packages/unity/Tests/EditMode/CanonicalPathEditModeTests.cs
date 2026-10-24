@@ -32,6 +32,38 @@ namespace CanonicalPath.Tests
         }
 
         [Test]
+        public void ManagedCanonicalPathRetainsCanonicalComponentIdentity()
+        {
+            CanonicalPathNormalizeOptions native = new CanonicalPathNormalizeOptions { SourceHost = "posix" };
+            CanonicalPathNormalizeOptions canonical = new CanonicalPathNormalizeOptions { SourceHost = "canonical" };
+            foreach (string raw in new[] { @"/repo/a\b", "/C:/repo", "C:foo", "x/../C:foo", "file://repo/a" })
+            {
+                string normalized = CP.Normalize(raw, native);
+                Assert.AreEqual(normalized, CP.Normalize(normalized, native));
+                Assert.AreEqual(normalized, CP.Normalize(normalized, canonical));
+            }
+            Assert.IsFalse(CP.IsEqual(@"/repo/a\b", "/repo/a/b", canonical));
+            foreach (string[] pair in new[] { new[] { "/repo", @"/repo/a\b" }, new[] { "/repo", "/repo/C:foo" }, new[] { "c:/repo", "c:/repo/C:foo" }, new[] { "//?/UNC/server/share", "//?/UNC/server/share/repo" } })
+                Assert.AreEqual(pair[1], CP.Join(pair[0], CP.Relative(pair[0], pair[1])));
+            Assert.AreEqual("/repo/C:foo/file", CP.Join(new[] { "/repo", "./C:foo", "file" }));
+            AssertPathError("ERR_ABSOLUTE_PATH", () => CP.Join(new[] { "/repo", "/outside", "file" }));
+        }
+
+        [Test]
+        public void BridgeCanonicalOperandsRetainLiteralBackslashIdentity()
+        {
+            BridgeCanonicalPathService service = BridgeCanonicalPathService.Instance;
+            CanonicalPathValue root = new CanonicalPathValue(@"/repo/a\b");
+            CanonicalPathValue asset = service.FromUnityAssetPath(root, "Assets\\Scripts//App.cs");
+            Assert.AreEqual(@"/repo/a\b/Assets/Scripts/App.cs", asset.Value);
+            Assert.AreEqual("Assets/Scripts/App.cs", service.ToUnityAssetPath(root, asset));
+            service.AssertInsideProject(root, asset);
+            AssertPathError("ERR_OUTSIDE_ROOT", () => service.AssertInsideProject(root, new CanonicalPathValue("/repo/a/b/Assets/Scripts/App.cs")));
+            AssertPathError("ERR_INVALID_PATH", () => service.ToUnityAssetPath(root, new CanonicalPathValue(@"/repo/a\b/Assets/a\b")));
+            Assert.Throws<ArgumentException>(() => service.FromUnityAssetPath(root, "Assets/../ProjectSettings/TagManager.asset"));
+        }
+
+        [Test]
         public void PathGuardMatchesBridgePayloadRules()
         {
             Assert.AreEqual("Assets/Scripts/Player.cs", PathGuard.NormalizeUnityPath("Assets\\Scripts//Player.cs"));

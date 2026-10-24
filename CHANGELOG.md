@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Defined explicit native POSIX and canonical-input grammars, preserving literal backslashes, POSIX drive-like components, and collision-free relative `./` markers across normalization, equality, relative/join, and host serialization. See [path identity contract](docs/path-identity-contract.md) and [migration guidance](docs/path-identity-migration.md) before changing stored keys.
+- Parsed preserved extended drive and UNC roots atomically, retained complete root boundaries during lexical dot cleanup, and accepted preserved drive roots under the `win32-drive` target profile.
+- Unified WSL mount-root defaults, validation, and normalization across lexical ports, including `/`, dot segments, literal backslash, and rejection of NUL/relative/UNC configuration. Retained configured Windows policy checks before cleanup and strict raw filesystem validators.
+- Added the length-aware C `mount_root_len` field, requiring callers and FFI bindings to rebuild against the updated structure layout, and Godot `from_utf8` plus byte-oriented mount validation before String conversion.
+- Made Rust runner checks, unit/documentation tests, and shared vectors mandatory in `pnpm verify`; missing or failed Rust toolchains no longer produce a successful skip.
+
 - Implemented source remediation for the three Low findings in scan `wfr_0fe15518666fc0239ead62d4e2006982029f84e709ee3998ae7d944a3f7c2636`; local verification passed as recorded in `docs/security-review-2026-10-24.md`; a new cloud assessment is pending.
 - Made all Go `canonicalfs` entrypoints fail closed on unsupported targets, including `js/wasm`, `plan9` and `wasip1`; added a Node-backed `js/wasm` denial gate to `pnpm verify`.
 - Retained the first daemon allowed-root handle and checked configured/resolved aliases against handle-backed identities, with deterministic startup replacement and failure-cleanup regressions.

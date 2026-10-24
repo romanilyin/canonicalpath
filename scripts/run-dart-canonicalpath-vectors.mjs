@@ -104,7 +104,41 @@ void main() {
     }
     count += 1;
   }
-  print('Dart CanonicalPath vectors passed: $count cases');
+${contractChecks()}
+  print('Dart CanonicalPath vectors passed: $count cases; contract chains passed');
 }
+`;
+}
+
+
+function contractChecks() {
+  return String.raw`  void equal(String actual, String expected) {
+    if (actual != expected) throw StateError('contract chain: $actual != $expected');
+  }
+  final native = <String, dynamic>{'sourceHost': 'posix'};
+  final canonical = <String, dynamic>{'sourceHost': 'canonical'};
+  for (final raw in [r'/repo/a\b', '/C:/repo', 'C:/repo', 'C:foo', 'x/../C:foo', 'file://repo/a']) {
+    final first = canonicalpath.normalize(raw, native);
+    equal(canonicalpath.normalize(first, native), first);
+    equal(canonicalpath.normalize(first, canonical), first);
+    equal(canonicalpath.toPOSIX(first), first);
+  }
+  for (final pair in [
+    ['/repo', r'/repo/a\b'], ['/repo', '/repo/C:/nested'], ['c:/repo', 'c:/repo/C:foo'],
+    ['//?/c:/repo', '//?/c:/repo/file'], ['//?/UNC/server/share', '//?/UNC/server/share/file']
+  ]) {
+    equal(canonicalpath.join(pair[0], canonicalpath.relative(pair[0], pair[1])), pair[1]);
+    equal(canonicalpath.normalize(pair[1], canonical), pair[1]);
+  }
+  for (final mount in ['', '/', '/foo/../mnt//', r'/mnt\vol', '/C:/drives']) {
+    final host = canonicalpath.toWSL('c:/repo/file', {'mountRoot': mount});
+    equal(canonicalpath.normalize(host, {'sourceHost': 'wsl', 'wsl': {'enabled': true, 'mountRoot': mount}}), 'c:/repo/file');
+  }
+  for (final raw in [r'a\b', 'C:foo', '../escape', '/absolute']) {
+    var rejected = false;
+    try { canonicalpath.normalizeRelative(raw); }
+    on canonicalpath.CanonicalPathError { rejected = true; }
+    if (!rejected) throw StateError('strict raw relative validator accepted $raw');
+  }
 `;
 }
