@@ -125,9 +125,11 @@ Use the root-bound filesystem layer:
 - Agent/MCP tools writing into the wrong project, cache, artifact, package, or temp root.
 - Broken identity when one runtime stores a path and another runtime interprets it differently.
 
-## Security migration in the next release
+## Security and identity migration in 2026.10.24-1
 
 Daemon clients now require authenticated HTTPS and a trusted certificate/public-key pin, including on loopback. Create a fresh private bundle for each daemon launch; see [TLS bootstrap](./docs/daemon-tls-bootstrap.md). Git-ref directory identities use the versioned full SHA-256 format and require an explicit ownership-checked migration; see [identity v2 migration](./Documentation/IDENTITY_V2_MIGRATION.md). Bash `write-text` reads the payload from stdin. npm retries use the original attested immutable release assets and require the administrative trust cutover documented in [release process](./docs/release-process.md).
+
+Native POSIX and canonical input now have explicit grammars, with preserved literal backslashes, relative markers, complete extended roots and consistent WSL mount configuration. Review [stored path identity migration](./docs/path-identity-migration.md) before changing persisted keys. The same guide covers the C options ABI change and Godot byte-input validation.
 
 ## Package identity and release
 
@@ -136,8 +138,8 @@ Daemon clients now require authenticated HTTPS and a trusted certificate/public-
 - JavaScript standalone npm package: `@romanilyin/canonicalpath-standalone`.
 - Go module: `github.com/romanilyin/canonicalpath/packages/go`.
 - Unity UPM package: `com.romanilyin.canonicalpath`.
-- Unity npmjs scoped-registry release candidate: `com.romanilyin.canonicalpath@2026.10.10-4`.
-- Release version: `2026.10.10-4`.
+- Unity npmjs scoped-registry package: `com.romanilyin.canonicalpath@2026.10.24-1`.
+- Release version: `2026.10.24-1`.
 - License model:
   - Repository default: `MIT`.
   - `@romanilyin/canonicalpath`: `MIT`.
@@ -145,7 +147,7 @@ Daemon clients now require authenticated HTTPS and a trusted certificate/public-
   - Go `canonicalpath` / `canonicalfs`: `MIT` unless a package directory says otherwise.
   - Unity UPM package `com.romanilyin.canonicalpath`: `LicenseRef-Stinger-Royalty-Free-EULA-1.0`.
 
-The earlier full source release plan is tracked in `docs/release-2026.5.18-2.md`; Unity registry publication history is tracked in `docs/release-unity-2026.6.14-1.md`. The Go module tag is `packages/go/v0.2026.5-18.2`; see `docs/release-process.md` for the release tag policy.
+The current full source release is documented in [release 2026.10.24-1](./docs/release-2026.10.24-1.md); Unity registry publication history is tracked in `docs/release-unity-2026.6.14-1.md`. The Go module tag is `packages/go/v0.2026.10-24.1`; see `docs/release-process.md` for the release tag policy.
 
 ## Status notes
 
