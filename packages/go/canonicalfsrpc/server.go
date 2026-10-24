@@ -120,10 +120,6 @@ func NewServer(options ServerOptions) (*Server, error) {
 	if err := ValidateCapabilityToken(capabilityToken); err != nil {
 		return nil, err
 	}
-	allowedRoots, err := cleanAllowedRoots(options.AllowedRoots)
-	if err != nil {
-		return nil, err
-	}
 	limits, err := normalizeLimits(options)
 	if err != nil {
 		return nil, err
@@ -139,22 +135,14 @@ func NewServer(options ServerOptions) (*Server, error) {
 	if idleTimeout == 0 {
 		idleTimeout = 30 * time.Minute
 	}
-	handles := make([]allowedRoot, 0, len(allowedRoots))
-	for _, allowed := range allowedRoots {
-		handle, err := canonicalfs.OpenRoot(allowed.path)
-		if err != nil {
-			for _, allowed := range handles {
-				_ = allowed.handle.Close()
-			}
-			return nil, err
-		}
-		allowed.handle = handle
-		handles = append(handles, allowed)
+	allowedRoots, err := openAllowedRoots(options.AllowedRoots)
+	if err != nil {
+		return nil, err
 	}
 	return &Server{
 		roots:              make(map[string]*canonicalfs.Root),
 		capabilityToken:    capabilityToken,
-		allowedRoots:       handles,
+		allowedRoots:       allowedRoots,
 		maxProjects:        maxProjects,
 		projectIdleTimeout: idleTimeout,
 		lastUsed:           make(map[string]time.Time),
@@ -740,28 +728,86 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, value any) {
 	_, _ = w.Write(data)
 }
 
-func cleanAllowedRoots(roots []string) ([]allowedRoot, error) {
+func openAllowedRoots(roots []string) ([]allowedRoot, error) {
 	allowed := make([]allowedRoot, 0, len(roots))
+	complete := false
+	defer func() {
+		if !complete {
+			for _, root := range allowed {
+				_ = root.handle.Close()
+			}
+		}
+	}()
 	seen := make(map[string]bool, len(roots))
 	for _, root := range roots {
-		clean, err := cleanHostRoot(root)
+		alias, err := cleanHostRootAlias(root)
 		if err != nil {
 			return nil, fmt.Errorf("canonicalfsrpc: allowed root %q is invalid: %w", root, err)
-		}
-		alias, err := filepath.Abs(strings.TrimSpace(root))
-		if err != nil {
-			return nil, err
 		}
 		if seen[alias] {
 			continue
 		}
+		handle, err := canonicalfs.OpenRoot(alias)
+		if err != nil {
+			return nil, fmt.Errorf("canonicalfsrpc: allowed root %q is invalid: %w", root, err)
+		}
+		pinned, err := bindAllowedRoot(alias, handle)
+		if err != nil {
+			return nil, fmt.Errorf("canonicalfsrpc: allowed root %q is invalid: %w", root, err)
+		}
 		seen[alias] = true
-		allowed = append(allowed, allowedRoot{path: clean, alias: alias})
+		allowed = append(allowed, pinned)
 	}
 	if len(allowed) == 0 {
 		return nil, errors.New("canonicalfsrpc: at least one allowed root is required")
 	}
+	complete = true
 	return allowed, nil
+}
+
+var errAllowedRootChanged = errors.New("allowed root identity changed during bootstrap")
+
+// bindAllowedRoot takes ownership of handle, including on failure. The handle
+// was acquired directly from trusted operator configuration, before resolving
+// any aliases. Resolved names are metadata only; they never select a replacement
+// authority handle. Names that identify a different object are rejected.
+func bindAllowedRoot(alias string, handle *canonicalfs.Root) (allowedRoot, error) {
+	complete := false
+	defer func() {
+		if !complete {
+			_ = handle.Close()
+		}
+	}()
+	identity, err := handle.Stat(".")
+	if err != nil {
+		return allowedRoot{}, err
+	}
+	if !identity.IsDir() {
+		return allowedRoot{}, errors.New("host root is not a directory")
+	}
+	real, err := filepath.EvalSymlinks(alias)
+	if err != nil {
+		return allowedRoot{}, err
+	}
+	real = filepath.Clean(real)
+	for _, name := range []string{alias, real} {
+		// Use a directory handle for comparison as well. On Windows os.Stat
+		// may defer file IDs until os.SameFile reopens a mutable pathname.
+		candidate, err := canonicalfs.OpenRoot(name)
+		if err != nil {
+			return allowedRoot{}, err
+		}
+		info, statErr := candidate.Stat(".")
+		closeErr := candidate.Close()
+		if err := errors.Join(statErr, closeErr); err != nil {
+			return allowedRoot{}, err
+		}
+		if !os.SameFile(identity, info) {
+			return allowedRoot{}, errAllowedRootChanged
+		}
+	}
+	complete = true
+	return allowedRoot{path: real, alias: alias, handle: handle}, nil
 }
 
 func normalizeLimits(options ServerOptions) (serverLimits, error) {
@@ -801,7 +847,7 @@ func normalizeLimits(options ServerOptions) (serverLimits, error) {
 	return limits, nil
 }
 
-func cleanHostRoot(root string) (string, error) {
+func cleanHostRootAlias(root string) (string, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return "", errors.New("host root is empty")
@@ -813,18 +859,9 @@ func cleanHostRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(real)
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("host root is not a directory")
-	}
-	return filepath.Clean(real), nil
+	// This is lexical validation only. The filesystem object is selected once
+	// by OpenRoot, then alias identities are checked against that retained handle.
+	return filepath.Clean(abs), nil
 }
 
 func isInsideAllowedRoot(allowedRoot, hostRoot string) (bool, error) {

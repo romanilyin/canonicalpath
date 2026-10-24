@@ -21,6 +21,12 @@ import type { UnityMcpWorkflowScope } from "./path-service.js";
 import type { CanonicalRelativePath } from "../canonicalpath/index.js";
 import { pathError } from "../canonicalpath/errors.js";
 
+// These caps apply to work, independently of the caller's returned-entry cap.
+// Count the entire store so unrelated project/scope entries cannot hide a scan.
+const maxScopedEntriesExamined = 10_000;
+const maxScopedQueryWork = 4_000_000;
+const scopedEntryOrder = new Intl.Collator(undefined, { numeric: true });
+
 export interface FakeUnityBridgeOptions {
   projectName?: string;
   unityVersion?: string;
@@ -117,7 +123,11 @@ export class FakeUnityBridge implements UnityBridgeClient {
   async listScoped(projectId: string, scope: UnityMcpWorkflowScope, pathPrefix?: string, maxEntries?: number): Promise<UnityBridgeScopedListResult> {
     const limit = boundedPositiveInteger(maxEntries, 100, 1000, "maxEntries");
     const prefix = pathPrefix === undefined ? undefined : this.resolveWorkflowPath(projectId, scope, pathPrefix).path;
-    const entries = this.scopedEntries(projectId, scope).filter((entry) => prefix === undefined || isUnderPrefix(entry.path, prefix));
+    const entries = this.scopedEntries(projectId, scope, (path, budget) => {
+      if (prefix === undefined) return true;
+      budget.consume(path.length + prefix.length);
+      return isUnderPrefix(path, prefix);
+    });
     return {
       projectId,
       scope,
@@ -131,8 +141,8 @@ export class FakeUnityBridge implements UnityBridgeClient {
     this.broker.getProject(projectId);
     const cleanGlob = this.broker.paths.normalizeScopedGlobPattern(scope, glob);
     const limit = boundedPositiveInteger(maxEntries, 100, 1000, "maxEntries");
-    const pattern = globToRegExp(cleanGlob);
-    const entries = this.scopedEntries(projectId, scope).filter((entry) => pattern.test(entry.path));
+    const matches = compileScopedGlob(cleanGlob);
+    const entries = this.scopedEntries(projectId, scope, matches);
     return {
       projectId,
       scope,
@@ -175,18 +185,28 @@ export class FakeUnityBridge implements UnityBridgeClient {
     return { path: path as CanonicalRelativePath, projectRelativePath: resolved.path };
   }
 
-  private scopedEntries(projectId: string, scope: UnityMcpWorkflowScope): UnityBridgeScopedEntry[] {
+  private scopedEntries(projectId: string, scope: UnityMcpWorkflowScope, accepts: (path: string, budget: ScopedQueryBudget) => boolean): UnityBridgeScopedEntry[] {
     this.broker.getProject(projectId);
+    if (this.scopedFiles.size > maxScopedEntriesExamined) throw pathError("ERR_INVALID_PATH", "scoped query exceeds examined-entry limit");
+    const budget = new ScopedQueryBudget();
     const prefix = `${projectId}\0${scope}\0`;
     const entries: UnityBridgeScopedEntry[] = [];
     for (const [key, text] of this.scopedFiles) {
+      budget.consume(Math.min(key.length, prefix.length));
       if (!key.startsWith(prefix)) continue;
       const path = key.slice(prefix.length) as CanonicalRelativePath;
+      // Charge validation before scanning or splitting a stored path. Seed data
+      // passes through the same checks as files written through the tool API.
+      budget.consume(path.length);
       const resolved = this.broker.paths.normalizeScopedPath(scope, path);
       if (resolved.kind !== "project") continue;
+      if (!accepts(path, budget)) continue;
       entries.push({ scope, path, projectRelativePath: resolved.path, kind: "file", chars: text.length, artifactRef: artifactRef(scope, path) });
     }
-    return entries.sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
+    return entries.sort((left, right) => {
+      budget.consume(left.path.length + right.path.length);
+      return scopedEntryOrder.compare(left.path, right.path);
+    });
   }
 }
 
@@ -221,28 +241,65 @@ function isUnderPrefix(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 
-function globToRegExp(glob: string): RegExp {
-  let pattern = "^";
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === "*") {
-      if (glob[i + 1] === "*") {
-        pattern += ".*";
-        i++;
-      } else {
-        pattern += "[^/]*";
-      }
-    } else if (ch === "?") {
-      pattern += "[^/]";
-    } else {
-      pattern += escapeRegExp(ch);
-    }
+class ScopedQueryBudget {
+  private remaining = maxScopedQueryWork;
+
+  consume(units: number): void {
+    if (units > this.remaining) throw pathError("ERR_INVALID_PATH", "scoped query exceeds matching or traversal work limit");
+    this.remaining -= units;
   }
-  return new RegExp(`${pattern}$`);
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+function compileScopedGlob(glob: string): (path: string, budget: ScopedQueryBudget) => boolean {
+  const tokens: string[] = [];
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === "*" && glob[i + 1] === "*") {
+      // Consecutive globstars have identical languages; an odd final single
+      // star stays separate because it can consume a line terminator.
+      if (tokens[tokens.length - 1] !== "**") tokens.push("**");
+      i++;
+    } else {
+      tokens.push(ch);
+    }
+  }
+
+  // Iterative NFA/DP: one state per pattern token, with no recursive search or
+  // backtracking. For a fixed bounded pattern, work is linear in path length.
+  // UTF-16 units, slash handling and globstar line-terminator behavior match
+  // the former non-Unicode JavaScript RegExp grammar exactly.
+  const width = tokens.length + 1;
+  let previous = new Uint8Array(width);
+  let current = new Uint8Array(width);
+  return (path, budget) => {
+    budget.consume(width * (path.length + 1));
+    previous[0] = 1;
+    for (let i = 1; i < width; i++) {
+      const token = tokens[i - 1];
+      previous[i] = token === "*" || token === "**" ? previous[i - 1] : 0;
+    }
+    for (let offset = 0; offset < path.length; offset++) {
+      const ch = path[offset];
+      current[0] = 0;
+      for (let i = 1; i < width; i++) {
+        const token = tokens[i - 1];
+        if (token === "*" || token === "**") {
+          const consumes = token === "*" ? ch !== "/" : !isLineTerminator(ch);
+          current[i] = current[i - 1] || (consumes ? previous[i] : 0);
+        } else {
+          current[i] = previous[i - 1] && (token === "?" ? ch !== "/" : token === ch) ? 1 : 0;
+        }
+      }
+      const swap = previous;
+      previous = current;
+      current = swap;
+    }
+    return previous[width - 1] !== 0;
+  };
+}
+
+function isLineTerminator(value: string): boolean {
+  return value === "\n" || value === "\r" || value === "\u2028" || value === "\u2029";
 }
 
 function requiresUnityPath(command: UnityBridgeWriteCommand): boolean {

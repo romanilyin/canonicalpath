@@ -78,6 +78,9 @@ func defaultZipLimits(l ZipLimits) (ZipLimits, error) {
 
 // ExtractZip uses bounded defaults and a separate destination root handle.
 func (r *Root) ExtractZip(zipRel string, destRel string) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	return r.ExtractZipWithLimits(context.Background(), zipRel, destRel, ZipLimits{})
 }
 
@@ -87,6 +90,9 @@ func (r *Root) ExtractZip(zipRel string, destRel string) error {
 // cancellation can leave bounded directories and earlier complete entries; the
 // incomplete output file is removed. Extraction is not a transaction.
 func (r *Root) ExtractZipWithLimits(ctx context.Context, zipRel, destRel string, limits ZipLimits) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	limits, err := defaultZipLimits(limits)
 	if err != nil {
 		return err
@@ -260,6 +266,9 @@ func (b *zipPathBudget) add(rel string, directory, destination bool) error {
 // OpenScopedRoot pins an exact scope anchor, rejecting links and replacement
 // races in every component. The returned handle must be closed by the caller.
 func (r *Root) OpenScopedRoot(rel string, create bool) (*Root, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return nil, err
@@ -279,6 +288,9 @@ func (r *Root) openPinnedDirectory(rel string, create bool, code ErrorCode) (*Ro
 }
 
 func (r *Root) openPinnedDirectoryContext(ctx context.Context, rel string, create bool, code ErrorCode) (*Root, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

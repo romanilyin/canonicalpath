@@ -3,6 +3,9 @@ package canonicalfs
 // WriteFile writes data to a regular file relative to the root.
 // The opened type is checked before truncation or writes; special files are rejected.
 func (r *Root) WriteFile(rel string, data []byte, opts OpenOptions) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	if !opts.Append {
 		opts.Truncate = true
 	}

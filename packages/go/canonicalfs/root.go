@@ -20,6 +20,9 @@ type OpenOptions struct {
 
 // OpenRoot opens hostRoot as a root-bound filesystem handle.
 func OpenRoot(hostRoot string) (*Root, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	if hostRoot == "" {
 		return nil, newError(ErrOutsideRoot, "root path is empty")
 	}
@@ -36,6 +39,9 @@ func OpenRoot(hostRoot string) (*Root, error) {
 // OpenRoot opens a descendant relative to this existing root handle.
 // Authorization must never reopen a previously checked global pathname.
 func (r *Root) OpenRoot(rel string) (*Root, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return nil, err
@@ -53,6 +59,9 @@ func (r *Root) OpenRoot(rel string) (*Root, error) {
 
 // Close closes the underlying root handle.
 func (r *Root) Close() error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	if r == nil || r.root == nil {
 		return nil
 	}
@@ -61,6 +70,9 @@ func (r *Root) Close() error {
 
 // Open opens a file relative to the root.
 func (r *Root) Open(rel string) (*os.File, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return nil, err
@@ -74,6 +86,9 @@ func (r *Root) Open(rel string) (*os.File, error) {
 
 // OpenFile opens a file relative to the root with explicit options.
 func (r *Root) OpenFile(rel string, opts OpenOptions) (*os.File, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return nil, err
@@ -86,6 +101,9 @@ func (r *Root) OpenFile(rel string, opts OpenOptions) (*os.File, error) {
 }
 
 func (r *Root) rootHandle() (*os.Root, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	if r == nil || r.root == nil {
 		return nil, os.ErrInvalid
 	}

@@ -41,6 +41,24 @@ Knowledge and artifact workflow tools must be bounded:
 - Glob patterns are scope-relative selector strings only. They may select already-scoped candidates, but they must not become host filesystem globs or bypass `CanonicalFS` for security-sensitive I/O.
 - Returned list/glob entries and artifact refs must not include arbitrary absolute host paths.
 
+### Fake-bridge list and glob limits
+
+The TypeScript `FakeUnityBridge` implements these contracts for an in-memory local/test backend. Its list/glob work limits apply in addition to scope validation and the returned-entry cap. They do not establish a filesystem boundary or define a host filesystem glob API.
+
+| Limit | Current behavior |
+| --- | --- |
+| Returned entries | Default `max_entries` is 100; hard cap is 1000. Matching entries are sorted using the existing numeric collation before slicing. `truncated` indicates that more matching entries exist than the response cap. |
+| Examined store | A query accepts at most 10,000 entries in the complete scoped store, including other projects and scopes. A larger store is rejected before iteration, matching or sorting. This is a query limit, not a write/storage capacity limit. |
+| Aggregate work | Each list/glob query has a 4,000,000-unit budget shared by key-prefix checks, stored-path validation, list-prefix or glob matching, and sorting comparisons. A low `max_entries` does not bypass this budget. |
+| Glob pattern | At most 512 UTF-16 code units in the current TypeScript implementation, with components no longer than 255 code units. A pattern must contain `*` or `?` and pass existing scope-relative validation. |
+| Limit failure | Entry-limit or work-budget exhaustion returns `ERR_INVALID_PATH`; the query does not return partial entries or a success response with an incomplete `truncated` value. |
+
+Glob matching uses an iterative state-machine/dynamic-programming matcher without recursive search or regular-expression backtracking. For pattern length `m` and candidate length `n`, matching takes `O(m × n)` work and `O(m)` state. The per-query budget charges the matcher before processing each candidate. These are deterministic work units, not a wall-clock timeout.
+
+The matcher preserves the existing case-sensitive, non-normalizing JavaScript UTF-16 grammar. `*` matches zero or more units other than `/`; `?` matches one such unit. `**` can cross `/` but, as in the previous JavaScript `.*` expression without dot-all mode, does not consume `\n`, `\r`, U+2028 or U+2029. Other characters are literal, including regular-expression metacharacters. Matching covers the entire path, and neither Unicode normalization nor case folding is applied. Artifact references and project/scope selection are unchanged.
+
+Regression coverage includes ordinary wildcard behavior, slash and Unicode semantics, numeric ordering, artifact references, entry and aggregate-work caps, and adversarial patterns up to the allowed length. The adversarial cases run in a separate Node process with an enforced deadline so a synchronous matcher stall cannot block the test runner indefinitely. See the [2026-10-24 security review](security-review-2026-10-24.md#verification-status) for execution status.
+
 ## Scope Matrix
 
 | Scope | Allowed roots | Allowed operations | Relative input format | Max path | Max component | Separators | Symlink/reparse policy | Case expectation | Unicode policy | Absolute input | LLM/tool args | Persisted refs | Audit refs | Artifact refs |

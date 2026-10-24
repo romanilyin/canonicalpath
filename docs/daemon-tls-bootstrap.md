@@ -40,6 +40,16 @@ The bundle contains `ca.pem`, `certificate.pem` (leaf plus CA chain), `key.pem`,
 
 Keep the entire bundle private. Read it from the configured local path; do not log it, commit it, send it as command arguments or retrieve it through the daemon's network endpoint. Token/private-key access grants authority over the allowed roots. A compromised process running as the same account or an administrator is outside this local credential protection boundary. Remove retired bundles only after stopping their daemon and clients; automatic recursive rollback/deletion is deliberately absent.
 
+## Allowed-root acquisition
+
+`-allow-root` and `ServerOptions.AllowedRoots` are trusted operator configuration. Configure them in the daemon's host path syntax, for example `/mnt/c/Work/Repo` for a WSL daemon or `C:\Work\Repo` for a native Windows daemon. The initial directory open establishes the filesystem object to which authority is bound; the configuration path and its ancestors must be trusted at that point.
+
+Server construction performs lexical cleanup, opens the configured directory, and retains that first root handle. It obtains the directory identity through `Root.Stat(".")`. The configured alias and its symlink-resolved name are then opened temporarily and checked against that identity using handle-backed metadata. These temporary handles only validate alias metadata and are closed; they never replace the retained authority. This also avoids a Windows identity comparison that might defer its file-ID lookup until a mutable pathname is reopened.
+
+If an alias disappears, resolves to a different object, or cannot be verified, construction fails and closes its acquired handles. Failure while opening a later allowed root also closes earlier roots. Invalid token, limit and registration-policy options are rejected before root acquisition. After successful construction, registration and filesystem operations continue through retained roots; renaming or replacing the original directory pathname does not redirect the daemon to the replacement. Duplicate normalized allowed-root aliases do not acquire duplicate handles.
+
+The daemon requires a [supported Go filesystem platform](api-compatibility.md#go-filesystem-platform-compatibility). Unsupported targets, including `js/wasm`, `plan9` and `wasip1`, return `ErrUnsupportedOperation` before filesystem access. The module language floor is Go `1.25.0`; the workspace toolchain recommendation and current verification pins are Go `1.26.10`.
+
 ## Client configuration
 
 | Client | Required trust | Optional private CA |
@@ -61,3 +71,5 @@ TypeScript uses its authenticated Node HTTPS implementation; the former arbitrar
 This is a breaking transport change: plaintext URLs and constructors without trusted pins now fail. Health checks also use TLS even though `/healthz` does not require a bearer. The daemon accepts `-tls-cert` and `-tls-key` for every listen address and retains the 32-character minimum bearer requirement. Existing response caps and whole-request deadlines remain enforced.
 
 Run `pnpm security:regressions`, the TypeScript transport tests and the live daemon smoke gates. The authentication fixtures check that plaintext, missing/wrong pins, wrong hostnames and untrusted CAs result in zero Authorization deliveries. Bootstrap tests check certificate/key/pin consistency, per-launch rotation, exclusive creation, private ownership/permissions and Windows ACL behavior. A platform-specific SKIP is not a passing runtime check.
+
+Allowed-root regressions deterministically replace a root, an ancestor or a symlink alias between the initial acquisition and alias binding. They also check that successful construction retains the exact original handle, failed construction closes handles, and existing registrations remain attached after pathname changes. Run the Go RPC tests on native Windows and a supported Unix target; the Linux cleanup regression checks open descriptors through `/proc/self/fd`. `pnpm go:unsupported-platforms` executes the `js/wasm` denial tests and is part of `pnpm verify`. See the [2026-10-24 verification record](security-review-2026-10-24.md#verification-status) for executed results and pending checks.
