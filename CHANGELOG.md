@@ -6,6 +6,7 @@
 
 ## 2026.10.24-1
 
+- Corrected immutable release preparation to detect existing drafts through authenticated paginated listings and bind the new manifest to the draft creation response, without querying an unpublished tag through the published-release endpoint.
 - Retired the local token-based npm wrapper and all compatibility aliases before credential reads, temporary configuration or publisher execution; use the existing isolated OIDC publication workflow.
 - Bound Unity project and native alias normalization to the same declared grammar, defaulted omitted project input to POSIX, rejected contradictory/identity-changing alias options, and detached stored registrations from caller mutation.
 - Enforced fake scoped-store quotas during construction and every write: 10,000 entries and 8,388,608 UTF-16 key/value units, with atomic replacement accounting.

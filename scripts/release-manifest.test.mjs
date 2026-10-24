@@ -96,46 +96,138 @@ test("Annotated original tags resolve to the same bound source commit", () => {
   const sample = fixture(); sample.tagObject = { type: "tag", sha: "b".repeat(40) };
   withDownload(sample, context => assert.equal(verifyNpmRelease(context, sample.run).source_commit, sourceCommit));
 });
-test("Draft preparation binds its new release ID and refuses any existing baseline", () => {
-  for (const existing of [false, true]) {
-    const sample = fixture(), scratch = mkdtempSync(path.join(tmpdir(), "canonicalpath-draft-"));
-    const directory = path.join(scratch, "npm-packages"); mkdirSync(directory);
-    const rows = publicationRows(sample.manifest);
-    writeFileSync(path.join(directory, "manifest.tsv"), rows);
-    writeFileSync(path.join(directory, "package-0.tgz"), sample.files.get("package-0.tgz"));
-    const env = { RUNNER_TEMP: scratch, GITHUB_REPOSITORY: RELEASE_REPOSITORY, GITHUB_REPOSITORY_ID: sample.context.repositoryId,
-      GITHUB_REF: "refs/heads/main", SOURCE_COMMIT: sourceCommit, WORKFLOW_COMMIT: sourceCommit,
-      RELEASE_TAG: sample.context.tag, GITHUB_RUN_ID: "201", GITHUB_RUN_ATTEMPT: "1", GITHUB_OUTPUT: path.join(scratch, "output"),
-      MANIFEST_SHA256: hash(rows) };
-    let created = false;
-    const run = (command, args) => {
-      assert.equal(command, "gh");
-      if (args[0] === "api") {
-        if (args[1].includes("/compare/")) return '{"status":"ahead"}';
-        if ((existing || created) && args[1].includes("/releases/tags/")) return JSON.stringify({ ...sample.release, draft: true, assets: [] });
-        const error = new Error("missing"); error.status = 1; error.stderr = "gh: Not Found (HTTP 404)"; throw error;
-      }
-      assert.deepEqual(args.slice(0, 3), ["release", "create", sample.context.tag]);
-      assert.ok(args.includes("--draft"));
-      assert.equal(args[args.indexOf("--target") + 1], sourceCommit);
-      assert.ok(!args.includes("--clobber"));
-      created = true;
-      return "";
-    };
-    try {
-      if (existing) {
-        assert.throws(() => createNpmReleaseDraft(env, run), /already exists/);
-        assert.equal(created, false);
-      } else {
-        assert.throws(() => createNpmReleaseDraft({ ...env, SOURCE_COMMIT: "b".repeat(40) }, run), /original main workflow commit/);
-        assert.equal(created, false);
-        const manifest = createNpmReleaseDraft(env, run);
-        assert.equal(created, true);
-        assert.equal(manifest.releaseId, "101");
-        validateReleaseManifest(readFileSync(path.join(directory, RELEASE_MANIFEST)), sample.context);
-      }
-    } finally { rmSync(scratch, { recursive: true, force: true }); }
+function missingApiResource() {
+  const error = new Error("missing"); error.status = 1; error.stderr = "gh: Not Found (HTTP 404)"; throw error;
+}
+function withDraftFixture(action, kind = "unity") {
+  const sample = fixture(kind), scratch = mkdtempSync(path.join(tmpdir(), "canonicalpath-draft-"));
+  const directory = path.join(scratch, "npm-packages"); mkdirSync(directory);
+  const rows = publicationRows(sample.manifest);
+  writeFileSync(path.join(directory, "manifest.tsv"), rows);
+  for (const pkg of sample.manifest.packages) writeFileSync(path.join(directory, pkg.filename), sample.files.get(pkg.filename));
+  const env = { RUNNER_TEMP: scratch, GITHUB_REPOSITORY: RELEASE_REPOSITORY, GITHUB_REPOSITORY_ID: sample.context.repositoryId,
+    GITHUB_REF: "refs/heads/main", SOURCE_COMMIT: sourceCommit, WORKFLOW_COMMIT: sourceCommit,
+    RELEASE_TAG: sample.context.tag, GITHUB_RUN_ID: "201", GITHUB_RUN_ATTEMPT: "1", GITHUB_OUTPUT: path.join(scratch, "output"),
+    MANIFEST_SHA256: hash(rows) };
+  const state = { sample, directory, env, calls: [], pages: [[]], tagExists: false, created: false, requests: [],
+    release: { ...sample.release, id: 909, url: `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/909`,
+      draft: true, immutable: false, published_at: null, assets: [] } };
+  const run = (command, args) => {
+    assert.equal(command, "gh"); state.calls.push(args);
+    // Reproduce GitHub's real draft behavior for the formerly used CLI path:
+    // creation succeeds, while the published-release tag endpoint still returns 404.
+    if (args[0] === "release" && args[1] === "create") { state.created = true; return "https://github.com/example/draft/909\n"; }
+    assert.equal(args[0], "api");
+    const route = args[1];
+    if (route.includes("/compare/")) return '{"status":"identical"}';
+    if (route.includes("/releases/tags/")) {
+      const published = state.pages.flat().find(entry => entry?.tag_name === sample.context.tag && entry.draft === false);
+      return published ? JSON.stringify(sample.release) : missingApiResource();
+    }
+    if (route.endsWith("/releases?per_page=100")) {
+      assert.ok(args.includes("--paginate")); assert.ok(args.includes("--slurp"));
+      if (state.listError) throw state.listError;
+      return state.listResponse ?? JSON.stringify(state.pages);
+    }
+    if (route.includes("/git/ref/tags/")) {
+      if (state.tagError) throw state.tagError;
+      if (state.tagExists) return JSON.stringify({ object: { type: "commit", sha: sourceCommit } });
+      return missingApiResource();
+    }
+    assert.equal(route, `repos/${RELEASE_REPOSITORY}/releases`);
+    assert.equal(args[args.indexOf("--method") + 1], "POST");
+    state.requestPath = args[args.indexOf("--input") + 1];
+    assert.equal(path.dirname(state.requestPath), scratch, "request metadata must stay outside package artifacts");
+    const request = JSON.parse(readFileSync(state.requestPath, "utf8"));
+    assert.equal(request.tag_name, sample.context.tag); assert.equal(request.target_commitish, sourceCommit);
+    assert.equal(request.name, sample.context.tag); assert.equal(request.draft, true); assert.equal(request.prerelease, false);
+    assert.match(request.body, /Producer: https:\/\/github\.com\/romanilyin\/canonicalpath\/actions\/runs\/201\/attempts\/1/);
+    state.requests.push(request); state.created = true;
+    if (state.createError) throw state.createError;
+    return state.createResponse ?? JSON.stringify(state.release);
+  };
+  state.run = run;
+  try { return action(state); }
+  finally {
+    try { if (state.requestPath) assert.equal(existsSync(state.requestPath), false, "POST request file must be removed even on failure"); }
+    finally { rmSync(scratch, { recursive: true, force: true }); }
   }
+}
+
+for (const kind of ["full", "unity"]) test(`${kind}: draft preparation binds the POST response when pending-tag REST lookup returns 404`, () => {
+  withDraftFixture(state => {
+    const { env, run, sample, directory } = state;
+    assert.throws(() => createNpmReleaseDraft({ ...env, SOURCE_COMMIT: "b".repeat(40) }, run), /original main workflow commit/);
+    assert.equal(state.calls.length, 0);
+    const manifest = createNpmReleaseDraft(env, run);
+    assert.equal(state.requests.length, 1); assert.equal(manifest.releaseId, "909");
+    assert.equal(manifest.sourceCommit, sourceCommit);
+    validateReleaseManifest(readFileSync(path.join(directory, RELEASE_MANIFEST)), { ...sample.context, releaseId: "909" });
+    assert.equal(readFileSync(env.GITHUB_OUTPUT, "utf8"), "release_id=909\n");
+    assert.equal(existsSync(path.join(directory, "manifest.tsv")), false);
+    assert.ok(state.calls.every(args => args[0] === "api" && !args[1].includes("/releases/tags/")));
+    for (const pkg of sample.manifest.packages) assert.deepEqual(readFileSync(path.join(directory, pkg.filename)), sample.files.get(pkg.filename));
+  }, kind);
+});
+
+for (const existing of ["published release", "untagged draft", "untagged draft on a later page", "Git tag"]) {
+  test(`Draft preparation refuses an existing ${existing} before any creation`, () => withDraftFixture(state => {
+    const entry = { id: 101, tag_name: state.env.RELEASE_TAG, draft: existing !== "published release" };
+    if (existing === "Git tag") state.tagExists = true;
+    else if (existing === "untagged draft on a later page") {
+      state.pages = [Array.from({ length: 100 }, (_, i) => ({ id: i + 1, tag_name: `old-${i}`, draft: false })), [entry]];
+    } else state.pages = [[entry]];
+    assert.throws(() => createNpmReleaseDraft(state.env, state.run), /already exists/);
+    assert.equal(state.created, false);
+    assert.equal(existsSync(path.join(state.directory, RELEASE_MANIFEST)), false);
+  }));
+}
+
+for (const response of ["{", "null", "{}", "[]", '[{"tag_name":"unwrapped-page"}]', "[null]", "[[null]]",
+  '[[{"id":1,"tag_name":42,"draft":false}]]', '[[{"id":1,"tag_name":"","draft":false}]]',
+  '[[{"id":1,"tag_name":"old"}]]', '[[{"id":0,"tag_name":"old","draft":false}]]',
+  JSON.stringify([Array.from({ length: 101 }, (_, i) => ({ id: i + 1, tag_name: `old-${i}`, draft: false }))])]) {
+  test(`Draft preparation refuses malformed release inventory ${response.slice(0, 70)}`, () => withDraftFixture(state => {
+    state.listResponse = response;
+    assert.throws(() => createNpmReleaseDraft(state.env, state.run));
+    assert.equal(state.created, false);
+    assert.equal(existsSync(state.env.GITHUB_OUTPUT), false);
+  }));
+}
+
+for (const stage of ["list", "tag", "create"]) test(`Draft preparation fails closed on ${stage} API errors`, () => {
+  for (const failure of ["403", "404", "503", "signal"]) {
+    if (stage === "tag" && failure === "404") continue; // A genuine absent Git tag is the only allowed API error.
+    withDraftFixture(state => {
+      const error = new Error("API unavailable"); error.status = failure === "signal" ? null : 1;
+      error.signal = failure === "signal" ? "SIGTERM" : null;
+      error.stderr = failure === "signal" ? "gh: interrupted after Not Found (HTTP 404)" : `gh: unavailable (HTTP ${failure})`;
+      state[`${stage}Error`] = error;
+      assert.throws(() => createNpmReleaseDraft(state.env, state.run));
+      assert.equal(state.requests.length, stage === "create" ? 1 : 0);
+      assert.equal(existsSync(path.join(state.directory, RELEASE_MANIFEST)), false);
+      assert.equal(existsSync(path.join(state.directory, "manifest.tsv")), true);
+      assert.equal(existsSync(state.env.GITHUB_OUTPUT), false);
+    });
+  }
+});
+
+test("Draft preparation rejects malformed or mismatched creation metadata without retrying or accepting a baseline", () => {
+  for (const change of [
+    state => { state.createResponse = "{"; }, state => { state.createResponse = "null"; },
+    state => { state.release.id = 0; }, state => { state.release.id = "909"; },
+    state => { state.release.draft = false; }, state => { state.release.prerelease = true; },
+    state => { state.release.tag_name = "different"; }, state => { state.release.target_commitish = "b".repeat(40); },
+    state => { state.release.url = "https://api.github.com/repos/other/repository/releases/909"; },
+    state => { state.release.assets = ""; }, state => { state.release.assets = [{}]; },
+  ]) withDraftFixture(state => {
+    change(state);
+    assert.throws(() => createNpmReleaseDraft(state.env, state.run));
+    assert.equal(state.requests.length, 1);
+    assert.equal(existsSync(path.join(state.directory, RELEASE_MANIFEST)), false);
+    assert.equal(existsSync(path.join(state.directory, "manifest.tsv")), true);
+    assert.equal(existsSync(state.env.GITHUB_OUTPUT), false);
+  });
 });
 const rejected = [
   ["moved source tag", sample => { sample.tagObject.sha = "b".repeat(40); }],
