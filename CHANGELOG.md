@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Implemented source remediation for the three Low findings in scan `wfr_0fe15518666fc0239ead62d4e2006982029f84e709ee3998ae7d944a3f7c2636`; local verification passed as recorded in `docs/security-review-2026-10-24.md`; a new cloud assessment is pending.
+- Made all Go `canonicalfs` entrypoints fail closed on unsupported targets, including `js/wasm`, `plan9` and `wasip1`; added a Node-backed `js/wasm` denial gate to `pnpm verify`.
+- Retained the first daemon allowed-root handle and checked configured/resolved aliases against handle-backed identities, with deterministic startup replacement and failure-cleanup regressions.
+- Replaced fake Unity scoped-glob regex backtracking with iterative matching and capped list/glob queries at a 10,000-entry scoped store and a shared 4,000,000-unit work budget, independently of response limits.
+- Corrected compatibility documentation to the existing Go 1.25 module floor and Go 1.26.10 workspace/CI toolchain.
+
 - Implemented source remediation for the seven findings in scan `wfr_19a78830a145faebf05e2a070963b3e3d82394513b4ee5afe75423949bc46019`; see `docs/security-review-2026-10-22.md` for coverage, migration and the remaining external npm authorization cutover.
 - Bound npm retries to original immutable release assets, an attested source/producer manifest and a fresh verified publication job; documented the mandatory `npm-immutable` trusted-publisher cutover.
 - Normalized POSIX dot segments before WSL drive mapping and rejected ambiguous host-root registrations.

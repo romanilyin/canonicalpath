@@ -2,10 +2,11 @@
 
 package canonicalfs
 
-import "os"
-
 // Rename renames a path relative to the root using os.Root.Rename.
 func (r *Root) Rename(oldRel string, newRel string) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	oldClean, err := cleanRelative(oldRel)
 	if err != nil {
 		return err
@@ -14,8 +15,9 @@ func (r *Root) Rename(oldRel string, newRel string) error {
 	if err != nil {
 		return err
 	}
-	if r == nil || r.root == nil {
-		return os.ErrInvalid
+	root, err := r.rootHandle()
+	if err != nil {
+		return err
 	}
-	return r.root.Rename(oldClean, newClean)
+	return root.Rename(oldClean, newClean)
 }

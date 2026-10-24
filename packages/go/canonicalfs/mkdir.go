@@ -9,6 +9,9 @@ import (
 
 // MkdirAll creates a directory path relative to the root.
 func (r *Root) MkdirAll(rel string, mode os.FileMode) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return err

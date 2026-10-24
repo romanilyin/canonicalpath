@@ -8,6 +8,9 @@ import (
 // ReadFile reads a regular file relative to the root, optionally enforcing maxBytes.
 // Special files are rejected; low-level Open remains an explicit primitive.
 func (r *Root) ReadFile(rel string, maxBytes int64) ([]byte, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	f, err := r.openRegularFile(rel, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err

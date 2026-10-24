@@ -8,6 +8,9 @@ import (
 // Open without truncation, then check the opened descriptor before any I/O.
 // O_NONBLOCK ensures a FIFO cannot strand a worker before its type is known.
 func (r *Root) openRegularFile(rel string, flags int, mode os.FileMode) (*os.File, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	if !regularFilesSupported {
 		return nil, ErrUnsupportedOperation
 	}

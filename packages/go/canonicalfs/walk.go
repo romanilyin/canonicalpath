@@ -10,6 +10,9 @@ type WalkFunc func(path string, info fs.FileInfo, err error) error
 
 // Stat returns file information for a path relative to the root.
 func (r *Root) Stat(rel string) (fs.FileInfo, error) {
+	if err := requireSupportedPlatform(); err != nil {
+		return nil, err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return nil, err
@@ -40,6 +43,9 @@ func (r *Root) Stat(rel string) (fs.FileInfo, error) {
 
 // Walk traverses a tree relative to the root.
 func (r *Root) Walk(rel string, fn WalkFunc) error {
+	if err := requireSupportedPlatform(); err != nil {
+		return err
+	}
 	clean, err := cleanRelative(rel)
 	if err != nil {
 		return err
