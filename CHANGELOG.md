@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- No unreleased changes; the latest security remediation and path identity contract updates are included in 2026.10.24-1 below.
+
+## 2026.10.24-1
+
 - Retired the local token-based npm wrapper and all compatibility aliases before credential reads, temporary configuration or publisher execution; use the existing isolated OIDC publication workflow.
 - Bound Unity project and native alias normalization to the same declared grammar, defaulted omitted project input to POSIX, rejected contradictory/identity-changing alias options, and detached stored registrations from caller mutation.
 - Enforced fake scoped-store quotas during construction and every write: 10,000 entries and 8,388,608 UTF-16 key/value units, with atomic replacement accounting.

@@ -1,8 +1,8 @@
 # Release Process
 
-The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. New immutable, non-prerelease GitHub Releases prepared by `.github/workflows/prepare-npm-release.yml` can publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Unity npmjs publication also retains local unsigned helpers. Optional local signed helpers fail closed until authentic signature verification exists.
+The repository has CI, security baseline, CodeQL, and manual release-readiness workflows. New immutable, non-prerelease GitHub Releases prepared by `.github/workflows/prepare-npm-release.yml` publish the npm packages through `.github/workflows/publish-npm.yml` using npm Trusted Publishing with GitHub Actions OIDC. Local token-based publication helpers are retired. Optional local signed helpers fail closed until authentic signature verification exists.
 
-Current full release plan: `docs/release-2026.10.10-4.md`. Current Unity registry release plan: `docs/release-unity-2026.6.14-1.md`.
+Current full release plan: `docs/release-2026.10.24-1.md`. Unity-only registry publication history: `docs/release-unity-2026.6.14-1.md`.
 
 ## Public Coordinates
 
@@ -44,9 +44,9 @@ Unity registry-only package releases may use the same calendar SemVer-compatible
 
 ## Release Scope
 
-The `2026.5.18-2` public release is a full repository release. It includes the source repository, GitHub Release notes, npm publication for `@romanilyin/canonicalpath` and `@romanilyin/canonicalpath-standalone`, Go source and daemon packages with Go module tag `packages/go/v0.2026.5-18.2`, Unity UPM Git package, and the current experimental lexical/client-only language targets.
+The `2026.10.24-1` public release is a full repository release. It includes the source repository, GitHub Release notes, npm publication for `@romanilyin/canonicalpath`, `@romanilyin/canonicalpath-standalone` and `com.romanilyin.canonicalpath`, Go source and daemon packages with Go module tag `packages/go/v0.2026.10-24.1`, the Unity UPM Git package, and the current experimental lexical/client-only language targets as source. Those experimental targets are not separately published to language registries by this workflow.
 
-The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publishes npmjs scoped-registry packaging with Unity `.meta` files for committed package-local legal assets. It does not republish the TypeScript, JavaScript standalone, or Go packages.
+The historical `2026.6.14-1` Unity registry release was scoped to `packages/unity` and added npmjs scoped-registry packaging with Unity `.meta` files for package-local legal assets. It did not republish the TypeScript, JavaScript standalone, or Go packages.
 
 ## Gates
 

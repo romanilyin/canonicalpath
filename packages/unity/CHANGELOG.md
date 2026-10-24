@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.10.24-1
+
+- Defined native POSIX and canonical input grammars, preserving literal backslashes, drive-like relative components and meaningful `./` markers; review stored path identities before upgrading.
+- Preserved complete extended drive/UNC roots and unified WSL mount-root normalization and validation across lexical ports.
+- Changed Git-ref directory identities to the versioned full SHA-256 format with exact Unicode handling; existing directories require an ownership-checked migration.
+- Required authenticated HTTPS with an out-of-band certificate/public-key pin before sending daemon bearer credentials, including on loopback; use a private per-launch bootstrap bundle.
+- Aligned the accompanying TypeScript gateway's native alias grammar with its metadata and bounded fake scoped storage and query work. The Go daemon adds pre-authentication connection limits and retains root-bound filesystem enforcement.
+- Retired local token-based publication helpers. npm publication uses original attested immutable release artifacts through the isolated GitHub OIDC workflow.
+- Kept the Unity package under Stinger Royalty-Free EULA 1.0. Migration details and release scope are documented in [release 2026.10.24-1](https://github.com/romanilyin/canonicalpath/blob/main/docs/release-2026.10.24-1.md).
+
 ## 2026.10.10-4
 
 - Published with the combined security release fixing TypeScript client credential exposure and Unix daemon token-file ownership validation. Unity runtime behavior remains as in 2026.10.10-3.
