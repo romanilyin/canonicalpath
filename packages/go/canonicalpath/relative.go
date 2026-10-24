@@ -23,26 +23,75 @@ func Relative(root Path, target Path) (RelativePath, error) {
 	if len(targetParts) == len(rootParts) {
 		return ".", nil
 	}
-	return RelativePath(strings.Join(targetParts[len(rootParts):], "/")), nil
+	return RelativePath(markRelative(strings.Join(targetParts[len(rootParts):], "/"))), nil
 }
 
-// Join combines a canonical root and canonical relative path.
+// Join combines canonical paths without raw host-path interpretation.
 func Join(root Path, rel RelativePath) (Path, error) {
-	cleanRel, err := NormalizeRelative(string(rel))
+	rootValue := string(root)
+	prefix, rootRest, err := parseCleanCanonical(rootValue)
 	if err != nil {
 		return "", err
 	}
-	rootValue := string(root)
-	if strings.ContainsRune(rootValue, '\x00') {
-		return "", newError(ErrNULByte, "root contains NUL")
+	if isWindowsRoot(prefix) && strings.ContainsRune(string(rel), '\\') {
+		return "", newError(ErrInvalidPath, "Windows canonical components cannot contain a literal backslash")
+	}
+	cleanRel, err := normalizeCanonicalRelative(string(rel))
+	if err != nil {
+		return "", err
 	}
 	if cleanRel == "." {
 		return root, nil
 	}
-	if rootValue == "/" || strings.HasSuffix(rootValue, "/") {
-		return Path(rootValue + string(cleanRel)), nil
+	cleanRel = withoutRelativeMarker(cleanRel)
+	if prefix == "" {
+		if rootRest == "" {
+			return Path(markRelative(cleanRel)), nil
+		}
+		return Path(markRelative(rootRest + "/" + cleanRel)), nil
 	}
-	return Path(rootValue + "/" + string(cleanRel)), nil
+	if strings.HasSuffix(rootValue, "/") {
+		return Path(rootValue + cleanRel), nil
+	}
+	return Path(rootValue + "/" + cleanRel), nil
+}
+
+// Canonical relative components may contain literal backslashes. Keep this
+// separate from NormalizeRelative, which validates untrusted filesystem input.
+func normalizeCanonicalRelative(raw string) (string, error) {
+	if raw == "" {
+		return "", newError(ErrEmptyPath, "relative path is empty")
+	}
+	if strings.ContainsRune(raw, '\x00') {
+		return "", newError(ErrNULByte, "relative path contains NUL")
+	}
+	if strings.HasPrefix(raw, "/") || hasDriveRoot(raw) {
+		return "", newError(ErrAbsolutePath, "relative path must not be absolute")
+	}
+	if isDriveRelative(raw) {
+		return "", newError(ErrDriveRelativePath, "drive-relative path is not allowed")
+	}
+	if raw == "." {
+		return ".", nil
+	}
+	parts := make([]string, 0)
+	for _, part := range strings.Split(raw, "/") {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(parts) == 0 {
+				return "", newError(ErrOutsideRoot, "relative path escapes root")
+			}
+			parts = parts[:len(parts)-1]
+		default:
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return ".", nil
+	}
+	return markRelative(strings.Join(parts, "/")), nil
 }
 
 // NormalizeRelative validates and cleans a relative path without allowing root escape.
@@ -87,27 +136,17 @@ func NormalizeRelative(raw string) (RelativePath, error) {
 }
 
 func canonicalParts(value string) (string, []string, error) {
-	if strings.ContainsRune(value, '\x00') {
-		return "", nil, newError(ErrNULByte, "path contains NUL")
-	}
-	prefix, rest, err := splitRoot(value)
+	prefix, rest, err := parseCleanCanonical(value)
 	if err != nil {
 		return "", nil, err
 	}
 	if prefix == "" {
 		return "", nil, newError(ErrInvalidPath, "path must be canonical absolute")
 	}
-	parts := make([]string, 0)
-	for _, part := range strings.Split(rest, "/") {
-		if part == "" {
-			continue
-		}
-		if part == "." || part == ".." {
-			return "", nil, newError(ErrInvalidPath, "path is not lexically cleaned")
-		}
-		parts = append(parts, part)
+	if rest == "" {
+		return prefix, nil, nil
 	}
-	return prefix, parts, nil
+	return prefix, strings.Split(rest, "/"), nil
 }
 
 func isAbsolutePathLike(value string) bool {

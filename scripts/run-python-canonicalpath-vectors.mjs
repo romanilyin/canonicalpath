@@ -123,6 +123,36 @@ for test_case in CASES:
         raise AssertionError(f"{test_id}: expected {expected}, got {actual}")
     count += 1
 
-print(f"Python CanonicalPath vectors passed: {count} cases")
+${contractChecks()}
+print(f"Python CanonicalPath vectors passed: {count} cases; contract chains passed")
+`;
+}
+
+
+function contractChecks() {
+  return String.raw`def contract_equal(actual, expected):
+    if actual != expected:
+        raise AssertionError(f"contract chain: {actual!r} != {expected!r}")
+
+native = {"sourceHost": "posix"}
+canonical = {"sourceHost": "canonical"}
+for raw in [r"/repo/a\b", "/C:/repo", "C:/repo", "C:foo", "x/../C:foo", "file://repo/a"]:
+    first = canonicalpath.normalize(raw, native)
+    contract_equal(canonicalpath.normalize(first, native), first)
+    contract_equal(canonicalpath.normalize(first, canonical), first)
+    contract_equal(canonicalpath.to_posix(first), first)
+for root, target in [("/repo", r"/repo/a\b"), ("/repo", "/repo/C:/nested"), ("c:/repo", "c:/repo/C:foo"), ("//?/c:/repo", "//?/c:/repo/file"), ("//?/UNC/server/share", "//?/UNC/server/share/file")]:
+    contract_equal(canonicalpath.join(root, canonicalpath.relative(root, target)), target)
+    contract_equal(canonicalpath.normalize(target, canonical), target)
+for mount in ["", "/", "/foo/../mnt//", r"/mnt\vol", "/C:/drives"]:
+    host = canonicalpath.to_wsl("c:/repo/file", {"mountRoot": mount})
+    contract_equal(canonicalpath.normalize(host, {"sourceHost": "wsl", "wsl": {"enabled": True, "mountRoot": mount}}), "c:/repo/file")
+for raw in [r"a\b", "C:foo", "../escape", "/absolute"]:
+    try:
+        canonicalpath.normalize_relative(raw)
+    except canonicalpath.CanonicalPathError:
+        pass
+    else:
+        raise AssertionError(f"strict raw relative validator accepted {raw!r}")
 `;
 }

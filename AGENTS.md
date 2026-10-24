@@ -31,8 +31,13 @@
 
 ## Path Rules
 
+- Use `spec/README.md`, its shared vectors, and `docs/path-identity-contract.md` as the current lexical contract. Follow `docs/path-identity-migration.md` for persisted identities; older design examples do not override the explicit input grammars.
 - Lowercase only the Windows drive letter; never lowercase the full path.
-- WSL `/mnt/<drive>/` mapping must be explicit and configurable, not hard-coded as the only truth.
+- `sourceHost: "posix"` is native slash-only grammar: preserve literal backslash, punctuation, and `/C:/...` as POSIX data. Exactly two leading slashes are unsupported; three or more collapse to one POSIX root. Preserve a required `./` marker for a drive-like relative first component.
+- `sourceHost: "canonical"` reads canonical grammar without URI decoding, separator rewriting, WSL mapping, or extended-prefix removal. Canonical operations parse that grammar directly. Preserve `join(root, relative(root, target)) == target`, including marked relative components embedded under Windows roots.
+- WSL mapping must be explicit and configurable. Missing/empty `mountRoot` means `/mnt`; `/` remains `/`. Normalize dots and repeated slash as absolute POSIX, preserve literal backslash, and reject NUL, relative, Windows, and exactly-double-leading-slash roots. Validate explicit mount configuration even when mapping is inactive. Native POSIX input cannot enable WSL mapping.
+- Parse preserved extended drive/UNC roots before ordinary UNC and clamp lexical parents at the complete root, including the UNC share. The extended `UNC` marker is exact uppercase; other case variants are invalid. Preservation describes CanonicalPath lexical serialization, not Windows verbatim parsing.
+- Keep explicit Windows ADS/device policies before dot cleanup, including in native POSIX mode. Keep raw `NormalizeRelative`, CanonicalFS, scoped-path, archive, and Unity payload validation strict; canonical grammar support must not relax their input rules.
 - Reject NUL everywhere and reject Windows drive-relative paths like `C:foo` by default.
 - URI decoding must happen exactly once; reject encoded `/` and `\` by default.
 - `relative(root, target)` must be component-aware and reject prefix siblings such as `/app` vs `/app-evil` or `c:/repo` vs `c:/repo-evil`.
@@ -50,9 +55,10 @@
 ## Verification
 
 - Default local verification gate: `pnpm verify` and `pnpm go:race`.
+- Rust is mandatory: `pnpm rust:verify` runs runner checks, `cargo test --locked` for unit/documentation tests, and shared vectors. `pnpm verify` includes it. Missing/broken Cargo, compilation failure, signals, and failed tests must fail verification; do not restore an optional successful skip.
 - `pnpm verify` runs spec validation, TS typecheck/tests, JavaScript standalone typecheck/build/package-export smoke/tests, native Go tests and the Node-backed `js/wasm` unsupported-platform denial tests, Go/TS/JS vector result comparison, Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, and GDScript/Godot vector smokes, Bash and Windows CMD/BAT wrapper transport smokes, Unity local smokes/probes and the installed editors (including beta and alpha versions) EditMode matrix, and PowerShell vector/daemon smoke tests when PowerShell is available.
 - `pnpm alloc` runs active allocation/memory smoke gates for Go, TypeScript, JavaScript standalone, Python, Dart/Flutter, C#/.NET, Swift, Kotlin, C, Rust, C++, Haxe, GDScript/Godot, the Bash and Windows CMD/BAT wrappers, the PowerShell module, PowerShell live daemon transport when PowerShell is available, Unity managed CanonicalPath, the default-skipped optional Unity Burst allocation probe, and the active local Unity installed editors (including beta and alpha versions) Burst allocation matrix.
 - If the `pnpm` shim is unavailable but `corepack` exists, use `corepack pnpm ...` for the same commands.
-- Require cross-language vector equivalence, `normalize` idempotence/fuzz tests, and real filesystem fixtures for `..`, absolute paths, symlink escape, prefix bypass, archive traversal, and race attempts.
+- Require cross-language vector equivalence, native/canonical `normalize` idempotence with outer trimming disabled, exact `relative`/`join` and WSL round trips, and real filesystem fixtures for `..`, absolute paths, symlink escape, prefix bypass, archive traversal, and race attempts. Keep legacy raw-input trimming separate from saved canonical identity handling.
 - Require every language target to have an allocation-check plan in `spec/language-targets.json`; do not add new target rows without a planned or active allocation gate.
 - For `canonicalfs`, real security fixture tests matter more than lexical-only tests.

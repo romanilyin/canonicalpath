@@ -50,63 +50,64 @@ object CanonicalPath {
         var value = if (options.trimOuterWhitespace) raw.trim() else raw
         if (value.isEmpty()) throw pathError("ERR_EMPTY_PATH", "path is empty")
         if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-
-        if (hasUriScheme(value) || options.sourceHost == "vscode-file-uri") {
-            value = parseFileUri(value, options)
-        }
-        if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-        if (!options.windows.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value)
-        value = value.replace('\\', '/')
-
-        if (options.targetProfile != "posix" && value.startsWith("/") && !value.startsWith("//")) {
-            if (options.wsl.enabled && !isUriWindowsDrivePath(value)) {
-                if (options.windows.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-                if (options.windows.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-                value = cleanCanonical(value)
+        val mount = normalizeMountRoot(options.wsl.mountRoot)
+        val cleaned = when (options.sourceHost) {
+            "posix" -> {
+                if (options.wsl.enabled) throw pathError("ERR_INVALID_PATH", "native POSIX input does not allow WSL mapping")
+                checkWindowsPolicy(value, options, nativePOSIX = true)
+                cleanPOSIX(value)
             }
-            value = mapWSLDrive(value, options.wsl)
+            "canonical" -> {
+                if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+                checkWindowsPolicy(value, options)
+                cleanCanonical(value)
+            }
+            else -> {
+                val parsedURI = hasUriScheme(value)
+                if (parsedURI || options.sourceHost == "vscode-file-uri") value = parseFileUri(value, options)
+                val uriDrive = parsedURI && isUriWindowsDrivePath(value)
+                val posixCandidate = value.startsWith("/") && (!value.startsWith("//") || value.startsWith("///"))
+                if (options.wsl.enabled && posixCandidate && !uriDrive) {
+                    checkWindowsPolicy(value, options)
+                    val posix = cleanPOSIX(value)
+                    if (options.targetProfile == "posix") posix else mapWSLDrive(posix, mount)
+                } else {
+                    value = value.replace('\\', '/')
+                    if (value.startsWith("//?/")) {
+                        splitRoot(value)
+                        if (!options.windows.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value)
+                    }
+                    if (isUriWindowsDrivePath(value)) value = value.substring(1)
+                    if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+                    checkWindowsPolicy(value, options)
+                    cleanCanonical(value)
+                }
+            }
         }
-        if (isUriWindowsDrivePath(value)) value = value.substring(1)
-        if (isDriveRelative(value)) {
-            throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
-        }
-        if (hasDriveRoot(value)) value = lowercaseDriveRoot(value)
-
-        if (options.windows.rejectADS && hasWindowsADS(value)) {
-            throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-        }
-        if (options.windows.rejectDeviceNames && hasReservedDeviceName(value)) {
-            throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-        }
-
-        val cleaned = cleanCanonical(value)
         validateTargetProfile(cleaned, options.targetProfile)
         return cleaned
     }
 
     @JvmStatic
     fun relative(root: String, target: String): String {
-        val rootParts = canonicalParts(root)
-        val targetParts = canonicalParts(target)
-        if (rootParts.prefix != targetParts.prefix || targetParts.parts.size < rootParts.parts.size) {
-            throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
+        val a = canonicalParts(root)
+        val b = canonicalParts(target)
+        if (a.prefix != b.prefix || b.parts.size < a.parts.size) throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
+        for (index in a.parts.indices) {
+            if (a.parts[index] != b.parts[index]) throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
         }
-        for (index in rootParts.parts.indices) {
-            if (rootParts.parts[index] != targetParts.parts[index]) {
-                throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
-            }
-        }
-        if (targetParts.parts.size == rootParts.parts.size) return "."
-        return targetParts.parts.drop(rootParts.parts.size).joinToString("/")
+        return serialize("", b.parts.drop(a.parts.size))
     }
 
     @JvmStatic
     fun join(root: String, relativePath: String): String {
-        val cleanRelative = normalizeRelative(relativePath)
-        if (hasNul(root)) throw pathError("ERR_NUL_BYTE", "root contains NUL")
-        if (cleanRelative == ".") return root
-        if (root == "/" || root.endsWith("/")) return root + cleanRelative
-        return "$root/$cleanRelative"
+        val parsed = validatedCanonical(root)
+        if (relativePath.isEmpty()) throw pathError("ERR_EMPTY_PATH", "relative path is empty")
+        if (hasNul(relativePath)) throw pathError("ERR_NUL_BYTE", "relative path contains NUL")
+        if (relativePath.startsWith("/") || hasDriveRoot(relativePath)) throw pathError("ERR_ABSOLUTE_PATH", "relative path must not be absolute")
+        if (isDriveRelative(relativePath)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "drive-relative path is not allowed")
+        if (parsed.prefix.isNotEmpty() && parsed.prefix != "/" && relativePath.contains('\\')) throw pathError("ERR_INVALID_PATH", "relative data is not representable under a Windows root")
+        return serialize(parsed.prefix, parsed.parts + cleanParts("", relativePath, "ERR_OUTSIDE_ROOT"))
     }
 
     @JvmStatic
@@ -155,34 +156,32 @@ object CanonicalPath {
 
     @JvmStatic
     fun toWin32(canonical: String): String {
-        if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-        if (hasDriveRoot(canonical)) {
-            return "${uppercaseASCII(canonical[0])}:\\${canonical.substring(3).replace('/', '\\')}"
+        val parsed = validatedCanonical(canonical)
+        if (parsed.prefix == "/" || (parsed.prefix.isEmpty() && (canonical.contains('\\') || isMarkedRelative(canonical)))) throw pathError("ERR_INVALID_PATH", "canonical path has no lossless Windows representation")
+        var value = serialize(parsed.prefix, parsed.parts)
+        if (parsed.prefix.startsWith("//?/") && hasDriveRoot(parsed.prefix.substring(4))) {
+            value = "//?/" + uppercaseASCII(value[4]) + value.substring(5)
+        } else if (hasDriveRoot(parsed.prefix)) {
+            value = uppercaseASCII(value[0]) + value.substring(1)
         }
-        if (canonical.startsWith("//")) return "\\\\" + canonical.substring(2).replace('/', '\\')
-        return canonical.replace('/', '\\')
+        return value.replace('/', '\\')
     }
 
     @JvmStatic
     fun toWSL(canonical: String, options: CanonicalPathWSLOptions = CanonicalPathWSLOptions()): String {
-        if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-        if (!hasDriveRoot(canonical)) return canonical
-        val mountRoot = trimRightSlashes(options.mountRoot.ifEmpty { "/mnt" })
-        val rest = canonical.substring(3)
-        return if (rest.isEmpty()) {
-            "$mountRoot/${lowercaseASCII(canonical[0])}"
-        } else {
-            "$mountRoot/${lowercaseASCII(canonical[0])}/$rest"
-        }
+        val mount = normalizeMountRoot(options.mountRoot)
+        val parsed = validatedCanonical(canonical)
+        if (parsed.prefix.startsWith("//")) throw pathError("ERR_INVALID_PATH", "UNC and preserved extended roots require an explicit host mapping")
+        if (!hasDriveRoot(parsed.prefix)) return canonical
+        val mountPrefix = if (mount == "/") "" else mount
+        val tail = if (parsed.parts.isEmpty()) "" else "/" + parsed.parts.joinToString("/")
+        return "$mountPrefix/${parsed.prefix[0]}$tail"
     }
 
     @JvmStatic
     fun toPOSIX(canonical: String): String {
-        if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-        if (hasDriveRoot(canonical)) {
-            throw pathError("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl")
-        }
-        if (canonical.contains('\\')) throw pathError("ERR_INVALID_PATH", "canonical paths must use slash separators")
+        val parsed = validatedCanonical(canonical)
+        if (parsed.prefix.isNotEmpty() && parsed.prefix != "/") throw pathError("ERR_INVALID_PATH", "Windows roots require an explicit host mapping")
         return canonical
     }
 
@@ -292,116 +291,85 @@ object CanonicalPath {
     }
 
     private fun unwrapWindowsExtendedPrefix(value: String): String {
-        if (value.startsWith("\\\\?\\UNC\\")) return "\\\\" + value.substring("\\\\?\\UNC\\".length)
-        if (value.startsWith("\\\\?\\")) return value.substring("\\\\?\\".length)
+        if (value.startsWith("//?/UNC/")) return "//" + value.substring(8)
+        if (value.startsWith("//?/")) return value.substring(4)
         return value
     }
 
-    private fun mapWSLDrive(value: String, options: CanonicalPathWSLOptions): String {
-        if (!options.enabled) return value
-        val mountRoot = trimRightSlashes(options.mountRoot.ifEmpty { "/mnt" })
-        val prefix = mountRoot.replace(Regex("/+"), "/") + "/"
+    private fun mapWSLDrive(value: String, mountRoot: String): String {
+        val prefix = if (mountRoot == "/") "/" else "$mountRoot/"
         if (!value.startsWith(prefix)) return value
         val rest = value.substring(prefix.length)
-        if (rest.isEmpty() || !isASCIILetter(rest[0])) return value
-        if (rest.length > 1 && rest[1] != '/') return value
-        val drive = lowercaseASCII(rest[0])
-        if (rest.length == 1) return "$drive:/"
-        return "$drive:/${rest.substring(2)}"
+        if (rest.isEmpty() || !isASCIILetter(rest[0]) || (rest.length > 1 && rest[1] != '/')) return value
+        val tail = if (rest.length > 1) rest.substring(2) else ""
+        if (tail.contains('\\')) throw pathError("ERR_INVALID_PATH", "literal backslash cannot be mapped to a Windows component")
+        return "${lowercaseASCII(rest[0])}:/$tail"
     }
 
     private fun cleanCanonical(value: String): String {
         if (value.isEmpty()) throw pathError("ERR_EMPTY_PATH", "path is empty")
         val root = splitRoot(value)
-        val parts = mutableListOf<String>()
-        for (part in root.rest.split('/')) {
-            if (part.isEmpty() || part == ".") continue
-            if (part == "..") {
-                if (parts.isNotEmpty()) {
-                    parts.removeAt(parts.lastIndex)
-                    continue
-                }
-                if (root.prefix.isNotEmpty()) continue
-                throw pathError("ERR_INVALID_PATH", "relative path escapes above its root")
-            }
-            parts.add(part)
-        }
-
-        val joined = parts.joinToString("/")
-        if (root.prefix.isEmpty()) return if (joined.isEmpty()) "." else joined
-        if (root.prefix == "/") return if (joined.isEmpty()) "/" else "/$joined"
-        if (root.prefix.endsWith("/")) return if (joined.isEmpty()) root.prefix else root.prefix + joined
-        return if (joined.isEmpty()) root.prefix else "${root.prefix}/$joined"
+        return serialize(root.prefix, cleanParts(root.prefix, root.rest))
     }
 
     private fun validateTargetProfile(value: String, targetProfile: String) {
+        val prefix = splitRoot(value).prefix
         if (targetProfile.isEmpty() || targetProfile == "portable") return
-        if (targetProfile == "posix") {
-            if (hasDriveRoot(value) || value.startsWith("//")) {
-                throw pathError("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots")
-            }
-            return
-        }
-        if (targetProfile == "win32-drive") {
-            if (value.startsWith("/")) {
-                throw pathError("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots")
-            }
-            return
-        }
-        throw pathError("ERR_INVALID_PATH", "unsupported targetProfile")
+        val drive = hasDriveRoot(prefix) || (prefix.startsWith("//?/") && hasDriveRoot(prefix.substring(4)))
+        if (targetProfile == "posix" && (prefix.isEmpty() || prefix == "/")) return
+        if (targetProfile == "win32-drive" && (prefix.isEmpty() || drive)) return
+        throw pathError("ERR_INVALID_PATH", "path root is not allowed by targetProfile")
     }
 
     private fun canonicalParts(value: String): CanonicalParts {
-        if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
-        val root = splitRoot(value)
-        if (root.prefix.isEmpty()) throw pathError("ERR_INVALID_PATH", "path must be canonical absolute")
-        val parts = root.rest.split('/').filter { it.isNotEmpty() }
-        if (parts.any { it == "." || it == ".." }) {
-            throw pathError("ERR_INVALID_PATH", "path is not lexically cleaned")
-        }
-        return CanonicalParts(root.prefix, parts)
+        val parsed = validatedCanonical(value)
+        if (parsed.prefix.isEmpty()) throw pathError("ERR_INVALID_PATH", "path must be canonical absolute")
+        return parsed
     }
 
     private fun splitRoot(value: String): RootParts {
-        if (hasDriveRoot(value)) return RootParts(value.substring(0, 3), value.substring(3))
-        if (value.startsWith("//")) {
-            val rest = value.substring(2)
-            val first = rest.indexOf('/')
-            if (first <= 0) throw pathError("ERR_INVALID_PATH", "UNC path requires server and share")
-            val server = rest.substring(0, first)
-            val afterFirst = rest.substring(first + 1)
-            val second = afterFirst.indexOf('/')
-            val share = if (second >= 0) afterFirst.substring(0, second) else afterFirst
-            val tail = if (second >= 0) afterFirst.substring(second + 1) else ""
-            if (share.isEmpty()) throw pathError("ERR_INVALID_PATH", "UNC path requires server and share")
-            return RootParts("//$server/$share", tail)
+        if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL")
+        val root: RootParts
+        if (value.startsWith("//?/")) {
+            val inner = value.substring(4)
+            root = if (hasDriveRoot(inner)) {
+                RootParts("//?/" + lowercaseASCII(inner[0]) + inner.substring(1, 3), inner.substring(3))
+            } else if (inner.startsWith("UNC/")) {
+                val unc = splitUNC(inner.substring(4))
+                RootParts("//?/UNC/${unc.prefix}", unc.rest)
+            } else {
+                throw pathError("ERR_INVALID_PATH", "unsupported extended Windows root")
+            }
+        } else if (hasDriveRoot(value)) {
+            root = RootParts(lowercaseASCII(value[0]) + value.substring(1, 3), value.substring(3))
+        } else if (isDriveRelative(value)) {
+            throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+        } else if (value.startsWith("///")) {
+            return RootParts("/", value.trimStart('/'))
+        } else if (value.startsWith("//")) {
+            val unc = splitUNC(value.substring(2))
+            root = RootParts("//${unc.prefix}", unc.rest)
+        } else if (value.startsWith("/")) {
+            return RootParts("/", value.substring(1))
+        } else {
+            return RootParts("", value)
         }
-        if (value.startsWith("/")) return RootParts("/", value.substring(1))
-        return RootParts("", value)
+        if (value.contains('\\')) throw pathError("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash")
+        return root
     }
 
     private fun hasWindowsADS(value: String): Boolean {
-        val start = if (hasDriveRoot(value)) {
-            3
-        } else if (value.startsWith("//")) {
-            try {
-                splitRoot(value).prefix.length
-            } catch (ignored: CanonicalPathException) {
-                0
-            }
-        } else {
-            0
-        }
-        return value.substring(start).contains(':')
+        val parsed = try { splitRoot(value) } catch (_: CanonicalPathException) { return value.contains(':') }
+        return (if (parsed.prefix.isNotEmpty() && parsed.prefix != "/") parsed.rest else value).contains(':')
     }
 
-    private fun hasReservedDeviceName(value: String): Boolean {
-        val root = try {
-            splitRoot(value)
+    private fun hasReservedDeviceName(value: String, nativePOSIX: Boolean = false): Boolean {
+        val rest = try {
+            if (nativePOSIX) value else splitRoot(value).rest
         } catch (ignored: CanonicalPathException) {
             return false
         }
-        for (part in root.rest.split('/')) {
+        for (part in rest.split('/')) {
             if (part.isEmpty() || part == "." || part == "..") continue
             val splitAt = part.indexOfAny(charArrayOf('.', ':'))
             val base = if (splitAt >= 0) part.substring(0, splitAt) else part
@@ -536,4 +504,64 @@ object CanonicalPath {
         val digest = sha.digest()
         return digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
+
+    private fun driveComponent(value: String): Boolean = value.length >= 2 && isASCIILetter(value[0]) && value[1] == ':'
+    private fun isMarkedRelative(value: String): Boolean = value.startsWith("./") && driveComponent(value.substring(2))
+
+    private fun splitUNC(value: String): RootParts {
+        val parts = value.split('/', limit = 3)
+        if (parts.size < 2 || parts.take(2).any { it.isEmpty() || it == "." || it == ".." }) throw pathError("ERR_INVALID_PATH", "UNC path requires a valid server and share")
+        return RootParts(parts[0] + "/" + parts[1], if (parts.size == 3) parts[2] else "")
+    }
+
+    private fun serialize(prefix: String, parts: List<String>): String {
+        val joined = parts.joinToString("/")
+        if (prefix.isEmpty()) {
+            if (parts.isEmpty()) return "."
+            return (if (driveComponent(parts[0])) "./" else "") + joined
+        }
+        if (joined.isEmpty()) return prefix
+        return prefix + (if (prefix.endsWith("/")) "" else "/") + joined
+    }
+
+    private fun cleanParts(prefix: String, rest: String, escapeCode: String = "ERR_INVALID_PATH"): List<String> {
+        val parts = mutableListOf<String>()
+        for (part in rest.split('/')) {
+            if (part.isEmpty() || part == ".") continue
+            if (part == "..") {
+                if (parts.isNotEmpty()) parts.removeAt(parts.lastIndex)
+                else if (prefix.isEmpty()) throw pathError(escapeCode, "relative path escapes above its root")
+            } else parts.add(part)
+        }
+        return parts
+    }
+
+    private fun cleanPOSIX(value: String): String {
+        if (value.startsWith("//") && !value.startsWith("///")) throw pathError("ERR_INVALID_PATH", "double-leading-slash POSIX roots are unsupported")
+        val prefix = if (value.startsWith("/")) "/" else ""
+        return serialize(prefix, cleanParts(prefix, value))
+    }
+
+    private fun normalizeMountRoot(raw: String): String {
+        val value = raw.ifEmpty { "/mnt" }
+        if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "mount root contains NUL")
+        if (!value.startsWith("/")) throw pathError("ERR_INVALID_PATH", "mount root must be absolute POSIX")
+        return cleanPOSIX(value)
+    }
+
+    private fun validatedCanonical(value: String): CanonicalParts {
+        if (value.isEmpty()) throw pathError("ERR_EMPTY_PATH", "path is empty")
+        val root = splitRoot(value)
+        if (root.prefix.isEmpty() && value == ".") return CanonicalParts("", emptyList())
+        val rest = if (root.prefix.isEmpty() && isMarkedRelative(root.rest)) root.rest.substring(2) else root.rest
+        val parts = if (rest.isEmpty()) emptyList() else rest.split('/')
+        if (parts.any { it.isEmpty() || it == "." || it == ".." }) throw pathError("ERR_INVALID_PATH", "path is not lexically cleaned")
+        return CanonicalParts(root.prefix, parts)
+    }
+
+    private fun checkWindowsPolicy(value: String, options: CanonicalPathNormalizeOptions, nativePOSIX: Boolean = false) {
+        if (options.windows.rejectADS && (if (nativePOSIX) value.contains(':') else hasWindowsADS(value))) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+        if (options.windows.rejectDeviceNames && hasReservedDeviceName(value, nativePOSIX)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
+    }
+
 }

@@ -1,18 +1,15 @@
 package canonicalpath
 
-import "strings"
-
-// ToPOSIX serializes a canonical POSIX or relative path for POSIX consumers.
+// ToPOSIX serializes a canonical POSIX or relative path without reinterpreting
+// literal component data or removing a relative drive marker.
 func ToPOSIX(path Path) (string, error) {
 	value := string(path)
-	if strings.ContainsRune(value, '\x00') {
-		return "", newError(ErrNULByte, "path contains NUL")
+	prefix, _, err := parseCleanCanonical(value)
+	if err != nil {
+		return "", err
 	}
-	if hasDriveRoot(value) {
-		return "", newError(ErrInvalidPath, "win32 drive paths require an explicit host mapping such as ToWSL")
-	}
-	if strings.Contains(value, "\\") {
-		return "", newError(ErrInvalidPath, "canonical paths must use slash separators")
+	if isWindowsRoot(prefix) {
+		return "", newError(ErrInvalidPath, "Windows roots require an explicit host mapping")
 	}
 	return value, nil
 }

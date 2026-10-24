@@ -304,82 +304,159 @@ function ConvertFrom-CanonicalFileUri {
 }
 
 function Assert-TargetProfile {
-    param(
-        [Parameter(Mandatory = $true)][string] $Value,
-        [string] $TargetProfile
-    )
+    param([string] $Value, [string] $TargetProfile)
+    $parsed = Split-CanonicalGrammar $Value
+    if ($TargetProfile.Length -eq 0 -or $TargetProfile.Equals('portable', [StringComparison]::Ordinal)) { return }
+    if ($TargetProfile.Equals('posix', [StringComparison]::Ordinal) -and -not $parsed.Windows) { return }
+    if ($TargetProfile.Equals('win32-drive', [StringComparison]::Ordinal) -and $parsed.Kind -in @('relative', 'drive', 'extended-drive')) { return }
+    throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'canonical root is incompatible with target profile')
+}
 
-    switch ($TargetProfile) {
-        { $_ -eq $null -or $_ -eq '' -or $_ -eq 'portable' } { return }
-        'posix' {
-            if ((Test-DriveRoot $Value) -or $Value.StartsWith('//', [StringComparison]::Ordinal)) {
-                throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'targetProfile posix does not allow Windows drive or UNC roots')
-            }
-            return
+
+function New-CanonicalGrammarRoot {
+    param([string] $Prefix, [string] $Rest)
+    $kind = if ($Prefix.Length -eq 0) { 'relative' } elseif ($Prefix.Equals('/', [StringComparison]::Ordinal)) { 'posix' } elseif ($Prefix.StartsWith('//?/UNC/', [StringComparison]::Ordinal)) { 'extended-unc' } elseif ($Prefix.StartsWith('//?/', [StringComparison]::Ordinal)) { 'extended-drive' } elseif ($Prefix.StartsWith('//', [StringComparison]::Ordinal)) { 'unc' } else { 'drive' }
+    return @{ Prefix = $Prefix; Rest = $Rest; Kind = $kind; Windows = ($kind -ne 'relative' -and $kind -ne 'posix') }
+}
+
+function Split-CanonicalGrammarUNC {
+    param([string] $Value, [string] $Prefix)
+    $parts = $Value.Split('/')
+    if ($parts.Length -lt 2 -or $parts[0].Length -eq 0 -or $parts[1].Length -eq 0 -or $parts[0].Equals('.', [StringComparison]::Ordinal) -or $parts[0].Equals('..', [StringComparison]::Ordinal) -or $parts[1].Equals('.', [StringComparison]::Ordinal) -or $parts[1].Equals('..', [StringComparison]::Ordinal)) {
+        throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'UNC requires server and share')
+    }
+    return New-CanonicalGrammarRoot ($Prefix + $parts[0] + '/' + $parts[1]) ([string]::Join('/', $parts, 2, $parts.Length - 2))
+}
+
+function Split-CanonicalGrammar {
+    param([AllowEmptyString()][string] $Value, [bool] $NativePosix = $false)
+    if ($Value.Length -eq 0) { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
+    if ($Value.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
+    if ($NativePosix) {
+        if ($Value.StartsWith('//', [StringComparison]::Ordinal) -and -not $Value.StartsWith('///', [StringComparison]::Ordinal)) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'double-leading-slash POSIX path is unsupported') }
+        if ($Value.StartsWith('/', [StringComparison]::Ordinal)) { return New-CanonicalGrammarRoot '/' $Value.Substring(1) }
+        return New-CanonicalGrammarRoot '' $Value
+    }
+    if ($Value.StartsWith('//?/', [StringComparison]::Ordinal)) {
+        $tail = $Value.Substring(4)
+        if (Test-DriveRoot $tail) { $parsed = New-CanonicalGrammarRoot ('//?/' + $tail.Substring(0, 1).ToLowerInvariant() + ':/') $tail.Substring(3) }
+        elseif ($tail.StartsWith('UNC/', [StringComparison]::Ordinal)) { $parsed = Split-CanonicalGrammarUNC $tail.Substring(4) '//?/UNC/' }
+        else { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'unsupported or incomplete extended root') }
+    } elseif (Test-DriveRoot $Value) { $parsed = New-CanonicalGrammarRoot ($Value.Substring(0, 1).ToLowerInvariant() + ':/') $Value.Substring(3) }
+    elseif (Test-DriveRelative $Value) { throw (New-CanonicalPathError 'ERR_DRIVE_RELATIVE_PATH' 'unmarked drive-relative path') }
+    elseif ($Value.StartsWith('//', [StringComparison]::Ordinal)) { $parsed = Split-CanonicalGrammarUNC $Value.Substring(2) '//' }
+    elseif ($Value.StartsWith('/', [StringComparison]::Ordinal)) { $parsed = New-CanonicalGrammarRoot '/' $Value.Substring(1) }
+    else { $parsed = New-CanonicalGrammarRoot '' $Value }
+    if ($parsed.Windows -and $Value.Contains('\')) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'Windows canonical components cannot contain backslash') }
+    return $parsed
+}
+
+function Add-CanonicalRelativeMarker {
+    param([string] $Value)
+    if ($Value.Length -ge 2 -and (Test-AsciiLetter $Value.Substring(0, 1)) -and $Value[1] -eq ':') { return './' + $Value }
+    return $Value
+}
+
+function ConvertTo-CleanCanonicalGrammar {
+    param([AllowEmptyString()][string] $Value, [bool] $NativePosix = $false, [string] $EscapeCode = 'ERR_INVALID_PATH')
+    $parsed = Split-CanonicalGrammar $Value $NativePosix
+    $parts = New-Object System.Collections.ArrayList
+    foreach ($part in $parsed.Rest.Split('/')) {
+        if ($part.Length -eq 0 -or $part.Equals('.', [StringComparison]::Ordinal)) { continue }
+        if ($part.Equals('..', [StringComparison]::Ordinal)) {
+            if ($parts.Count -gt 0) { $parts.RemoveAt($parts.Count - 1) }
+            elseif ($parsed.Prefix.Length -eq 0) { throw (New-CanonicalPathError $EscapeCode 'relative path escapes its root') }
+        } else { [void] $parts.Add($part) }
+    }
+    $joined = [string]::Join('/', [string[]] $parts.ToArray([string]))
+    if ($parsed.Prefix.Length -eq 0) {
+        if ($joined.Length -eq 0) { return '.' }
+        return Add-CanonicalRelativeMarker $joined
+    }
+    $separator = if ($joined.Length -eq 0 -or $parsed.Prefix.EndsWith('/', [StringComparison]::Ordinal)) { '' } else { '/' }
+    return $parsed.Prefix + $separator + $joined
+}
+
+function Assert-CanonicalGrammar {
+    param([AllowEmptyString()][string] $Value, [bool] $AllowDriveCase = $false)
+    $parsed = Split-CanonicalGrammar $Value
+    $comparisonValue = $Value
+    if ($AllowDriveCase -and $parsed.Kind -eq 'drive') { $comparisonValue = $Value.Substring(0, 1).ToLowerInvariant() + $Value.Substring(1) }
+    elseif ($AllowDriveCase -and $parsed.Kind -eq 'extended-drive') { $comparisonValue = $Value.Substring(0, 4) + $Value.Substring(4, 1).ToLowerInvariant() + $Value.Substring(5) }
+    if (-not [string]::Equals((ConvertTo-CleanCanonicalGrammar $Value), $comparisonValue, [StringComparison]::Ordinal)) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'path must be lexically cleaned canonical data') }
+    return $parsed
+}
+
+function Get-NormalizedWSLMount {
+    param([AllowEmptyString()][string] $Value)
+    if ($Value.Length -eq 0) { $Value = '/mnt' }
+    $parsed = Split-CanonicalGrammar $Value $true
+    if ($parsed.Kind -ne 'posix') { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'WSL mount root must be absolute POSIX') }
+    return ConvertTo-CleanCanonicalGrammar $Value $true
+}
+
+function Assert-WindowsGrammarComponents {
+    param([string] $Value, $Options, [bool] $NativePosix = $false)
+    $parsed = Split-CanonicalGrammar $Value $NativePosix
+    $windows = Get-OptionValue $Options 'windows' $null
+    if ([bool] (Get-OptionValue $windows 'rejectADS' $false) -and $parsed.Rest.Contains(':')) { throw (New-CanonicalPathError 'ERR_ALTERNATE_DATA_STREAM' 'Windows alternate data stream is not allowed') }
+    if ([bool] (Get-OptionValue $windows 'rejectDeviceNames' $false)) {
+        foreach ($part in $parsed.Rest.Split('/')) {
+            $base = $part.Split('.')[0].Split(':')[0]
+            if (Test-ReservedDeviceBase $base) { throw (New-CanonicalPathError 'ERR_RESERVED_DEVICE_NAME' 'Windows reserved device name is not allowed') }
         }
-        'win32-drive' {
-            if ($Value.StartsWith('/', [StringComparison]::Ordinal)) {
-                throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'targetProfile win32-drive does not allow POSIX or UNC roots')
-            }
-            return
-        }
-        default { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'unsupported targetProfile') }
     }
 }
 
 function ConvertTo-CanonicalPath {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true, Position = 0)][AllowEmptyString()][string] $Path,
-        [Parameter(Position = 1)] $Options = @{}
-    )
-
+    param([Parameter(Mandatory = $true, Position = 0)][AllowEmptyString()][string] $Path, [Parameter(Position = 1)] $Options = @{})
     $value = $Path
     if ([bool] (Get-OptionValue $Options 'trimOuterWhitespace' $false)) { $value = $value.Trim() }
     if ($value.Length -eq 0) { throw (New-CanonicalPathError 'ERR_EMPTY_PATH' 'path is empty') }
     if ($value.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
-
-    $sourceHost = [string] (Get-OptionValue $Options 'sourceHost' '')
-    if ((Test-UriScheme $value) -or $sourceHost -eq 'vscode-file-uri') {
-        $value = ConvertFrom-CanonicalFileUri $value $Options
-    }
-
-    $windowsOptions = Get-OptionValue $Options 'windows' $null
-    if (-not [bool] (Get-OptionValue $windowsOptions 'preserveExtendedLength' $false)) {
-        $value = Remove-WindowsExtendedPrefix $value
-    }
-    $value = $value -replace '\\', '/'
-
+    $wsl = Get-OptionValue $Options 'wsl' $null
+    $mount = Get-NormalizedWSLMount ([string] (Get-OptionValue $wsl 'mountRoot' ''))
+    $sourceGrammar = [string] (Get-OptionValue $Options 'sourceHost' '')
     $targetProfile = [string] (Get-OptionValue $Options 'targetProfile' '')
-    if ($targetProfile -ne 'posix' -and $value.StartsWith('/', [StringComparison]::Ordinal) -and -not $value.StartsWith('//', [StringComparison]::Ordinal)) {
-        $wslOptions = Get-OptionValue $Options 'wsl' $null
-        if ([bool] (Get-OptionValue $wslOptions 'enabled' $false) -and -not (Test-UriWindowsDrivePath $value)) {
-            if ([bool] (Get-OptionValue $windowsOptions 'rejectADS' $false) -and (Test-WindowsADS $value)) { throw (New-CanonicalPathError 'ERR_ALTERNATE_DATA_STREAM' 'Windows alternate data stream is not allowed') }
-            if ([bool] (Get-OptionValue $windowsOptions 'rejectDeviceNames' $false) -and (Test-ReservedDeviceName $value)) { throw (New-CanonicalPathError 'ERR_RESERVED_DEVICE_NAME' 'Windows reserved device name is not allowed') }
-            $value = ConvertTo-CleanCanonicalPath $value
+    if ($sourceGrammar.Equals('posix', [StringComparison]::Ordinal)) {
+        if ([bool] (Get-OptionValue $wsl 'enabled' $false)) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'native POSIX input cannot enable WSL mapping') }
+        Assert-WindowsGrammarComponents $value $Options $true
+        $value = ConvertTo-CleanCanonicalGrammar $value $true
+    } elseif ($sourceGrammar.Equals('canonical', [StringComparison]::Ordinal)) {
+        Assert-WindowsGrammarComponents $value $Options
+        $value = ConvertTo-CleanCanonicalGrammar $value
+    } else {
+        $uriInput = Test-UriScheme $value
+        if ($uriInput -or $sourceGrammar.Equals('vscode-file-uri', [StringComparison]::Ordinal)) { $value = ConvertFrom-CanonicalFileUri $value $Options }
+        $candidate = [bool] (Get-OptionValue $wsl 'enabled' $false) -and $value.StartsWith('/', [StringComparison]::Ordinal) -and (-not $value.StartsWith('//', [StringComparison]::Ordinal) -or $value.StartsWith('///', [StringComparison]::Ordinal)) -and -not ($uriInput -and (Test-UriWindowsDrivePath $value))
+        if ($candidate) {
+            Assert-WindowsGrammarComponents $value $Options $true
+            $value = ConvertTo-CleanCanonicalGrammar $value $true
+            $prefix = if ($mount.Equals('/', [StringComparison]::Ordinal)) { '/' } else { $mount + '/' }
+            if (-not $targetProfile.Equals('posix', [StringComparison]::Ordinal) -and $value.StartsWith($prefix, [StringComparison]::Ordinal)) {
+                $tail = $value.Substring($prefix.Length)
+                if ($tail.Length -gt 0 -and (Test-AsciiLetter $tail.Substring(0, 1)) -and ($tail.Length -eq 1 -or $tail[1] -eq '/')) {
+                    $rest = if ($tail.Length -eq 1) { '' } else { $tail.Substring(2) }
+                    $value = $tail.Substring(0, 1).ToLowerInvariant() + ':/' + $rest
+                }
+            }
+            $value = ConvertTo-CleanCanonicalGrammar $value
+        } else {
+            $value = $value.Replace('\', '/')
+            if (Test-UriWindowsDrivePath $value) { $value = $value.Substring(1) }
+            $parsed = Split-CanonicalGrammar $value
+            $windows = Get-OptionValue $Options 'windows' $null
+            if (-not [bool] (Get-OptionValue $windows 'preserveExtendedLength' $false)) {
+                if ($parsed.Kind -eq 'extended-drive') { $value = $value.Substring(4) }
+                elseif ($parsed.Kind -eq 'extended-unc') { $value = '//' + $value.Substring(8) }
+            }
+            Assert-WindowsGrammarComponents $value $Options
+            $value = ConvertTo-CleanCanonicalGrammar $value
         }
-        $mapped = ConvertFrom-WSLDrivePath $value (Get-OptionValue $Options 'wsl' $null)
-        if ($null -ne $mapped) { $value = $mapped }
     }
-    if (Test-UriWindowsDrivePath $value) { $value = $value.Substring(1) }
-
-    if (Test-DriveRelative $value) {
-        throw (New-CanonicalPathError 'ERR_DRIVE_RELATIVE_PATH' 'Windows drive-relative paths are not canonical')
-    }
-    if (Test-DriveRoot $value) {
-        $value = $value.Substring(0, 1).ToLowerInvariant() + $value.Substring(1)
-    }
-
-    if ([bool] (Get-OptionValue $windowsOptions 'rejectADS' $false) -and (Test-WindowsADS $value)) {
-        throw (New-CanonicalPathError 'ERR_ALTERNATE_DATA_STREAM' 'Windows alternate data stream is not allowed')
-    }
-    if ([bool] (Get-OptionValue $windowsOptions 'rejectDeviceNames' $false) -and (Test-ReservedDeviceName $value)) {
-        throw (New-CanonicalPathError 'ERR_RESERVED_DEVICE_NAME' 'Windows reserved device name is not allowed')
-    }
-
-    $cleaned = ConvertTo-CleanCanonicalPath $value
-    Assert-TargetProfile $cleaned $targetProfile
-    return $cleaned
+    Assert-TargetProfile $value $targetProfile
+    return $value
 }
 
 function Get-CanonicalParts {
@@ -399,23 +476,16 @@ function Get-CanonicalParts {
 
 function Get-CanonicalRelativePath {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string] $Root,
-        [Parameter(Mandatory = $true)][string] $Target
-    )
-
-    $rootParts = Get-CanonicalParts $Root
-    $targetParts = Get-CanonicalParts $Target
-    if (-not $rootParts.Prefix.Equals($targetParts.Prefix, [StringComparison]::Ordinal) -or $targetParts.Parts.Count -lt $rootParts.Parts.Count) {
-        throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root')
-    }
-    for ($index = 0; $index -lt $rootParts.Parts.Count; $index++) {
-        if (-not $targetParts.Parts[$index].Equals($rootParts.Parts[$index], [StringComparison]::Ordinal)) {
-            throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root')
-        }
-    }
-    if ($targetParts.Parts.Count -eq $rootParts.Parts.Count) { return '.' }
-    return [string]::Join('/', [string[]] $targetParts.Parts[$rootParts.Parts.Count..($targetParts.Parts.Count - 1)])
+    param([Parameter(Mandatory = $true)][string] $Root, [Parameter(Mandatory = $true)][string] $Target)
+    $left = Assert-CanonicalGrammar $Root
+    $right = Assert-CanonicalGrammar $Target
+    if ($left.Prefix.Length -eq 0 -or $right.Prefix.Length -eq 0) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'relative operands must be absolute canonical paths') }
+    $leftParts = @($left.Rest.Split('/') | Where-Object { $_.Length -gt 0 })
+    $rightParts = @($right.Rest.Split('/') | Where-Object { $_.Length -gt 0 })
+    if (-not $left.Prefix.Equals($right.Prefix, [StringComparison]::Ordinal) -or $rightParts.Count -lt $leftParts.Count) { throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root') }
+    for ($i = 0; $i -lt $leftParts.Count; $i++) { if (-not $leftParts[$i].Equals($rightParts[$i], [StringComparison]::Ordinal)) { throw (New-CanonicalPathError 'ERR_OUTSIDE_ROOT' 'target is outside root') } }
+    if ($leftParts.Count -eq $rightParts.Count) { return '.' }
+    return Add-CanonicalRelativeMarker ([string]::Join('/', [string[]] $rightParts[$leftParts.Count..($rightParts.Count - 1)]))
 }
 
 function ConvertTo-CanonicalRelativePath {
@@ -444,16 +514,16 @@ function ConvertTo-CanonicalRelativePath {
 
 function Join-CanonicalPath {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string] $Root,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string] $Relative
-    )
-
-    $cleanRelative = ConvertTo-CanonicalRelativePath $Relative
-    if ($Root.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'root contains NUL') }
-    if ($cleanRelative.Equals('.', [StringComparison]::Ordinal)) { return $Root }
-    if ($Root.Equals('/', [StringComparison]::Ordinal) -or $Root.EndsWith('/', [StringComparison]::Ordinal)) { return $Root + $cleanRelative }
-    return $Root + '/' + $cleanRelative
+    param([Parameter(Mandatory = $true)][string] $Root, [Parameter(Mandatory = $true)][AllowEmptyString()][string] $Relative)
+    $parsedRoot = Assert-CanonicalGrammar $Root
+    $parsedRelative = Split-CanonicalGrammar $Relative
+    if ($parsedRelative.Prefix.Length -ne 0) { throw (New-CanonicalPathError 'ERR_ABSOLUTE_PATH' 'join argument must be relative') }
+    if ($parsedRoot.Windows -and $Relative.Contains('\')) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'backslash data is not representable under a Windows root') }
+    $clean = ConvertTo-CleanCanonicalGrammar $Relative $false 'ERR_OUTSIDE_ROOT'
+    if ($clean.Equals('.', [StringComparison]::Ordinal)) { return $Root }
+    if ($clean.StartsWith('./', [StringComparison]::Ordinal)) { $clean = $clean.Substring(2) }
+    $combined = if ($Root.Equals('.', [StringComparison]::Ordinal)) { $clean } else { $Root.TrimEnd('/') + '/' + $clean }
+    return ConvertTo-CleanCanonicalGrammar $combined ($parsedRoot.Kind -eq 'relative')
 }
 
 function Test-CanonicalPathEqual {
@@ -470,37 +540,30 @@ function Test-CanonicalPathEqual {
 function ConvertTo-CanonicalWin32Path {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string] $Path)
-
-    if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
-    if (Test-DriveRoot $Path) { return $Path.Substring(0, 1).ToUpperInvariant() + ':\' + ($Path.Substring(3) -replace '/', '\') }
-    if ($Path.StartsWith('//', [StringComparison]::Ordinal)) { return '\\' + ($Path.Substring(2) -replace '/', '\') }
-    return $Path -replace '/', '\'
+    $parsed = Assert-CanonicalGrammar $Path $true
+    if ($parsed.Kind -eq 'posix' -or $Path.Contains('\') -or $Path.StartsWith('./', [StringComparison]::Ordinal)) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'canonical path is not representable as Windows') }
+    $value = $Path
+    if ($parsed.Kind -eq 'drive') { $value = $value.Substring(0, 1).ToUpperInvariant() + $value.Substring(1) }
+    if ($parsed.Kind -eq 'extended-drive') { $value = $value.Substring(0, 4) + $value.Substring(4, 1).ToUpperInvariant() + $value.Substring(5) }
+    return $value.Replace('/', '\')
 }
 
 function ConvertTo-CanonicalWSLPath {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string] $Path,
-        $Options = @{}
-    )
-
-    if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
-    if (-not (Test-DriveRoot $Path)) { return $Path }
-    $mountRoot = [string] (Get-OptionValue $Options 'mountRoot' '/mnt')
-    $mountRoot = $mountRoot -replace '/+$', ''
-    $drive = $Path.Substring(0, 1).ToLowerInvariant()
-    $rest = $Path.Substring(3)
-    if ($rest.Length -eq 0) { return $mountRoot + '/' + $drive }
-    return $mountRoot + '/' + $drive + '/' + $rest
+    param([Parameter(Mandatory = $true)][string] $Path, $Options = @{})
+    $mount = Get-NormalizedWSLMount ([string] (Get-OptionValue $Options 'mountRoot' ''))
+    $parsed = Assert-CanonicalGrammar $Path $true
+    if ($parsed.Kind -in @('posix', 'relative')) { return $Path }
+    if ($parsed.Kind -ne 'drive') { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'WSL serialization requires an ordinary drive') }
+    $prefix = if ($mount.Equals('/', [StringComparison]::Ordinal)) { '' } else { $mount }
+    $tail = if ($parsed.Rest.Length -eq 0) { '' } else { '/' + $parsed.Rest }
+    return $prefix + '/' + $parsed.Prefix.Substring(0, 1) + $tail
 }
 
 function ConvertTo-CanonicalPosixPath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string] $Path)
-
-    if ($Path.Contains([string] [char] 0)) { throw (New-CanonicalPathError 'ERR_NUL_BYTE' 'path contains NUL') }
-    if (Test-DriveRoot $Path) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'win32 drive paths require an explicit host mapping such as toWSL') }
-    if ($Path.Contains('\')) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'canonical paths must use slash separators') }
+    if ((Assert-CanonicalGrammar $Path).Windows) { throw (New-CanonicalPathError 'ERR_INVALID_PATH' 'Windows root requires explicit host mapping') }
     return $Path
 }
 

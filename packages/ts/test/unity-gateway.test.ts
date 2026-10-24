@@ -63,6 +63,18 @@ describe("Unity gateway path service", () => {
     expect(paths.toUnityAssetPath(root, "c:/Work/Game/Packages/com.example/package.json" as CanonicalPath)).toBe("Packages/com.example/package.json");
   });
 
+  it("uses canonical grammar for native POSIX project roots", () => {
+    const paths = new CanonicalPathService();
+    for (const raw of ["\\\\server\\share", "C:\\repo", "C:/repo"]) {
+      expectRejectCode(() => paths.normalizeProjectRoot(raw, { sourceHost: "posix" }), "ERR_INVALID_PATH");
+    }
+    const root = paths.normalizeProjectRoot("/repo/a\\b", { sourceHost: "posix" });
+    const target = paths.fromUnityAssetPath(root, "Assets/Scripts/Player.cs");
+    expect(target).toBe("/repo/a\\b/Assets/Scripts/Player.cs");
+    expect(paths.toUnityAssetPath(root, target)).toBe("Assets/Scripts/Player.cs");
+    expectRejectCode(() => paths.toUnityAssetPath(root, (root + "/Assets/a\\b") as CanonicalPath), "ERR_INVALID_PATH");
+  });
+
   it("matches shared Unity MCP scoped path vectors", () => {
     const paths = new CanonicalPathService();
 

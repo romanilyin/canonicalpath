@@ -17,6 +17,8 @@ type HostKind string
 const (
 	// HostPOSIX identifies native POSIX-style input paths.
 	HostPOSIX HostKind = "posix"
+	// HostCanonical identifies canonical grammar without raw host inference.
+	HostCanonical HostKind = "canonical"
 	// HostWin32 identifies native Windows input paths.
 	HostWin32 HostKind = "win32"
 	// HostWSL identifies WSL input paths that may map to Windows drives.
@@ -76,61 +78,30 @@ func Normalize(raw string, opts Options) (Path, error) {
 	if strings.ContainsRune(raw, '\x00') {
 		return "", newError(ErrNULByte, "path contains NUL")
 	}
+	mountRoot, err := normalizeMountRoot(opts.WSL.MountRoot)
+	if err != nil {
+		return "", err
+	}
+	opts.WSL.MountRoot = mountRoot
+	if opts.SourceHost == HostPOSIX && opts.WSL.Enabled {
+		return "", newError(ErrInvalidPath, "native POSIX input cannot request WSL drive mapping")
+	}
 
 	value := raw
-	if hasURIScheme(value) || opts.SourceHost == HostVSCodeFileURI {
-		parsed, err := ParseFileURI(value, opts)
-		if err != nil {
-			return "", err
-		}
-		value = parsed
+	if opts.SourceHost == HostPOSIX {
+		value, err = prepareNativePOSIX(value)
+	} else if opts.SourceHost != HostCanonical {
+		value, err = normalizeRawInput(value, opts)
 	}
-
-	if !opts.Windows.PreserveExtendedLength {
-		value = unwrapWindowsExtendedPrefix(value)
+	if err != nil {
+		return "", err
 	}
-
-	value = strings.ReplaceAll(value, "\\", "/")
-
-	if shouldMapWSLDrive(opts) && strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
-		// Resolve POSIX dot segments before selecting the mounted drive.
-		if opts.WSL.Enabled && !isURIWindowsDrivePath(value) {
-			if opts.Windows.RejectADS && hasWindowsADS(value) {
-				return "", newError(ErrAlternateDataStream, "Windows alternate data stream is not allowed")
-			}
-			if opts.Windows.RejectDeviceNames && hasReservedDeviceName(value) {
-				return "", newError(ErrReservedDeviceName, "Windows reserved device name is not allowed")
-			}
-			cleaned, err := cleanCanonical(value)
-			if err != nil {
-				return "", err
-			}
-			value = cleaned
-		}
-		if mapped, ok := mapWSLDrive(value, opts.WSL); ok {
-			value = mapped
-		}
+	if _, _, err := splitRoot(value); err != nil {
+		return "", err
 	}
-
-	if isURIWindowsDrivePath(value) {
-		value = value[1:]
+	if err := validateWindowsComponents(value, opts.Windows); err != nil {
+		return "", err
 	}
-
-	if isDriveRelative(value) {
-		return "", newError(ErrDriveRelativePath, "Windows drive-relative paths are not canonical")
-	}
-
-	if hasDriveRoot(value) {
-		value = strings.ToLower(value[:1]) + value[1:]
-	}
-
-	if opts.Windows.RejectADS && hasWindowsADS(value) {
-		return "", newError(ErrAlternateDataStream, "Windows alternate data stream is not allowed")
-	}
-	if opts.Windows.RejectDeviceNames && hasReservedDeviceName(value) {
-		return "", newError(ErrReservedDeviceName, "Windows reserved device name is not allowed")
-	}
-
 	cleaned, err := cleanCanonical(value)
 	if err != nil {
 		return "", err
@@ -141,21 +112,78 @@ func Normalize(raw string, opts Options) (Path, error) {
 	return Path(cleaned), nil
 }
 
-func shouldMapWSLDrive(opts Options) bool {
-	return opts.TargetProfile != TargetPOSIX
+func normalizeRawInput(value string, opts Options) (string, error) {
+	uriInput := hasURIScheme(value)
+	if uriInput || opts.SourceHost == HostVSCodeFileURI {
+		parsed, err := ParseFileURI(value, opts)
+		if err != nil {
+			return "", err
+		}
+		value = parsed
+	}
+	// An enabled WSL candidate uses POSIX separators before raw Windows
+	// rewriting. Literal backslashes can belong to its mount or unmapped path.
+	if opts.WSL.Enabled && strings.HasPrefix(value, "/") &&
+		(!strings.HasPrefix(value, "//") || strings.HasPrefix(value, "///")) &&
+		!(uriInput && isURIWindowsDrivePath(value)) {
+		prepared, err := prepareNativePOSIX(value)
+		if err != nil {
+			return "", err
+		}
+		if err := validateWindowsComponents(prepared, opts.Windows); err != nil {
+			return "", err
+		}
+		cleaned, err := cleanCanonical(prepared)
+		if err != nil {
+			return "", err
+		}
+		if opts.TargetProfile != TargetPOSIX {
+			if mapped, ok := mapWSLDrive(cleaned, opts.WSL); ok {
+				return mapped, nil
+			}
+		}
+		return cleaned, nil
+	}
+	value = strings.ReplaceAll(value, "\\", "/")
+	if strings.HasPrefix(value, "//?/") {
+		if _, _, err := splitRoot(value); err != nil {
+			return "", err
+		}
+	}
+	if !opts.Windows.PreserveExtendedLength {
+		value = unwrapWindowsExtendedPrefix(value)
+	}
+	if isURIWindowsDrivePath(value) {
+		value = value[1:]
+	}
+	return value, nil
+}
+
+func validateWindowsComponents(value string, opts WindowsOptions) error {
+	if opts.RejectADS && hasWindowsADS(value) {
+		return newError(ErrAlternateDataStream, "Windows alternate data stream is not allowed")
+	}
+	if opts.RejectDeviceNames && hasReservedDeviceName(value) {
+		return newError(ErrReservedDeviceName, "Windows reserved device name is not allowed")
+	}
+	return nil
 }
 
 func validateTargetProfile(value string, profile string) error {
+	prefix, _, err := splitRoot(value)
+	if err != nil {
+		return err
+	}
 	switch profile {
 	case "", TargetPortable:
 		return nil
 	case TargetPOSIX:
-		if hasDriveRoot(value) || strings.HasPrefix(value, "//") {
-			return newError(ErrInvalidPath, "targetProfile posix does not allow Windows drive or UNC roots")
+		if isWindowsRoot(prefix) {
+			return newError(ErrInvalidPath, "targetProfile posix does not allow Windows roots")
 		}
 		return nil
 	case TargetWin32Drive:
-		if strings.HasPrefix(value, "/") {
+		if prefix == "/" || (isWindowsRoot(prefix) && !isDriveRoot(prefix)) {
 			return newError(ErrInvalidPath, "targetProfile win32-drive does not allow POSIX or UNC roots")
 		}
 		return nil
@@ -175,78 +203,6 @@ func hasURIScheme(value string) bool {
 		}
 	}
 	return true
-}
-
-func cleanCanonical(value string) (string, error) {
-	if value == "" {
-		return "", newError(ErrEmptyPath, "path is empty")
-	}
-
-	prefix, rest, err := splitRoot(value)
-	if err != nil {
-		return "", err
-	}
-
-	parts := make([]string, 0)
-	for _, part := range strings.Split(rest, "/") {
-		switch part {
-		case "", ".":
-			continue
-		case "..":
-			if len(parts) > 0 {
-				parts = parts[:len(parts)-1]
-				continue
-			}
-			if prefix != "" {
-				continue
-			}
-			return "", newError(ErrInvalidPath, "relative path escapes above its root")
-		default:
-			parts = append(parts, part)
-		}
-	}
-
-	joined := strings.Join(parts, "/")
-	if prefix == "" {
-		if joined == "" {
-			return ".", nil
-		}
-		return joined, nil
-	}
-	if prefix == "/" {
-		if joined == "" {
-			return "/", nil
-		}
-		return "/" + joined, nil
-	}
-	if strings.HasSuffix(prefix, "/") {
-		if joined == "" {
-			return prefix, nil
-		}
-		return prefix + joined, nil
-	}
-	if joined == "" {
-		return prefix, nil
-	}
-	return prefix + "/" + joined, nil
-}
-
-func splitRoot(value string) (prefix string, rest string, err error) {
-	if hasDriveRoot(value) {
-		return value[:3], value[3:], nil
-	}
-	if strings.HasPrefix(value, "//") {
-		parts := strings.Split(value[2:], "/")
-		if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", newError(ErrInvalidPath, "UNC path requires server and share")
-		}
-		root := "//" + parts[0] + "/" + parts[1]
-		return root, strings.Join(parts[2:], "/"), nil
-	}
-	if strings.HasPrefix(value, "/") {
-		return "/", value[1:], nil
-	}
-	return "", value, nil
 }
 
 func hasDriveRoot(value string) bool {

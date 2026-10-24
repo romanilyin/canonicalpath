@@ -88,65 +88,88 @@ pub fn normalize(raw: &str) -> Result<String, PathError> {
 }
 
 pub fn normalize_with_options(raw: &str, options: &NormalizeOptions) -> Result<String, PathError> {
-    let mut value = raw.to_string();
-    if options.trim_outer_whitespace {
-        value = trim_outer_ascii_whitespace(&value);
-    }
+    let mut value = if options.trim_outer_whitespace {
+        trim_outer_ascii_whitespace(raw)
+    } else {
+        raw.to_string()
+    };
     if value.is_empty() {
         return Err(err("ERR_EMPTY_PATH", "path is empty"));
     }
     if has_nul(&value) {
         return Err(err("ERR_NUL_BYTE", "path contains NUL"));
     }
-
-    if has_uri_scheme(&value) || options.source_host == "vscode-file-uri" {
-        value = parse_file_uri(&value, options)?;
+    let mount_root = normalize_mount_root(&options.wsl.mount_root)?;
+    if options.source_host == "posix" && options.wsl.enabled {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "native POSIX input cannot request WSL drive mapping",
+        ));
     }
-    if has_nul(&value) {
-        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
+    if options.source_host == "posix" {
+        value = prepare_native_posix(&value)?;
+    } else if options.source_host != "canonical" {
+        value = normalize_raw_input(&value, options, &mount_root)?;
+    }
+    split_root(&value)?;
+    validate_windows_components(&value, &options.windows)?;
+    let cleaned = clean_canonical(&value)?;
+    validate_target_profile(&cleaned, &options.target_profile)?;
+    Ok(cleaned)
+}
+
+fn normalize_raw_input(
+    raw: &str,
+    options: &NormalizeOptions,
+    mount_root: &str,
+) -> Result<String, PathError> {
+    let uri_input = has_uri_scheme(raw);
+    let mut value = if uri_input || options.source_host == "vscode-file-uri" {
+        parse_file_uri(raw, options)?
+    } else {
+        raw.to_string()
+    };
+    // WSL paths use POSIX components before any Windows separator rewriting.
+    if options.wsl.enabled
+        && value.starts_with('/')
+        && (!value.starts_with("//") || value.starts_with("///"))
+        && !(uri_input && is_uri_windows_drive_path(&value))
+    {
+        let prepared = prepare_native_posix(&value)?;
+        validate_windows_components(&prepared, &options.windows)?;
+        let cleaned = clean_canonical(&prepared)?;
+        if options.target_profile == "posix" {
+            return Ok(cleaned);
+        }
+        return Ok(map_wsl_drive(&cleaned, mount_root).unwrap_or(cleaned));
+    }
+    value = value.replace('\\', "/");
+    if value.starts_with("//?/") {
+        split_root(&value)?;
     }
     if !options.windows.preserve_extended_length {
         value = unwrap_windows_extended_prefix(&value);
     }
-    value = value.replace('\\', "/");
-
-    if options.target_profile != "posix" && value.starts_with('/') && !value.starts_with("//") {
-        if options.wsl.enabled && !is_uri_windows_drive_path(&value) {
-            if options.windows.reject_ads && has_windows_ads(&value) { return Err(err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")); }
-            if options.windows.reject_device_names && has_reserved_device_name(&value) { return Err(err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")); }
-            value = clean_canonical(&value)?;
-        }
-        value = map_wsl_drive(&value, &options.wsl);
-    }
     if is_uri_windows_drive_path(&value) {
         value = value[1..].to_string();
     }
-    if is_drive_relative(&value) {
-        return Err(err(
-            "ERR_DRIVE_RELATIVE_PATH",
-            "Windows drive-relative paths are not canonical",
-        ));
-    }
-    if has_drive_root(&value) {
-        value.replace_range(0..1, &to_lower_ascii_byte(value.as_bytes()[0]).to_string());
-    }
+    Ok(value)
+}
 
-    if options.windows.reject_ads && has_windows_ads(&value) {
+fn validate_windows_components(value: &str, options: &WindowsOptions) -> Result<(), PathError> {
+    if options.reject_ads && has_windows_ads(value) {
         return Err(err(
             "ERR_ALTERNATE_DATA_STREAM",
             "Windows alternate data stream is not allowed",
         ));
     }
-    if options.windows.reject_device_names && has_reserved_device_name(&value) {
+    if options.reject_device_names && has_reserved_device_name(value) {
         return Err(err(
             "ERR_RESERVED_DEVICE_NAME",
             "Windows reserved device name is not allowed",
         ));
     }
-
-    let cleaned = clean_canonical(&value)?;
-    validate_target_profile(&cleaned, &options.target_profile)?;
-    Ok(cleaned)
+    Ok(())
 }
 
 pub fn relative(root: &str, target: &str) -> Result<String, PathError> {
@@ -163,28 +186,41 @@ pub fn relative(root: &str, target: &str) -> Result<String, PathError> {
     if target_parts.len() == root_parts.len() {
         return Ok(".".to_string());
     }
-    Ok(target_parts[root_parts.len()..].join("/"))
+    Ok(mark_relative(&target_parts[root_parts.len()..].join("/")))
 }
 
 pub fn join(root: &str, relative_path: &str) -> Result<String, PathError> {
-    let clean_relative = normalize_relative(relative_path)?;
-    if has_nul(root) {
-        return Err(err("ERR_NUL_BYTE", "root contains NUL"));
+    let parsed = parse_clean_canonical(root)?;
+    if is_windows_root(&parsed.prefix) && relative_path.contains('\\') {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "Windows canonical components cannot contain a literal backslash",
+        ));
     }
+    let clean_relative = normalize_canonical_relative(relative_path)?;
     if clean_relative == "." {
         return Ok(root.to_string());
     }
-    if root == "/" || root.ends_with('/') {
-        Ok(format!("{root}{clean_relative}"))
-    } else {
-        Ok(format!("{root}/{clean_relative}"))
+    let relative = without_relative_marker(&clean_relative);
+    if parsed.prefix.is_empty() {
+        return Ok(mark_relative(&if parsed.rest.is_empty() {
+            relative.to_string()
+        } else {
+            format!("{}/{relative}", parsed.rest)
+        }));
     }
+    Ok(if root.ends_with('/') {
+        format!("{root}{relative}")
+    } else {
+        format!("{root}/{relative}")
+    })
 }
 
 pub fn join_parts(parts: &[&str]) -> Result<String, PathError> {
     let mut result = String::new();
     for part in parts.iter().copied().filter(|part| !part.is_empty()) {
         if result.is_empty() {
+            parse_clean_canonical(part)?;
             result = part.to_string();
         } else {
             result = join(&result, part)?;
@@ -201,58 +237,52 @@ pub fn is_equal(left: &str, right: &str, options: &NormalizeOptions) -> Result<b
 }
 
 pub fn to_win32(canonical: &str) -> Result<String, PathError> {
-    if has_nul(canonical) {
-        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
+    let root = parse_clean_canonical(canonical)?;
+    if root.prefix == "/" || canonical.contains('\\') || has_relative_marker(canonical) {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "canonical path has no lossless Windows representation",
+        ));
     }
-    if has_drive_root(canonical) {
-        let drive = canonical.as_bytes()[0].to_ascii_uppercase() as char;
-        let rest = canonical[3..].replace('/', "\\");
-        return Ok(format!("{drive}:\\{rest}"));
+    let mut value = canonical.to_string();
+    if has_drive_root(&value) {
+        value.replace_range(0..1, &value[..1].to_ascii_uppercase());
+    } else if value.starts_with("//?/") && has_drive_root(&value[4..]) {
+        value.replace_range(4..5, &value[4..5].to_ascii_uppercase());
     }
-    if let Some(rest) = canonical.strip_prefix("//") {
-        return Ok(format!("\\\\{}", rest.replace('/', "\\")));
-    }
-    Ok(canonical.replace('/', "\\"))
+    Ok(value.replace('/', "\\"))
 }
 
 pub fn to_wsl(canonical: &str, options: &WslOptions) -> Result<String, PathError> {
-    if has_nul(canonical) {
-        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
+    let mount_root = normalize_mount_root(&options.mount_root)?;
+    let root = parse_clean_canonical(canonical)?;
+    if is_windows_root(&root.prefix) && !has_drive_root(&root.prefix) {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "WSL mapping requires an ordinary Windows drive root",
+        ));
     }
-    if !has_drive_root(canonical) {
+    if !has_drive_root(&root.prefix) {
         return Ok(canonical.to_string());
     }
-    let mount_root = trim_right_slashes(if options.mount_root.is_empty() {
-        "/mnt".to_string()
-    } else {
-        options.mount_root.clone()
-    });
     let mut result = format!(
-        "{mount_root}/{}",
+        "{}/{}",
+        mount_root.trim_end_matches('/'),
         to_lower_ascii_byte(canonical.as_bytes()[0])
     );
-    let rest = &canonical[3..];
-    if !rest.is_empty() {
+    if !root.rest.is_empty() {
         result.push('/');
-        result.push_str(rest);
+        result.push_str(&root.rest);
     }
     Ok(result)
 }
 
 pub fn to_posix(canonical: &str) -> Result<String, PathError> {
-    if has_nul(canonical) {
-        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
-    }
-    if has_drive_root(canonical) {
+    let root = parse_clean_canonical(canonical)?;
+    if is_windows_root(&root.prefix) {
         return Err(err(
             "ERR_INVALID_PATH",
-            "win32 drive paths require an explicit host mapping such as to_wsl",
-        ));
-    }
-    if canonical.contains('\\') {
-        return Err(err(
-            "ERR_INVALID_PATH",
-            "canonical paths must use slash separators",
+            "Windows roots require an explicit host mapping",
         ));
     }
     Ok(canonical.to_string())
@@ -359,13 +389,6 @@ fn is_uri_windows_drive_path(value: &str) -> bool {
         && bytes[3] == b'/'
 }
 
-fn trim_right_slashes(mut value: String) -> String {
-    while value.ends_with('/') {
-        value.pop();
-    }
-    value
-}
-
 fn trim_outer_ascii_whitespace(value: &str) -> String {
     value
         .trim_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\x0c' | '\x0b'))
@@ -389,13 +412,10 @@ fn has_uri_scheme(value: &str) -> bool {
 }
 
 fn unwrap_windows_extended_prefix(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("\\\\?\\UNC\\") {
-        return format!("\\\\{rest}");
+    if let Some(rest) = value.strip_prefix("//?/UNC/") {
+        return format!("//{rest}");
     }
-    if let Some(rest) = value.strip_prefix("\\\\?\\") {
-        return rest.to_string();
-    }
-    value.to_string()
+    value.strip_prefix("//?/").unwrap_or(value).to_string()
 }
 
 fn hex_value(value: u8) -> Option<u8> {
@@ -485,7 +505,9 @@ fn parse_hierarchical_uri_path(
     };
     let decoded_authority = percent_decode(&rest[..slash])?;
     let decoded = percent_decode(&rest[slash..])?;
-    if decoded.contains('\0') || decoded_authority.contains('\0') { return Err(err("ERR_NUL_BYTE", "decoded URI contains NUL")); }
+    if decoded.contains('\0') || decoded_authority.contains('\0') {
+        return Err(err("ERR_NUL_BYTE", "decoded URI contains NUL"));
+    }
     if decoded.is_empty() {
         return Err(err("ERR_INVALID_URI", "URI path is empty"));
     }
@@ -524,93 +546,185 @@ fn parse_file_uri(uri: &str, options: &NormalizeOptions) -> Result<String, PathE
     Ok(uri.to_string())
 }
 
-fn map_wsl_drive(value: &str, options: &WslOptions) -> String {
-    if !options.enabled {
-        return value.to_string();
+fn normalize_mount_root(value: &str) -> Result<String, PathError> {
+    if has_nul(value) {
+        return Err(err("ERR_NUL_BYTE", "WSL mount root contains NUL"));
     }
-    let mount_root = trim_right_slashes(if options.mount_root.is_empty() {
-        "/mnt".to_string()
-    } else {
-        options.mount_root.clone()
-    });
-    let compact_root = mount_root.split('/').filter(|part| !part.is_empty()).collect::<Vec<_>>().join("/");
-    let prefix = format!("{}{compact_root}/", if mount_root.starts_with('/') { "/" } else { "" });
-    let Some(rest) = value.strip_prefix(&prefix) else {
-        return value.to_string();
-    };
+    let value = if value.is_empty() { "/mnt" } else { value };
+    if !value.starts_with('/') {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "WSL mount root must be an absolute native POSIX path",
+        ));
+    }
+    clean_native_posix(value)
+}
+
+fn map_wsl_drive(value: &str, mount_root: &str) -> Option<String> {
+    let prefix = format!("{}/", mount_root.trim_end_matches('/'));
+    let rest = value.strip_prefix(&prefix)?;
     let bytes = rest.as_bytes();
-    if bytes.is_empty() || !is_ascii_letter(bytes[0]) {
-        return value.to_string();
+    if bytes.is_empty() || !is_ascii_letter(bytes[0]) || (bytes.len() > 1 && bytes[1] != b'/') {
+        return None;
     }
-    if bytes.len() > 1 && bytes[1] != b'/' {
-        return value.to_string();
+    Some(format!(
+        "{}:/{}",
+        to_lower_ascii_byte(bytes[0]),
+        if bytes.len() > 1 { &rest[2..] } else { "" }
+    ))
+}
+
+fn split_root(value: &str) -> Result<SplitRoot, PathError> {
+    let result = if let Some(tail) = value.strip_prefix("//?/") {
+        if has_drive_root(tail) {
+            SplitRoot {
+                prefix: value[..7].to_string(),
+                rest: value[7..].to_string(),
+            }
+        } else if tail.starts_with("UNC/") {
+            split_unc_root(value, "//?/UNC/")?
+        } else {
+            return Err(err(
+                "ERR_INVALID_PATH",
+                "extended root requires an absolute drive or UNC server and share",
+            ));
+        }
+    } else if has_drive_root(value) {
+        SplitRoot {
+            prefix: value[..3].to_string(),
+            rest: value[3..].to_string(),
+        }
+    } else if value.starts_with("//") {
+        split_unc_root(value, "//")?
+    } else if let Some(rest) = value.strip_prefix('/') {
+        SplitRoot {
+            prefix: "/".to_string(),
+            rest: rest.to_string(),
+        }
+    } else if is_drive_relative(value) {
+        return Err(err(
+            "ERR_DRIVE_RELATIVE_PATH",
+            "Windows drive-relative paths are not canonical",
+        ));
+    } else {
+        SplitRoot {
+            prefix: String::new(),
+            rest: value.to_string(),
+        }
+    };
+    if is_windows_root(&result.prefix) && value.contains('\\') {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "Windows canonical components cannot contain a literal backslash",
+        ));
     }
-    let mut result = String::new();
-    result.push(to_lower_ascii_byte(bytes[0]));
-    result.push_str(":/");
-    if bytes.len() > 1 {
-        result.push_str(&rest[2..]);
+    Ok(result)
+}
+
+fn split_unc_root(value: &str, leader: &str) -> Result<SplitRoot, PathError> {
+    let mut parts = value[leader.len()..].splitn(3, '/');
+    let server = parts.next().unwrap_or("");
+    let share = parts.next().unwrap_or("");
+    if server.is_empty()
+        || share.is_empty()
+        || matches!(server, "." | "..")
+        || matches!(share, "." | "..")
+    {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "UNC root requires non-dot server and share components",
+        ));
+    }
+    Ok(SplitRoot {
+        prefix: format!("{leader}{server}/{share}"),
+        rest: parts.next().unwrap_or("").to_string(),
+    })
+}
+
+fn is_windows_root(prefix: &str) -> bool {
+    !prefix.is_empty() && prefix != "/"
+}
+fn is_drive_root(prefix: &str) -> bool {
+    has_drive_root(prefix) || prefix.strip_prefix("//?/").is_some_and(has_drive_root)
+}
+
+fn lowercase_drive(value: &str) -> String {
+    let mut result = value.to_string();
+    if has_drive_root(value) {
+        result.replace_range(0..1, &value[..1].to_ascii_lowercase());
+    } else if value.starts_with("//?/") && has_drive_root(&value[4..]) {
+        result.replace_range(4..5, &value[4..5].to_ascii_lowercase());
     }
     result
 }
 
-fn split_root(value: &str) -> Result<SplitRoot, PathError> {
-    if has_drive_root(value) {
-        return Ok(SplitRoot {
-            prefix: value[..3].to_string(),
-            rest: value[3..].to_string(),
-        });
+fn needs_relative_marker(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2 && is_ascii_letter(bytes[0]) && bytes[1] == b':'
+}
+fn mark_relative(value: &str) -> String {
+    if needs_relative_marker(value) {
+        format!("./{value}")
+    } else {
+        value.to_string()
     }
-    if let Some(rest) = value.strip_prefix("//") {
-        let Some(first) = rest.find('/') else {
-            return Err(err(
-                "ERR_INVALID_PATH",
-                "UNC path requires server and share",
-            ));
+}
+fn has_relative_marker(value: &str) -> bool {
+    value.strip_prefix("./").is_some_and(needs_relative_marker)
+}
+fn without_relative_marker(value: &str) -> &str {
+    if has_relative_marker(value) {
+        &value[2..]
+    } else {
+        value
+    }
+}
+
+fn prepare_native_posix(value: &str) -> Result<String, PathError> {
+    let leading = value.len() - value.trim_start_matches('/').len();
+    if leading == 2 {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "native POSIX paths with exactly two leading slashes are unsupported",
+        ));
+    }
+    if leading > 2 {
+        return Ok(format!("/{}", &value[leading..]));
+    }
+    Ok(mark_relative(value))
+}
+
+fn clean_native_posix(value: &str) -> Result<String, PathError> {
+    clean_canonical(&prepare_native_posix(value)?)
+}
+
+fn parse_clean_canonical(value: &str) -> Result<SplitRoot, PathError> {
+    if clean_canonical(value)? != lowercase_drive(value) {
+        return Err(err(
+            "ERR_INVALID_PATH",
+            "path is not lexically cleaned canonical input",
+        ));
+    }
+    let mut root = split_root(value)?;
+    if root.prefix.is_empty() {
+        root.rest = if root.rest == "." {
+            String::new()
+        } else {
+            without_relative_marker(&root.rest).to_string()
         };
-        if first == 0 {
-            return Err(err(
-                "ERR_INVALID_PATH",
-                "UNC path requires server and share",
-            ));
-        }
-        let server = &rest[..first];
-        let after_first = &rest[first + 1..];
-        let (share, tail) = match after_first.find('/') {
-            Some(second) => (
-                &after_first[..second],
-                after_first[second + 1..].to_string(),
-            ),
-            None => (after_first, String::new()),
-        };
-        if share.is_empty() {
-            return Err(err(
-                "ERR_INVALID_PATH",
-                "UNC path requires server and share",
-            ));
-        }
-        return Ok(SplitRoot {
-            prefix: format!("//{server}/{share}"),
-            rest: tail,
-        });
     }
-    if let Some(rest) = value.strip_prefix('/') {
-        return Ok(SplitRoot {
-            prefix: "/".to_string(),
-            rest: rest.to_string(),
-        });
-    }
-    Ok(SplitRoot {
-        prefix: String::new(),
-        rest: value.to_string(),
-    })
+    Ok(root)
 }
 
 fn clean_canonical(value: &str) -> Result<String, PathError> {
     if value.is_empty() {
         return Err(err("ERR_EMPTY_PATH", "path is empty"));
     }
-    let root = split_root(value)?;
+    if has_nul(value) {
+        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
+    }
+    let mut root = split_root(value)?;
+    root.prefix = lowercase_drive(&root.prefix);
     let mut parts: Vec<&str> = Vec::new();
     for part in root.rest.split('/') {
         if part.is_empty() || part == "." {
@@ -637,7 +751,7 @@ fn clean_canonical(value: &str) -> Result<String, PathError> {
         return Ok(if joined.is_empty() {
             ".".to_string()
         } else {
-            joined
+            mark_relative(&joined)
         });
     }
     if root.prefix == "/" {
@@ -662,28 +776,21 @@ fn clean_canonical(value: &str) -> Result<String, PathError> {
 }
 
 fn validate_target_profile(value: &str, target_profile: &str) -> Result<(), PathError> {
-    if target_profile.is_empty() || target_profile == "portable" {
-        return Ok(());
-    }
-    if target_profile == "posix" {
-        if has_drive_root(value) || value.starts_with("//") {
-            return Err(err(
-                "ERR_INVALID_PATH",
-                "targetProfile posix does not allow Windows drive or UNC roots",
-            ));
+    let root = split_root(value)?;
+    match target_profile {
+        "" | "portable" => Ok(()),
+        "posix" if !is_windows_root(&root.prefix) => Ok(()),
+        "win32-drive"
+            if root.prefix != "/"
+                && (!is_windows_root(&root.prefix) || is_drive_root(&root.prefix)) =>
+        {
+            Ok(())
         }
-        return Ok(());
+        _ => Err(err(
+            "ERR_INVALID_PATH",
+            "unsupported targetProfile or root kind",
+        )),
     }
-    if target_profile == "win32-drive" {
-        if value.starts_with('/') {
-            return Err(err(
-                "ERR_INVALID_PATH",
-                "targetProfile win32-drive does not allow POSIX or UNC roots",
-            ));
-        }
-        return Ok(());
-    }
-    Err(err("ERR_INVALID_PATH", "unsupported targetProfile"))
 }
 
 fn is_reserved_device_base(base: &str) -> bool {
@@ -698,14 +805,7 @@ fn is_reserved_device_base(base: &str) -> bool {
 }
 
 fn has_windows_ads(value: &str) -> bool {
-    let start = if has_drive_root(value) {
-        3
-    } else if value.starts_with("//") {
-        split_root(value).map(|root| root.prefix.len()).unwrap_or(0)
-    } else {
-        0
-    };
-    value[start..].contains(':')
+    split_root(value).is_ok_and(|root| root.rest.contains(':'))
 }
 
 fn has_reserved_device_name(value: &str) -> bool {
@@ -726,34 +826,19 @@ fn has_reserved_device_name(value: &str) -> bool {
 }
 
 fn canonical_parts(value: &str) -> Result<(String, Vec<String>), PathError> {
-    if has_nul(value) {
-        return Err(err("ERR_NUL_BYTE", "path contains NUL"));
-    }
-    let root = split_root(value)?;
+    let root = parse_clean_canonical(value)?;
     if root.prefix.is_empty() {
         return Err(err("ERR_INVALID_PATH", "path must be canonical absolute"));
     }
-    let mut result = Vec::new();
-    for part in root.rest.split('/') {
-        if part.is_empty() {
-            continue;
-        }
-        if part == "." || part == ".." {
-            return Err(err("ERR_INVALID_PATH", "path is not lexically cleaned"));
-        }
-        result.push(part.to_string());
-    }
-    Ok((root.prefix, result))
+    let parts = if root.rest.is_empty() {
+        Vec::new()
+    } else {
+        root.rest.split('/').map(str::to_string).collect()
+    };
+    Ok((root.prefix, parts))
 }
 
-fn is_absolute_path_like(value: &str) -> bool {
-    if value.starts_with('/') || value.starts_with("\\\\") {
-        return true;
-    }
-    has_drive_root(&value.replace('\\', "/"))
-}
-
-fn normalize_relative(raw: &str) -> Result<String, PathError> {
+fn normalize_canonical_relative(raw: &str) -> Result<String, PathError> {
     if raw.is_empty() {
         return Err(err("ERR_EMPTY_PATH", "relative path is empty"));
     }
@@ -763,7 +848,7 @@ fn normalize_relative(raw: &str) -> Result<String, PathError> {
     if has_nul(raw) {
         return Err(err("ERR_NUL_BYTE", "relative path contains NUL"));
     }
-    if is_absolute_path_like(raw) {
+    if raw.starts_with('/') || has_drive_root(raw) {
         return Err(err(
             "ERR_ABSOLUTE_PATH",
             "relative path must not be absolute",
@@ -773,12 +858,6 @@ fn normalize_relative(raw: &str) -> Result<String, PathError> {
         return Err(err(
             "ERR_DRIVE_RELATIVE_PATH",
             "drive-relative path is not allowed",
-        ));
-    }
-    if raw.contains('\\') {
-        return Err(err(
-            "ERR_INVALID_PATH",
-            "relative path must use slash separators",
         ));
     }
 
@@ -797,12 +876,9 @@ fn normalize_relative(raw: &str) -> Result<String, PathError> {
         parts.push(part);
     }
     if parts.is_empty() {
-        return Err(err(
-            "ERR_EMPTY_PATH",
-            "relative path is empty after cleaning",
-        ));
+        return Ok(".".to_string());
     }
-    Ok(parts.join("/"))
+    Ok(mark_relative(&parts.join("/")))
 }
 
 fn trim_component_edges(value: &str) -> String {
@@ -925,6 +1001,116 @@ fn sha256_hex(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_posix_and_canonical_outputs_round_trip() {
+        let native = NormalizeOptions {
+            source_host: "posix".to_string(),
+            ..NormalizeOptions::default()
+        };
+        let canonical = NormalizeOptions {
+            source_host: "canonical".to_string(),
+            ..NormalizeOptions::default()
+        };
+        for raw in [
+            r"/repo/a\b",
+            "/C:/repo",
+            "C:/repo",
+            "C:foo",
+            "x/../C:foo",
+            "file:///C:/repo",
+            "///repo",
+        ] {
+            let first = normalize_with_options(raw, &native).unwrap();
+            assert_eq!(normalize_with_options(&first, &native).unwrap(), first);
+            assert_eq!(normalize_with_options(&first, &canonical).unwrap(), first);
+        }
+        for raw in [
+            "//?/C:/a/../..",
+            "//?/UNC/server/share/a/../..",
+            "./C:/repo",
+        ] {
+            let first = normalize_with_options(raw, &canonical).unwrap();
+            assert_eq!(normalize_with_options(&first, &canonical).unwrap(), first);
+        }
+    }
+
+    #[test]
+    fn relative_join_preserves_canonical_components_and_roots() {
+        for (root, target) in [
+            ("/repo", r"/repo/a\b"),
+            ("/repo", "/repo/C:/nested"),
+            ("c:/repo", "c:/repo/C:foo"),
+            ("//?/c:/repo", "//?/c:/repo/file"),
+            ("//?/UNC/server/share", "//?/UNC/server/share/repo/file"),
+            ("/repo/cafe\u{301}", "/repo/cafe\u{301}/😀/file"),
+        ] {
+            assert_eq!(
+                join(root, &relative(root, target).unwrap()).unwrap(),
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_join_cleaned_self_preserves_root() {
+        for root in [
+            ".",
+            "relative",
+            "./C:root",
+            "/repo",
+            "c:/repo",
+            "//server/share",
+            "//?/c:/repo",
+            "//?/UNC/server/share",
+        ] {
+            for relative in [".", "./", "./.", "a/..", "a/.././"] {
+                assert_eq!(join(root, relative).unwrap(), root);
+            }
+            assert_eq!(join(root, "").unwrap_err().code(), "ERR_EMPTY_PATH");
+        }
+        for root in [
+            "c:/repo",
+            "//server/share",
+            "//?/c:/repo",
+            "//?/UNC/server/share",
+        ] {
+            assert_eq!(
+                join(root, r"a\b/../file").unwrap_err().code(),
+                "ERR_INVALID_PATH"
+            );
+        }
+    }
+
+    #[test]
+    fn wsl_mount_configuration_round_trips_and_rejects_nul() {
+        for mount in ["", "/", "/foo/../mnt/./", r"/mnt\vol", "/C:/drives"] {
+            let options = NormalizeOptions {
+                wsl: WslOptions {
+                    enabled: true,
+                    mount_root: mount.to_string(),
+                },
+                ..NormalizeOptions::default()
+            };
+            let host = to_wsl("c:/repo", &options.wsl).unwrap();
+            assert_eq!(normalize_with_options(&host, &options).unwrap(), "c:/repo");
+        }
+        let options = WslOptions {
+            mount_root: "/mnt\0extra".to_string(),
+            ..WslOptions::default()
+        };
+        assert_eq!(
+            to_wsl("/repo", &options).unwrap_err().code(),
+            "ERR_NUL_BYTE"
+        );
+    }
+
+    #[test]
+    fn serializers_reject_unclean_canonical_operands() {
+        assert!(to_posix("/repo/a/../b").is_err());
+        assert!(to_win32("c:/repo/a/../b").is_err());
+        assert!(to_wsl("c:/repo/a/../b", &WslOptions::default()).is_err());
+    }
 
     #[test]
     fn normalizes_windows_drive_letter_only() {

@@ -1,6 +1,6 @@
 import type { CanonicalPath, CanonicalRelativePath } from "./types.js";
 import { pathError } from "./errors.js";
-import { canonicalParts, isAbsolutePathLike, isDriveRelative } from "./internal.js";
+import { canonicalParts, cleanCanonical, cleanCanonicalRelative, isAbsolutePathLike, isDriveRelative, isWindowsRoot, markRelative, validateCanonical } from "./internal.js";
 
 export function relative(root: CanonicalPath, target: CanonicalPath): CanonicalRelativePath {
   const rootParts = canonicalParts(root);
@@ -14,15 +14,16 @@ export function relative(root: CanonicalPath, target: CanonicalPath): CanonicalR
     }
   }
   if (targetParts.parts.length === rootParts.parts.length) return "." as CanonicalRelativePath;
-  return targetParts.parts.slice(rootParts.parts.length).join("/") as CanonicalRelativePath;
+  return markRelative(targetParts.parts.slice(rootParts.parts.length).join("/")) as CanonicalRelativePath;
 }
 
 export function join(root: CanonicalPath, relative: CanonicalRelativePath): CanonicalPath {
-  const cleanRelative = normalizeRelative(relative);
-  if (root.includes("\0")) throw pathError("ERR_NUL_BYTE", "root contains NUL");
+  const parsedRoot = validateCanonical(root);
+  if (isWindowsRoot(parsedRoot.kind) && relative.includes("\\")) throw pathError("ERR_INVALID_PATH", "Windows join cannot preserve literal backslash components");
+  const cleanRelative = cleanCanonicalRelative(relative);
   if (cleanRelative === ".") return root;
-  if (root === "/" || root.endsWith("/")) return `${root}${cleanRelative}` as CanonicalPath;
-  return `${root}/${cleanRelative}` as CanonicalPath;
+  const components = cleanRelative.startsWith("./") ? cleanRelative.slice(2) : cleanRelative;
+  return cleanCanonical(`${root}${root.endsWith("/") ? "" : "/"}${components}`) as CanonicalPath;
 }
 
 export function normalizeRelative(raw: string): CanonicalRelativePath {

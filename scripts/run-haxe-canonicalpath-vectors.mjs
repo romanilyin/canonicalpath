@@ -101,6 +101,28 @@ class HaxeVectorCheck {
 
   static function main(): Void {
 ${caseLines.join("\n")}
+
+    var nativeOptions = new CanonicalPathNormalizeOptions();
+    nativeOptions.sourceHost = "posix";
+    var canonicalOptions = new CanonicalPathNormalizeOptions();
+    canonicalOptions.sourceHost = "canonical";
+    for (raw in ["/repo/a\\\\b", "/C:/repo", "C:foo", "./C:/repo", "x/../C:foo", "file://repo/a"]) {
+      var once = CanonicalPath.normalize(raw, nativeOptions);
+      runValue("native idempotence", once, function() return CanonicalPath.normalize(once, nativeOptions));
+      runValue("canonical reparse", once, function() return CanonicalPath.normalize(once, canonicalOptions));
+    }
+    for (pair in [["/repo", "/repo/a\\\\b"], ["/repo", "/repo/C:foo"], ["c:/repo", "c:/repo/C:foo"], ["//?/UNC/server/share", "//?/UNC/server/share/repo"]]) {
+      runValue("relative/join chain", pair[1], function() return CanonicalPath.join(pair[0], CanonicalPath.relative(pair[0], pair[1])));
+    }
+    for (mount in ["/", "", "/foo/../mnt/./", "/mnt\\\\vol", "/C:/drives"]) {
+      var wslOptions = new CanonicalPathNormalizeOptions();
+      wslOptions.sourceHost = "wsl"; wslOptions.wsl.enabled = true; wslOptions.wsl.mountRoot = mount;
+      var hostPath = CanonicalPath.toWSL("c:/repo/file", wslOptions.wsl);
+      runValue("WSL round trip", "c:/repo/file", function() return CanonicalPath.normalize(hostPath, wslOptions));
+    }
+    runValue("joinParts marker", "/repo/C:foo/file", function() return CanonicalPath.joinParts(["/repo", "./C:foo", "file"]));
+    runError("joinParts absolute rejection", "ERR_ABSOLUTE_PATH", function() return CanonicalPath.joinParts(["/repo", "/outside", "file"]));
+    runError("raw relative validator remains strict", "ERR_INVALID_PATH", function() return CanonicalPath.normalizeRelative("a\\\\b"));
     trace("Haxe CanonicalPath vectors passed: ${cases.length} cases");
   }
 }

@@ -37,7 +37,7 @@ const commandDescriptorRequiredFragments = new Set([
 ]);
 const fixtureOperations = new Set(["read", "write", "stat", "mkdir", "remove", "rename", "extract"]);
 const fixtureErrorModes = new Set(["exact", "reject-only"]);
-const hostKinds = new Set(["posix", "win32", "wsl", "vscode-file-uri", "dev-container", "ssh-remote"]);
+const hostKinds = new Set(["posix", "win32", "wsl", "vscode-file-uri", "dev-container", "ssh-remote", "canonical"]);
 const targetProfiles = new Set(["portable", "win32-drive", "posix"]);
 const componentProfiles = new Set(["portable", "win32", "posix"]);
 const canonicalPathErrors = new Set([
@@ -208,7 +208,8 @@ function assertOptions(options, label) {
     if (options.wsl.enabled !== undefined) assertBoolean(options.wsl.enabled, `${label}: options.wsl.enabled`);
     if (options.wsl.mountRoot !== undefined) {
       assertString(options.wsl.mountRoot, `${label}: options.wsl.mountRoot`);
-      assert(options.wsl.mountRoot.startsWith("/"), `${label}: options.wsl.mountRoot must be absolute POSIX-style`);
+      // Options are test inputs, including invalid mount roots in rejection
+      // vectors. Their behavior is checked by every implementation's runner.
     }
   }
 
@@ -227,26 +228,46 @@ function assertOptions(options, label) {
 
 function assertCanonicalPath(value, label) {
   assertString(value, label);
+  assert(value.length > 0, `${label}: canonical paths must not be empty`);
   assert(!value.includes("\0"), `${label}: canonical paths must not contain NUL`);
-  assert(!value.includes("\\"), `${label}: canonical paths must use / separators`);
   assert(!/^[A-Z]:\//.test(value), `${label}: drive letter must be lowercase`);
   assert(!/^[A-Za-z]:($|[^/])/.test(value), `${label}: drive-relative path is not canonical`);
-
-  if (value === "/" || /^[a-z]:\/$/.test(value)) return;
-
+  if (value === ".") return;
   let rest = value;
-  if (/^[a-z]:\//.test(value)) {
+  let prefix = "";
+  let windows = false;
+  if (value.startsWith("//?/")) {
+    windows = true;
+    if (/^\/\/\?\/[a-z]:\//.test(value)) {
+      prefix = value.slice(0, 7);
+      rest = value.slice(7);
+    } else {
+      assert(value.startsWith("//?/UNC/"), `${label}: unsupported extended root`);
+      const parts = value.slice(8).split("/");
+      assert(parts[0] && parts[1] && parts.slice(0, 2).every(part => part !== "." && part !== ".."), `${label}: extended UNC requires server and share`);
+      prefix = `//?/UNC/${parts[0]}/${parts[1]}`;
+      rest = parts.slice(2).join("/");
+    }
+  } else if (/^[a-z]:\//.test(value)) {
+    windows = true;
+    prefix = value.slice(0, 3);
     rest = value.slice(3);
   } else if (value.startsWith("//")) {
+    windows = true;
     const uncParts = value.slice(2).split("/");
-    assert(uncParts[0] && uncParts[1], `${label}: UNC path requires server and share`);
+    assert(uncParts[0] && uncParts[1] && uncParts.slice(0, 2).every(part => part !== "." && part !== ".."), `${label}: UNC path requires server and share`);
+    prefix = `//${uncParts[0]}/${uncParts[1]}`;
     rest = uncParts.slice(2).join("/");
   } else if (value.startsWith("/")) {
+    prefix = "/";
     rest = value.slice(1);
+  } else if (value.startsWith("./")) {
+    assert(/^\.\/[A-Za-z]:/.test(value), `${label}: relative marker must disambiguate a drive-like first component`);
+    rest = value.slice(2);
   }
-
+  if (windows) assert(!value.includes("\\"), `${label}: canonical Windows components cannot contain backslash`);
+  if (prefix && value === prefix) return;
   assert(!value.endsWith("/"), `${label}: trailing slash is allowed only for roots`);
-  if (value.startsWith("//") && rest === "") return;
   assert(!rest.split("/").some((part) => part === ""), `${label}: canonical path contains an empty component`);
   assert(!rest.split("/").some((part) => part === "." || part === ".."), `${label}: canonical path must be lexically cleaned`);
 }
@@ -259,17 +280,27 @@ function isDriveRelativePathLike(value) {
   return /^[A-Za-z]:($|[^\\/])/.test(value);
 }
 
-function assertCanonicalRelativePath(value, label) {
+function assertCanonicalRelativePath(value, label, rawPolicy = false) {
+  assertCanonicalPath(value, label);
+  assert(!value.startsWith("/") && !/^[A-Za-z]:/.test(value), `${label}: relative path must not be rooted or drive-relative`);
+  if (rawPolicy) {
+    assert(!value.includes("\\"), `${label}: raw path policy requires slash separators`);
+    assert(!value.startsWith("./"), `${label}: raw path policy rejects drive-like relative components`);
+  }
+}
+
+function assertCleanableCanonicalRelativePath(value, label) {
   assertString(value, label);
-  assert(value.length > 0, `${label}: relative path must not be empty`);
-  assert(!value.includes("\0"), `${label}: relative path must not contain NUL`);
-  assert(!value.includes("\\"), `${label}: relative path must use / separators`);
-  assert(!isAbsolutePathLike(value), `${label}: relative path must not be absolute`);
-  assert(!isDriveRelativePathLike(value), `${label}: relative path must not be drive-relative`);
-  if (value === ".") return;
-  const parts = value.split("/");
-  assert(!parts.some((part) => part === ""), `${label}: relative path contains an empty component`);
-  assert(!parts.some((part) => part === "." || part === ".."), `${label}: relative path must be lexically cleaned`);
+  assert(value.length > 0 && !value.includes("\0"), `${label}: relative input must be nonempty and contain no NUL`);
+  assert(!value.startsWith("/") && !/^[A-Za-z]:/.test(value), `${label}: relative input must not be rooted or drive-relative`);
+  let depth = 0;
+  for (const part of value.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      assert(depth > 0, `${label}: relative input must not escape its root`);
+      depth--;
+    } else depth++;
+  }
 }
 
 function gitRefSlug(raw) {
@@ -332,7 +363,7 @@ function isAllowedUnityPath(value) {
 }
 
 function assertUnityBridgePath(value, label) {
-  assertCanonicalRelativePath(value, label);
+  assertCanonicalRelativePath(value, label, true);
   assert(isAllowedUnityPath(value), `${label}: Unity bridge path must start with Assets/ or Packages/`);
 }
 
@@ -383,7 +414,7 @@ function validateUnityBridgeCase(testCase, label, ids) {
 }
 
 function assertUnityMcpRelativePath(value, label) {
-  assertCanonicalRelativePath(value, label);
+  assertCanonicalRelativePath(value, label, true);
   assert(!/%(?:2f|5c)/i.test(value), `${label}: encoded separators are not allowed`);
 }
 
@@ -637,7 +668,7 @@ for (const entry of readdirSync(testdataDir).filter((name) => name.endsWith(".js
       if (testCase.operation === "join") {
         assertCanonicalPath(testCase.root, `${label}:${testCase.id}: root`);
         assertString(testCase.relative, `${label}:${testCase.id}: relative`);
-        if (testCase.expected !== undefined) assertCanonicalRelativePath(testCase.relative, `${label}:${testCase.id}: relative`);
+        if (testCase.expected !== undefined) assertCleanableCanonicalRelativePath(testCase.relative, `${label}:${testCase.id}: relative`);
       }
       if (["sanitize-component", "encode-component"].includes(testCase.operation)) {
         assertEnum(testCase.profile, componentProfiles, `${label}:${testCase.id}: profile`);

@@ -21,6 +21,7 @@ pnpm install
 `pnpm verify` expands to the current monorepo checks. Use individual commands when isolating a failure:
 
 ```bash
+pnpm security:regressions
 pnpm spec:validate
 pnpm check:error-taxonomy
 pnpm check:licenses
@@ -36,6 +37,7 @@ pnpm js:standalone:build:smoke
 pnpm js:standalone:test
 pnpm unity:pack:dry-run
 go test ./packages/go/...
+pnpm go:unsupported-platforms
 pnpm scoped-daemon:smoke
 pnpm vectors
 pnpm python:vectors
@@ -44,7 +46,7 @@ pnpm csharp:vectors
 pnpm swift:vectors
 pnpm kotlin:vectors
 pnpm c:vectors
-pnpm rust:vectors
+pnpm rust:verify
 pnpm cpp:vectors
 pnpm haxe:vectors
 pnpm gdscript:vectors
@@ -59,6 +61,12 @@ pnpm unity:burst:probe
 pnpm unity:editmode:matrix
 pnpm ps:test
 ```
+
+## Required Rust checks
+
+`pnpm rust:verify` runs runner failure-path checks, `cargo test --locked` for the package's unit and documentation tests, and all shared vectors. It is included in `pnpm verify`. A missing or broken Cargo executable, failed compilation, terminated subprocess, or failed test causes a nonzero verification result. An explicit `CARGO` override must work as configured; it does not fall back to a different installation.
+
+Install a working Rust toolchain and make Cargo available on `PATH`, or set `CARGO` to its executable. CI and the manual readiness workflow pin their Rust toolchain. `pnpm rust:vectors` remains available to isolate vector failures; it does not replace the complete Rust gate.
 
 ## Race-sensitive filesystem tests
 

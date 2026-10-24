@@ -6,10 +6,10 @@ import { CanonicalPathService } from "../src/unity-gateway/path-service.js";
 describe("large interior runs in boundary trimming", () => {
   const size = 200_000;
 
-  it("preserves interior separators in WSL mount roots", () => {
+  it("normalizes large interior separator runs consistently in both WSL directions", () => {
     const mountRoot = "/mount" + "/".repeat(size) + "x";
     const options = { mountRoot: mountRoot + "///" };
-    expect(toWSL(normalize("c:/repo"), options)).toBe(mountRoot + "/c/repo");
+    expect(toWSL(normalize("c:/repo"), options)).toBe("/mount/x/c/repo");
     expect(normalize(mountRoot + "/c/repo", { wsl: { ...options, enabled: true }, targetProfile: "win32-drive" })).toBe("c:/repo");
   });
 

@@ -18,50 +18,66 @@ static func normalize_result(raw: String, options: Dictionary = {}) -> Dictionar
         return _err("ERR_EMPTY_PATH", "path is empty")
     if _has_nul(value):
         return _err("ERR_NUL_BYTE", "path contains NUL")
-
-    if _has_uri_scheme(value) or str(options.get("sourceHost", "")) == "vscode-file-uri":
-        var parsed := _parse_file_uri(value, options)
-        if not parsed.ok:
-            return parsed
-        value = parsed.value
-    if _has_nul(value):
-        return _err("ERR_NUL_BYTE", "path contains NUL")
-    if not _option_bool(_nested(options, "windows"), "preserveExtendedLength", false):
-        value = _unwrap_windows_extended_prefix(value)
-    value = value.replace("\\", "/")
-
-    var target_profile := str(options.get("targetProfile", ""))
-    if target_profile != "posix" and value.begins_with("/") and not value.begins_with("//"):
-        if _option_bool(_nested(options, "wsl"), "enabled", false) and not _is_uri_windows_drive_path(value):
-            if _option_bool(_nested(options, "windows"), "rejectADS", false) and _has_windows_ads(value):
-                return _err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-            if _option_bool(_nested(options, "windows"), "rejectDeviceNames", false) and _has_reserved_device_name(value):
-                return _err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-            var posix_cleaned := _clean_canonical(value)
-            if not posix_cleaned.ok:
-                return posix_cleaned
-            value = posix_cleaned.value
-        value = _map_wsl_drive(value, _nested(options, "wsl"))
-    if _is_uri_windows_drive_path(value):
-        value = value.substr(1)
-    if _is_drive_relative(value):
-        return _err("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
-    if _has_drive_root(value):
-        value = _lowercase_drive_root(value)
-
-    var windows := _nested(options, "windows")
-    if _option_bool(windows, "rejectADS", false) and _has_windows_ads(value):
-        return _err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-    if _option_bool(windows, "rejectDeviceNames", false) and _has_reserved_device_name(value):
-        return _err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-
-    var cleaned := _clean_canonical(value)
+    var wsl := _nested(options, "wsl")
+    var mount := _mount_from_options(wsl)
+    if not mount.ok:
+        return mount
+    var host := str(options.get("sourceHost", ""))
+    var cleaned: Dictionary
+    if host == "posix":
+        if _option_bool(wsl, "enabled", false):
+            return _err("ERR_INVALID_PATH", "native POSIX input cannot enable WSL mapping")
+        var native_checked := _validate_windows_components(value, options, true)
+        if not native_checked.ok:
+            return native_checked
+        cleaned = _clean_canonical(value, true)
+    elif host == "canonical":
+        var checked := _validate_windows_components(value, options)
+        if not checked.ok:
+            return checked
+        cleaned = _clean_canonical(value)
+    else:
+        var uri_input := _has_uri_scheme(value)
+        if uri_input or host == "vscode-file-uri":
+            var decoded := _parse_file_uri(value, options)
+            if not decoded.ok:
+                return decoded
+            value = decoded.value
+        var candidate := _option_bool(wsl, "enabled", false) and value.begins_with("/") and (not value.begins_with("//") or value.begins_with("///")) and not (uri_input and _is_uri_windows_drive_path(value))
+        if candidate:
+            var checked := _validate_windows_components(value, options, true)
+            if not checked.ok:
+                return checked
+            cleaned = _clean_canonical(value, true)
+            if not cleaned.ok:
+                return cleaned
+            value = cleaned.value
+            var prefix := "/" if mount.value == "/" else str(mount.value) + "/"
+            if str(options.get("targetProfile", "")) != "posix" and value.begins_with(prefix):
+                var tail := value.substr(prefix.length())
+                if not tail.is_empty() and _is_ascii_letter(tail.substr(0, 1)) and (tail.length() == 1 or tail.substr(1, 1) == "/"):
+                    value = _lowercase_ascii(tail.substr(0, 1)) + ":/" + ("" if tail.length() == 1 else tail.substr(2))
+            cleaned = _clean_canonical(value)
+        else:
+            value = value.replace("\\", "/")
+            if _is_uri_windows_drive_path(value):
+                value = value.substr(1)
+            var parsed := _split_root(value)
+            if not parsed.ok:
+                return parsed
+            if not _option_bool(_nested(options, "windows"), "preserveExtendedLength", false):
+                if parsed.kind == "extended-drive":
+                    value = value.substr(4)
+                elif parsed.kind == "extended-unc":
+                    value = "//" + value.substr(8)
+            var checked := _validate_windows_components(value, options)
+            if not checked.ok:
+                return checked
+            cleaned = _clean_canonical(value)
     if not cleaned.ok:
         return cleaned
-    var profile_result := _validate_target_profile(cleaned.value, target_profile)
-    if not profile_result.ok:
-        return profile_result
-    return _ok(cleaned.value)
+    var profile := _validate_target_profile(cleaned.value, str(options.get("targetProfile", "")))
+    return cleaned if profile.ok else profile
 
 
 static func relative_result(root: String, target: String) -> Dictionary:
@@ -78,20 +94,29 @@ static func relative_result(root: String, target: String) -> Dictionary:
             return _err("ERR_OUTSIDE_ROOT", "target is outside root")
     if target_parts.parts.size() == root_parts.parts.size():
         return _ok(".")
-    return _ok(_join_strings(target_parts.parts.slice(root_parts.parts.size()), "/"))
+    return _ok(_mark_relative(_join_strings(target_parts.parts.slice(root_parts.parts.size()), "/")))
 
 
 static func join_result(root: String, relative_path: String) -> Dictionary:
-    var clean_relative := normalize_relative_result(relative_path)
-    if not clean_relative.ok:
-        return clean_relative
-    if _has_nul(root):
-        return _err("ERR_NUL_BYTE", "root contains NUL")
-    if clean_relative.value == ".":
+    var parsed_root := _require_canonical(root)
+    if not parsed_root.ok:
+        return parsed_root
+    var parsed_relative := _split_root(relative_path)
+    if not parsed_relative.ok:
+        return parsed_relative
+    if not str(parsed_relative.prefix).is_empty():
+        return _err("ERR_ABSOLUTE_PATH", "join argument must be relative")
+    if _is_windows_root(parsed_root) and relative_path.contains("\\"):
+        return _err("ERR_INVALID_PATH", "backslash data is not representable under a Windows root")
+    var clean := _clean_canonical(relative_path, false, "ERR_OUTSIDE_ROOT")
+    if not clean.ok:
+        return clean
+    if clean.value == ".":
         return _ok(root)
-    if root == "/" or root.ends_with("/"):
-        return _ok(root + clean_relative.value)
-    return _ok(root + "/" + clean_relative.value)
+    var tail := str(clean.value)
+    if tail.begins_with("./"):
+        tail = tail.substr(2)
+    return _clean_canonical(tail if root == "." else _trim_right_slashes(root) + "/" + tail, parsed_root.kind == "relative")
 
 
 static func normalize_relative_result(raw: String) -> Dictionary:
@@ -134,37 +159,39 @@ static func is_equal_result(left: String, right: String, options: Dictionary = {
 
 
 static func to_win32_result(canonical: String) -> Dictionary:
-    if _has_nul(canonical):
-        return _err("ERR_NUL_BYTE", "path contains NUL")
-    if _has_drive_root(canonical):
-        return _ok(_uppercase_ascii(canonical.substr(0, 1)) + ":\\" + canonical.substr(3).replace("/", "\\"))
-    if canonical.begins_with("//"):
-        return _ok("\\\\" + canonical.substr(2).replace("/", "\\"))
-    return _ok(canonical.replace("/", "\\"))
+    var parsed := _require_canonical(canonical, true)
+    if not parsed.ok:
+        return parsed
+    if parsed.kind == "posix" or canonical.contains("\\") or canonical.begins_with("./"):
+        return _err("ERR_INVALID_PATH", "canonical path is not representable as Windows")
+    var value := canonical
+    if parsed.kind == "drive":
+        value = _uppercase_ascii(value.substr(0, 1)) + value.substr(1)
+    if parsed.kind == "extended-drive":
+        value = value.substr(0, 4) + _uppercase_ascii(value.substr(4, 1)) + value.substr(5)
+    return _ok(value.replace("/", "\\"))
 
 
 static func to_wsl_result(canonical: String, options: Dictionary = {}) -> Dictionary:
-    if _has_nul(canonical):
-        return _err("ERR_NUL_BYTE", "path contains NUL")
-    if not _has_drive_root(canonical):
+    var mount := _mount_from_options(options)
+    if not mount.ok:
+        return mount
+    var parsed := _require_canonical(canonical, true)
+    if not parsed.ok:
+        return parsed
+    if parsed.kind == "posix" or parsed.kind == "relative":
         return _ok(canonical)
-    var mount_root := _trim_right_slashes(str(options.get("mountRoot", "/mnt")))
-    if mount_root.is_empty():
-        mount_root = "/mnt"
-    var rest := canonical.substr(3)
-    var drive := _lowercase_ascii(canonical.substr(0, 1))
-    if rest.is_empty():
-        return _ok(mount_root + "/" + drive)
-    return _ok(mount_root + "/" + drive + "/" + rest)
+    if parsed.kind != "drive":
+        return _err("ERR_INVALID_PATH", "WSL serialization requires an ordinary drive")
+    return _ok(("" if mount.value == "/" else str(mount.value)) + "/" + str(parsed.prefix).substr(0, 1) + ("" if str(parsed.rest).is_empty() else "/" + str(parsed.rest)))
 
 
 static func to_posix_result(canonical: String) -> Dictionary:
-    if _has_nul(canonical):
-        return _err("ERR_NUL_BYTE", "path contains NUL")
-    if _has_drive_root(canonical):
-        return _err("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl")
-    if canonical.contains("\\"):
-        return _err("ERR_INVALID_PATH", "canonical paths must use slash separators")
+    var parsed := _require_canonical(canonical)
+    if not parsed.ok:
+        return parsed
+    if _is_windows_root(parsed):
+        return _err("ERR_INVALID_PATH", "Windows root requires explicit host mapping")
     return _ok(canonical)
 
 
@@ -259,6 +286,14 @@ static func _percent_decode(value: String) -> Dictionary:
             return _err("ERR_NUL_BYTE", "decoded URI contains NUL")
         bytes.append((high << 4) | low)
         index += 3
+    return from_utf8(bytes)
+
+
+static func from_utf8(bytes: PackedByteArray) -> Dictionary:
+    # Godot String conversion can replace NUL. Validate bytes before conversion;
+    # the URI decoder and byte-oriented adapters share this production boundary.
+    if bytes.has(0):
+        return _err("ERR_NUL_BYTE", "input contains NUL before String conversion")
     var i := 0
     while i < bytes.size():
         var first := bytes[i]
@@ -333,10 +368,10 @@ static func _map_wsl_drive(value: String, options: Dictionary) -> String:
     return drive + ":/" + rest.substr(2)
 
 
-static func _clean_canonical(value: String) -> Dictionary:
+static func _clean_canonical(value: String, native_posix: bool = false, escape_code: String = "ERR_INVALID_PATH") -> Dictionary:
     if value.is_empty():
         return _err("ERR_EMPTY_PATH", "path is empty")
-    var root := _split_root(value)
+    var root := _split_root(value, native_posix)
     if not root.ok:
         return root
     var parts: Array[String] = []
@@ -349,11 +384,11 @@ static func _clean_canonical(value: String) -> Dictionary:
                 continue
             if not str(root.prefix).is_empty():
                 continue
-            return _err("ERR_INVALID_PATH", "relative path escapes above its root")
+            return _err(escape_code, "relative path escapes above its root")
         parts.append(part)
     var joined := _join_strings(parts, "/")
     if str(root.prefix).is_empty():
-        return _ok("." if joined.is_empty() else joined)
+        return _ok("." if joined.is_empty() else _mark_relative(joined))
     if root.prefix == "/":
         return _ok("/" if joined.is_empty() else "/" + joined)
     if str(root.prefix).ends_with("/"):
@@ -362,23 +397,22 @@ static func _clean_canonical(value: String) -> Dictionary:
 
 
 static func _validate_target_profile(value: String, target_profile: String) -> Dictionary:
+    var parsed := _split_root(value)
+    if not parsed.ok:
+        return parsed
     if target_profile.is_empty() or target_profile == "portable":
         return _ok(true)
-    if target_profile == "posix":
-        if _has_drive_root(value) or value.begins_with("//"):
-            return _err("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots")
+    if target_profile == "posix" and not _is_windows_root(parsed):
         return _ok(true)
-    if target_profile == "win32-drive":
-        if value.begins_with("/"):
-            return _err("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots")
+    if target_profile == "win32-drive" and (parsed.kind == "relative" or parsed.kind == "drive" or parsed.kind == "extended-drive"):
         return _ok(true)
-    return _err("ERR_INVALID_PATH", "unsupported targetProfile")
+    return _err("ERR_INVALID_PATH", "canonical root is incompatible with target profile")
 
 
 static func _canonical_parts(value: String) -> Dictionary:
     if _has_nul(value):
         return _err("ERR_NUL_BYTE", "path contains NUL")
-    var root := _split_root(value)
+    var root := _require_canonical(value)
     if not root.ok:
         return root
     if str(root.prefix).is_empty():
@@ -393,25 +427,39 @@ static func _canonical_parts(value: String) -> Dictionary:
     return {"ok": true, "prefix": root.prefix, "parts": parts}
 
 
-static func _split_root(value: String) -> Dictionary:
-    if _has_drive_root(value):
-        return {"ok": true, "prefix": value.substr(0, 3), "rest": value.substr(3)}
-    if value.begins_with("//"):
-        var rest := value.substr(2)
-        var first := rest.find("/")
-        if first <= 0:
-            return _err("ERR_INVALID_PATH", "UNC path requires server and share")
-        var server := rest.substr(0, first)
-        var after_first := rest.substr(first + 1)
-        var second := after_first.find("/")
-        var share := after_first.substr(0, second) if second >= 0 else after_first
-        var tail := after_first.substr(second + 1) if second >= 0 else ""
-        if share.is_empty():
-            return _err("ERR_INVALID_PATH", "UNC path requires server and share")
-        return {"ok": true, "prefix": "//" + server + "/" + share, "rest": tail}
-    if value.begins_with("/"):
-        return {"ok": true, "prefix": "/", "rest": value.substr(1)}
-    return {"ok": true, "prefix": "", "rest": value}
+static func _split_root(value: String, native_posix: bool = false) -> Dictionary:
+    if value.is_empty():
+        return _err("ERR_EMPTY_PATH", "path is empty")
+    if _has_nul(value):
+        return _err("ERR_NUL_BYTE", "path contains NUL")
+    if native_posix:
+        if value.begins_with("//") and not value.begins_with("///"):
+            return _err("ERR_INVALID_PATH", "double-leading-slash POSIX path is unsupported")
+        return _grammar_root("/", value.substr(1)) if value.begins_with("/") else _grammar_root("", value)
+    var parsed: Dictionary
+    if value.begins_with("//?/"):
+        var tail := value.substr(4)
+        if _has_drive_root(tail):
+            parsed = _grammar_root("//?/" + _lowercase_ascii(tail.substr(0, 1)) + ":/", tail.substr(3))
+        elif tail.begins_with("UNC/"):
+            parsed = _split_unc(tail.substr(4), "//?/UNC/")
+        else:
+            return _err("ERR_INVALID_PATH", "unsupported or incomplete extended root")
+    elif _has_drive_root(value):
+        parsed = _grammar_root(_lowercase_ascii(value.substr(0, 1)) + ":/", value.substr(3))
+    elif _is_drive_relative(value):
+        return _err("ERR_DRIVE_RELATIVE_PATH", "unmarked drive-relative path")
+    elif value.begins_with("//"):
+        parsed = _split_unc(value.substr(2), "//")
+    elif value.begins_with("/"):
+        parsed = _grammar_root("/", value.substr(1))
+    else:
+        parsed = _grammar_root("", value)
+    if not parsed.ok:
+        return parsed
+    if _is_windows_root(parsed) and value.contains("\\"):
+        return _err("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash")
+    return parsed
 
 
 static func _has_windows_ads(value: String) -> bool:
@@ -531,7 +579,10 @@ static func _lowercase_drive_root(value: String) -> String:
 
 
 static func _has_nul(value: String) -> bool:
-    return value.contains(String.chr(0))
+    for index in range(value.length()):
+        if value.unicode_at(index) == 0:
+            return true
+    return false
 
 
 static func _is_ascii_letter(value: String) -> bool:
@@ -627,3 +678,80 @@ static func _ok(value) -> Dictionary:
 
 static func _err(code: String, message: String) -> Dictionary:
     return {"ok": false, "error": code, "message": message}
+
+
+static func _grammar_root(prefix: String, rest: String) -> Dictionary:
+    var kind := "relative" if prefix.is_empty() else "posix" if prefix == "/" else "extended-unc" if prefix.begins_with("//?/UNC/") else "extended-drive" if prefix.begins_with("//?/") else "unc" if prefix.begins_with("//") else "drive"
+    return {"ok": true, "prefix": prefix, "rest": rest, "kind": kind}
+
+
+static func _split_unc(value: String, prefix: String) -> Dictionary:
+    var parts := value.split("/", true)
+    if parts.size() < 2 or parts[0].is_empty() or parts[1].is_empty() or parts[0] == "." or parts[0] == ".." or parts[1] == "." or parts[1] == "..":
+        return _err("ERR_INVALID_PATH", "UNC requires server and share")
+    return _grammar_root(prefix + parts[0] + "/" + parts[1], "/".join(parts.slice(2)))
+
+
+static func _is_windows_root(parsed: Dictionary) -> bool:
+    return parsed.kind != "relative" and parsed.kind != "posix"
+
+
+static func _mark_relative(value: String) -> String:
+    return "./" + value if value.length() >= 2 and _is_ascii_letter(value.substr(0, 1)) and value.substr(1, 1) == ":" else value
+
+
+static func _require_canonical(value: String, allow_drive_case: bool = false) -> Dictionary:
+    var parsed := _split_root(value)
+    if not parsed.ok:
+        return parsed
+    var clean := _clean_canonical(value)
+    if not clean.ok:
+        return clean
+    var expected := value
+    if allow_drive_case and parsed.kind == "drive":
+        expected = _lowercase_ascii(value.substr(0, 1)) + value.substr(1)
+    elif allow_drive_case and parsed.kind == "extended-drive":
+        expected = value.substr(0, 4) + _lowercase_ascii(value.substr(4, 1)) + value.substr(5)
+    if clean.value != expected:
+        return _err("ERR_INVALID_PATH", "path must be lexically cleaned canonical data")
+    return parsed
+
+
+static func _mount_from_options(options: Dictionary) -> Dictionary:
+    # Byte-oriented callers must retain the original bytes until this boundary.
+    var value: Variant = options.get("mountRoot", "")
+    if value is PackedByteArray:
+        var decoded := from_utf8(value)
+        if not decoded.ok:
+            return decoded
+        return _normalize_mount(decoded.value)
+    if not value is String:
+        return _err("ERR_INVALID_PATH", "WSL mount root must be String or PackedByteArray")
+    return _normalize_mount(value)
+
+
+static func _normalize_mount(value: String) -> Dictionary:
+    if value.is_empty():
+        value = "/mnt"
+    var parsed := _split_root(value, true)
+    if not parsed.ok:
+        return parsed
+    if parsed.kind != "posix":
+        return _err("ERR_INVALID_PATH", "WSL mount root must be absolute POSIX")
+    return _clean_canonical(value, true)
+
+
+static func _validate_windows_components(value: String, options: Dictionary, native_posix: bool = false) -> Dictionary:
+    var parsed := _split_root(value, native_posix)
+    if not parsed.ok:
+        return parsed
+    var windows := _nested(options, "windows")
+    var rest := str(parsed.rest)
+    if _option_bool(windows, "rejectADS", false) and rest.contains(":"):
+        return _err("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
+    if _option_bool(windows, "rejectDeviceNames", false):
+        for part in rest.split("/", true):
+            var base := part.split(".", true)[0].split(":", true)[0]
+            if _is_reserved_device_base(base):
+                return _err("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
+    return _ok(true)

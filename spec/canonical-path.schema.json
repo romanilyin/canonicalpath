@@ -83,7 +83,7 @@
       "additionalProperties": false
     },
     "hostKind": {
-      "enum": ["posix", "win32", "wsl", "vscode-file-uri", "dev-container", "ssh-remote"]
+      "enum": ["posix", "win32", "wsl", "vscode-file-uri", "dev-container", "ssh-remote", "canonical"]
     },
     "wslOptions": {
       "type": "object",

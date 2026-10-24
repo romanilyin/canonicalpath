@@ -161,6 +161,8 @@ internal static class Program
 
     private static string ErrorCode(Exception ex)
     {
+        CanonicalPathException pathError = ex as CanonicalPathException;
+        if (pathError != null) return pathError.Code;
         string message = ex.Message ?? string.Empty;
         if (Contains(message, "NUL")) return "ERR_NUL_BYTE";
         if (Contains(message, "payload path must be relative")) return "ERR_ABSOLUTE_PATH";

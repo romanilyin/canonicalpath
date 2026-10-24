@@ -230,6 +230,34 @@
       "operation": "normalize-unity-path",
       "raw": "Assets/dir:stream/file.txt",
       "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-unity-to-asset-rejects-literal-backslash",
+      "operation": "to-unity-asset-path",
+      "root": "/repo",
+      "target": "/repo/Assets/a\\b",
+      "error": "ERR_INVALID_PATH"
+    },
+    {
+      "id": "cp1-unity-from-asset-preserves-posix-root-backslash",
+      "operation": "from-unity-asset-path",
+      "root": "/repo/a\\b",
+      "raw": "Assets/file.cs",
+      "expected": "/repo/a\\b/Assets/file.cs"
+    },
+    {
+      "id": "cp1-unity-to-asset-preserves-posix-root-backslash",
+      "operation": "to-unity-asset-path",
+      "root": "/repo/a\\b",
+      "target": "/repo/a\\b/Assets/file.cs",
+      "expected": "Assets/file.cs"
+    },
+    {
+      "id": "cp1-unity-posix-backslash-root-distinct",
+      "operation": "to-unity-asset-path",
+      "root": "/repo/a\\b",
+      "target": "/repo/a/b/Assets/file.cs",
+      "error": "ERR_OUTSIDE_ROOT"
     }
   ]
 }

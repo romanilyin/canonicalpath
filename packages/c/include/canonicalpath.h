@@ -10,6 +10,10 @@ extern "C" {
 typedef struct canonicalpath_wsl_options {
   int enabled;
   const char *mount_root;
+  /* Complete byte length for length-aware callers, excluding a terminator.
+     Zero retains the legacy NUL-terminated-string convention. Initialize the
+     structure before use; a nonzero length detects embedded NUL bytes. */
+  size_t mount_root_len;
 } canonicalpath_wsl_options;
 
 typedef struct canonicalpath_uri_options {

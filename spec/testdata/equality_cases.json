@@ -122,6 +122,106 @@
         }
       },
       "expected": "true"
+    },
+    {
+      "id": "cp1-native-backslash-distinct-from-slash",
+      "operation": "is-equal",
+      "root": "/repo/a\\b",
+      "target": "/repo/a/b",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp1-canonical-backslash-distinct-from-slash",
+      "operation": "is-equal",
+      "root": "/repo/a\\b",
+      "target": "/repo/a/b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp1-native-drive-component-case-preserved",
+      "operation": "is-equal",
+      "root": "/C:/repo",
+      "target": "/c:/repo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp1-canonical-posix-drive-distinct",
+      "operation": "is-equal",
+      "root": "/c:/repo",
+      "target": "c:/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp1-canonical-relative-drive-distinct",
+      "operation": "is-equal",
+      "root": "./c:/repo",
+      "target": "c:/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp1-native-marked-and-unmarked-relative",
+      "operation": "is-equal",
+      "root": "C:foo",
+      "target": "./C:foo",
+      "options": {
+        "sourceHost": "posix"
+      },
+      "expected": "true"
+    },
+    {
+      "id": "cp1-canonical-literal-percent-distinct",
+      "operation": "is-equal",
+      "root": "/repo/a%2Fb",
+      "target": "/repo/a/b",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp2-canonical-preserved-drive-distinct",
+      "operation": "is-equal",
+      "root": "//?/c:/repo",
+      "target": "c:/repo",
+      "options": {
+        "sourceHost": "canonical"
+      },
+      "expected": "false"
+    },
+    {
+      "id": "cp2-raw-extended-prefix-explicitly-unwrapped",
+      "operation": "is-equal",
+      "root": "//?/C:/repo",
+      "target": "c:/repo",
+      "options": {},
+      "expected": "true"
+    },
+    {
+      "id": "cp2-preserved-drive-same-spelling",
+      "operation": "is-equal",
+      "root": "\\\\?\\C:\\repo",
+      "target": "//?/c:/repo",
+      "options": {
+        "windows": {
+          "preserveExtendedLength": true
+        }
+      },
+      "expected": "true"
     }
   ]
 }

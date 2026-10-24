@@ -1,14 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { repositoryRoot as root, requireCargo, runCargo } from "./rust-toolchain.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tempRoot = path.join(root, "tmp", "rust-canonicalpath-vector-check");
-const cargoTomlPath = path.join(tempRoot, "Cargo.toml");
-const sourceRoot = path.join(tempRoot, "src");
-const mainPath = path.join(sourceRoot, "main.rs");
 const vectorFiles = [
   "lexical_cases.json",
   "windows_cases.json",
@@ -21,37 +14,22 @@ const vectorFiles = [
   "equality_cases.json",
 ].map((name) => path.join(root, "spec", "testdata", name));
 
-const cargo = resolveCargo();
-if (!cargo) {
-  console.log("cargo not found; skipping Rust CanonicalPath vector check");
-  process.exit(0);
-}
-
+const cargo = requireCargo();
 const cases = vectorFiles.flatMap((file) => JSON.parse(readFileSync(file, "utf8")).cases);
+if (cases.length === 0) throw new Error("Rust shared vector check requires at least one test case");
 
-rmSync(tempRoot, { recursive: true, force: true });
-mkdirSync(sourceRoot, { recursive: true });
-writeFileSync(cargoTomlPath, cargoToml(), "utf8");
-writeFileSync(mainPath, programFile(cases), "utf8");
-
-const run = spawnSync(cargo, ["run", "--quiet", "--manifest-path", cargoTomlPath], { stdio: "inherit" });
-if (run.error) {
-  console.error(run.error.message);
-  process.exit(1);
-}
-process.exit(run.status ?? 1);
-
-function resolveCargo() {
-  const candidates = [
-    process.env.CARGO,
-    "cargo",
-    path.join(homedir(), ".cargo", "bin", process.platform === "win32" ? "cargo.exe" : "cargo"),
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    const probe = spawnSync(candidate, ["--version"], { stdio: "ignore" });
-    if (!probe.error && probe.status === 0) return candidate;
-  }
-  return undefined;
+const temporaryBase = path.join(root, "tmp");
+mkdirSync(temporaryBase, { recursive: true });
+const tempRoot = mkdtempSync(path.join(temporaryBase, "rust-canonicalpath-vector-check-"));
+try {
+  const cargoTomlPath = path.join(tempRoot, "Cargo.toml");
+  const sourceRoot = path.join(tempRoot, "src");
+  mkdirSync(sourceRoot);
+  writeFileSync(cargoTomlPath, cargoToml(), "utf8");
+  writeFileSync(path.join(sourceRoot, "main.rs"), programFile(cases), "utf8");
+  runCargo(cargo, ["run", "--quiet", "--offline", "--manifest-path", cargoTomlPath]);
+} finally {
+  rmSync(tempRoot, { recursive: true, force: true });
 }
 
 function cargoToml() {

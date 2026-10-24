@@ -94,6 +94,10 @@ function programFile(cases) {
       caseLines.push(`    runValue(s(${kotlinBytes(testCase.id)}), s(${kotlinBytes(testCase.expected)})) { ${expression} }`);
     }
   });
+  // UTF-8 byte literals generate substantial JVM bytecode. Keep each vector in
+  // its own method so adding cases cannot exceed the 64 KiB method-size limit.
+  const caseHelpers = caseLines.map((line, index) => `private fun vector_${index}() {\n${line}\n}`);
+  const caseCalls = cases.map((_, index) => `    vector_${index}()`);
 
   return `import com.canonicalpath.CanonicalPath
 import com.canonicalpath.CanonicalPathException
@@ -121,9 +125,16 @@ fun runError(id: String, expected: String, action: () -> String) {
     }
 }
 
+${caseHelpers.join("\n\n")}
+
+private fun runContractChecks() {
+${contractChecks()}
+}
+
 fun main() {
-${caseLines.join("\n")}
-    println("Kotlin CanonicalPath vectors passed: ${cases.length} cases")
+${caseCalls.join("\n")}
+    runContractChecks()
+    println("Kotlin CanonicalPath vectors passed: ${cases.length} cases; contract chains passed")
 }
 `;
 }
@@ -184,4 +195,36 @@ function kotlinBytes(value) {
 
 function kotlinString(value) {
   return JSON.stringify(value ?? "");
+}
+
+
+function contractChecks() {
+  return String.raw`    val native = CanonicalPathNormalizeOptions(sourceHost = "posix")
+    val canonical = CanonicalPathNormalizeOptions(sourceHost = "canonical")
+    for (raw in listOf("/repo/a\\b", "/C:/repo", "C:/repo", "C:foo", "x/../C:foo", "file://repo/a")) {
+        val first = CanonicalPath.normalize(raw, native)
+        check(CanonicalPath.normalize(first, native) == first)
+        check(CanonicalPath.normalize(first, canonical) == first)
+        check(CanonicalPath.toPOSIX(first) == first)
+    }
+    for ((root, target) in listOf(
+        "/repo" to "/repo/a\\b", "/repo" to "/repo/C:/nested", "c:/repo" to "c:/repo/C:foo",
+        "//?/c:/repo" to "//?/c:/repo/file", "//?/UNC/server/share" to "//?/UNC/server/share/file"
+    )) {
+        check(CanonicalPath.join(root, CanonicalPath.relative(root, target)) == target)
+        check(CanonicalPath.normalize(target, canonical) == target)
+    }
+    for (mount in listOf("", "/", "/foo/../mnt//", "/mnt\\vol", "/C:/drives")) {
+        val options = CanonicalPathNormalizeOptions(sourceHost = "wsl")
+        options.wsl.enabled = true
+        options.wsl.mountRoot = mount
+        val host = CanonicalPath.toWSL("c:/repo/file", options.wsl)
+        check(CanonicalPath.normalize(host, options) == "c:/repo/file")
+    }
+    for (raw in listOf("a\\b", "C:foo", "../escape", "/absolute")) {
+        var rejected = false
+        try { CanonicalPath.normalizeRelative(raw) } catch (_: CanonicalPathException) { rejected = true }
+        check(rejected) { "strict raw relative validator accepted " + raw }
+    }
+`;
 }

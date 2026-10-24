@@ -53,10 +53,12 @@ class CanonicalPathNormalizeOptions {
 private class RootParts {
   public final prefix: String;
   public final rest: String;
+  public final kind: String;
 
   public function new(prefix: String, rest: String) {
     this.prefix = prefix;
     this.rest = rest;
+    this.kind = prefix == "" ? "relative" : prefix == "/" ? "posix" : StringTools.startsWith(prefix, "//?/UNC/") ? "extended-unc" : StringTools.startsWith(prefix, "//?/") ? "extended-drive" : StringTools.startsWith(prefix, "//") ? "unc" : "drive";
   }
 }
 
@@ -76,34 +78,41 @@ class CanonicalPath {
     var value = opts.trimOuterWhitespace ? StringTools.trim(raw) : raw;
     if (value.length == 0) throw pathError("ERR_EMPTY_PATH", "path is empty");
     if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-
-    if (hasUriScheme(value) || opts.sourceHost == "vscode-file-uri") value = parseFileUri(value, opts);
-    if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-    if (!opts.windows.preserveExtendedLength) value = unwrapWindowsExtendedPrefix(value);
-    value = StringTools.replace(value, "\\", "/");
-
-    if (opts.targetProfile != "posix" && StringTools.startsWith(value, "/") && !StringTools.startsWith(value, "//")) {
-      if (opts.wsl.enabled && !isUriWindowsDrivePath(value)) {
-        if (opts.windows.rejectADS && hasWindowsADS(value)) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
-        if (opts.windows.rejectDeviceNames && hasReservedDeviceName(value)) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+    var mount = normalizeMount(opts.wsl.mountRoot);
+    if (opts.sourceHost == "posix") {
+      if (opts.wsl.enabled) throw pathError("ERR_INVALID_PATH", "native POSIX input cannot enable WSL mapping");
+      validateWindowsComponents(value, opts, true);
+      value = cleanCanonical(value, true);
+    } else if (opts.sourceHost == "canonical") {
+      validateWindowsComponents(value, opts);
+      value = cleanCanonical(value);
+    } else {
+      var uriInput = hasUriScheme(value);
+      if (uriInput || opts.sourceHost == "vscode-file-uri") value = parseFileUri(value, opts);
+      var candidate = opts.wsl.enabled && StringTools.startsWith(value, "/") && (!StringTools.startsWith(value, "//") || StringTools.startsWith(value, "///")) && !(uriInput && isUriWindowsDrivePath(value));
+      if (candidate) {
+        validateWindowsComponents(value, opts, true);
+        value = cleanCanonical(value, true);
+        var prefix = mount == "/" ? "/" : mount + "/";
+        if (opts.targetProfile != "posix" && StringTools.startsWith(value, prefix)) {
+          var tail = value.substr(prefix.length);
+          if (tail.length > 0 && isASCIILetter(tail.charAt(0)) && (tail.length == 1 || tail.charAt(1) == "/")) value = lowercaseASCII(tail.charAt(0)) + ":/" + (tail.length == 1 ? "" : tail.substr(2));
+        }
+        value = cleanCanonical(value);
+      } else {
+        value = StringTools.replace(value, "\\", "/");
+        if (isUriWindowsDrivePath(value)) value = value.substr(1);
+        var parsed = splitRoot(value);
+        if (!opts.windows.preserveExtendedLength) {
+          if (parsed.kind == "extended-drive") value = value.substr(4);
+          else if (parsed.kind == "extended-unc") value = "//" + value.substr(8);
+        }
+        validateWindowsComponents(value, opts);
         value = cleanCanonical(value);
       }
-      value = mapWSLDrive(value, opts.wsl);
     }
-    if (isUriWindowsDrivePath(value)) value = value.substr(1);
-    if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical");
-    if (hasDriveRoot(value)) value = lowercaseDriveRoot(value);
-
-    if (opts.windows.rejectADS && hasWindowsADS(value)) {
-      throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
-    }
-    if (opts.windows.rejectDeviceNames && hasReservedDeviceName(value)) {
-      throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
-    }
-
-    var cleaned = cleanCanonical(value);
-    validateTargetProfile(cleaned, opts.targetProfile);
-    return cleaned;
+    validateTargetProfile(value, opts.targetProfile);
+    return value;
   }
 
   public static function relative(root: String, target: String): String {
@@ -116,25 +125,25 @@ class CanonicalPath {
       if (rootParts.parts[index] != targetParts.parts[index]) throw pathError("ERR_OUTSIDE_ROOT", "target is outside root");
     }
     if (targetParts.parts.length == rootParts.parts.length) return ".";
-    return targetParts.parts.slice(rootParts.parts.length).join("/");
+    return markRelative(targetParts.parts.slice(rootParts.parts.length).join("/"));
   }
 
   public static function join(root: String, relativePath: String): String {
-    var cleanRelative = normalizeRelative(relativePath);
-    if (hasNul(root)) throw pathError("ERR_NUL_BYTE", "root contains NUL");
-    if (cleanRelative == ".") return root;
-    if (root == "/" || StringTools.endsWith(root, "/")) return root + cleanRelative;
-    return root + "/" + cleanRelative;
+    var parsedRoot = requireCanonical(root);
+    if (splitRoot(relativePath).prefix.length != 0) throw pathError("ERR_ABSOLUTE_PATH", "join argument must be relative");
+    if (isWindowsRoot(parsedRoot) && relativePath.indexOf("\\") >= 0) throw pathError("ERR_INVALID_PATH", "backslash data is not representable under a Windows root");
+    var clean = cleanCanonical(relativePath, false, "ERR_OUTSIDE_ROOT");
+    if (clean == ".") return root;
+    if (StringTools.startsWith(clean, "./")) clean = clean.substr(2);
+    return cleanCanonical(root == "." ? clean : trimRightSlashes(root) + "/" + clean, parsedRoot.kind == "relative");
   }
 
   public static function joinParts(parts: Array<String>): String {
-    var result = "";
-    for (part in parts) {
-      if (part.length == 0) continue;
-      result = result.length == 0 ? part : join(result, part);
-    }
-    if (result.length == 0) throw pathError("ERR_EMPTY_PATH", "join parts are empty");
-    return result;
+    if (parts == null || parts.length == 0) throw pathError("ERR_EMPTY_PATH", "join requires at least one path part");
+    requireCanonical(parts[0]);
+    var value = parts[0];
+    for (i in 1...parts.length) value = join(value, parts[i]);
+    return value;
   }
 
   public static function normalizeRelative(raw: String): String {
@@ -165,29 +174,24 @@ class CanonicalPath {
   }
 
   public static function toWin32(canonical: String): String {
-    if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-    if (hasDriveRoot(canonical)) {
-      return uppercaseASCII(canonical.charAt(0)) + ":\\" + StringTools.replace(canonical.substr(3), "/", "\\");
-    }
-    if (StringTools.startsWith(canonical, "//")) return "\\\\" + StringTools.replace(canonical.substr(2), "/", "\\");
-    return StringTools.replace(canonical, "/", "\\");
+    var root = requireCanonical(canonical, true);
+    if (root.kind == "posix" || canonical.indexOf("\\") >= 0 || StringTools.startsWith(canonical, "./")) throw pathError("ERR_INVALID_PATH", "canonical path is not representable as Windows");
+    var value = canonical;
+    if (root.kind == "drive") value = uppercaseASCII(value.charAt(0)) + value.substr(1);
+    if (root.kind == "extended-drive") value = value.substr(0, 4) + uppercaseASCII(value.charAt(4)) + value.substr(5);
+    return StringTools.replace(value, "/", "\\");
   }
 
   public static function toWSL(canonical: String, ?options: CanonicalPathWSLOptions): String {
-    var opts = options == null ? new CanonicalPathWSLOptions() : options;
-    if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-    if (!hasDriveRoot(canonical)) return canonical;
-    var mountRoot = trimRightSlashes(opts.mountRoot.length == 0 ? "/mnt" : opts.mountRoot);
-    var rest = canonical.substr(3);
-    var drive = lowercaseASCII(canonical.charAt(0));
-    if (rest.length == 0) return mountRoot + "/" + drive;
-    return mountRoot + "/" + drive + "/" + rest;
+    var mount = normalizeMount(options == null ? null : options.mountRoot);
+    var root = requireCanonical(canonical, true);
+    if (root.kind == "relative" || root.kind == "posix") return canonical;
+    if (root.kind != "drive") throw pathError("ERR_INVALID_PATH", "WSL serialization requires an ordinary drive");
+    return (mount == "/" ? "" : mount) + "/" + root.prefix.charAt(0) + (root.rest.length == 0 ? "" : "/" + root.rest);
   }
 
   public static function toPOSIX(canonical: String): String {
-    if (hasNul(canonical)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-    if (hasDriveRoot(canonical)) throw pathError("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl");
-    if (canonical.indexOf("\\") >= 0) throw pathError("ERR_INVALID_PATH", "canonical paths must use slash separators");
+    if (isWindowsRoot(requireCanonical(canonical))) throw pathError("ERR_INVALID_PATH", "Windows root requires explicit host mapping");
     return canonical;
   }
 
@@ -237,6 +241,44 @@ class CanonicalPath {
     }
     if (decoded.toString() != raw) throw pathError("ERR_INVALID_COMPONENT", "git ref contains invalid Unicode");
     return decoded;
+  }
+
+  private static function markRelative(value: String): String {
+    return value.length >= 2 && isASCIILetter(value.charAt(0)) && value.charAt(1) == ":" ? "./" + value : value;
+  }
+
+  private static function isWindowsRoot(root: RootParts): Bool {
+    return root.kind != "relative" && root.kind != "posix";
+  }
+
+  private static function splitUNC(value: String, prefix: String): RootParts {
+    var parts = value.split("/");
+    if (parts.length < 2 || parts[0] == "" || parts[1] == "" || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == "..") throw pathError("ERR_INVALID_PATH", "UNC requires server and share");
+    return new RootParts(prefix + parts[0] + "/" + parts[1], parts.slice(2).join("/"));
+  }
+
+  private static function requireCanonical(value: String, allowDriveCase: Bool = false): RootParts {
+    var parsed = splitRoot(value);
+    var expected = value;
+    if (allowDriveCase && parsed.kind == "drive") expected = lowercaseASCII(value.charAt(0)) + value.substr(1);
+    else if (allowDriveCase && parsed.kind == "extended-drive") expected = value.substr(0, 4) + lowercaseASCII(value.charAt(4)) + value.substr(5);
+    if (cleanCanonical(value) != expected) throw pathError("ERR_INVALID_PATH", "path must be lexically cleaned canonical data");
+    return parsed;
+  }
+
+  private static function normalizeMount(value: String): String {
+    if (value == null || value.length == 0) value = "/mnt";
+    if (splitRoot(value, true).kind != "posix") throw pathError("ERR_INVALID_PATH", "WSL mount root must be absolute POSIX");
+    return cleanCanonical(value, true);
+  }
+
+  private static function validateWindowsComponents(value: String, opts: CanonicalPathNormalizeOptions, nativePosix: Bool = false): Void {
+    var rest = splitRoot(value, nativePosix).rest;
+    if (opts.windows.rejectADS && rest.indexOf(":") >= 0) throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed");
+    if (opts.windows.rejectDeviceNames) for (part in rest.split("/")) {
+      var end = indexOfAny(part, [".", ":"]);
+      if (isReservedDeviceBase(end < 0 ? part : part.substr(0, end))) throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed");
+    }
   }
 
   private static function optionsOrDefault(options: CanonicalPathNormalizeOptions): CanonicalPathNormalizeOptions {
@@ -341,9 +383,9 @@ class CanonicalPath {
     return drive + ":/" + rest.substr(2);
   }
 
-  private static function cleanCanonical(value: String): String {
+  private static function cleanCanonical(value: String, nativePosix: Bool = false, escapeCode: String = "ERR_INVALID_PATH"): String {
     if (value.length == 0) throw pathError("ERR_EMPTY_PATH", "path is empty");
-    var root = splitRoot(value);
+    var root = splitRoot(value, nativePosix);
     var parts: Array<String> = [];
     for (part in root.rest.split("/")) {
       if (part.length == 0 || part == ".") continue;
@@ -353,36 +395,29 @@ class CanonicalPath {
           continue;
         }
         if (root.prefix.length != 0) continue;
-        throw pathError("ERR_INVALID_PATH", "relative path escapes above its root");
+        throw pathError(escapeCode, "relative path escapes above its root");
       }
       parts.push(part);
     }
 
     var joined = parts.join("/");
-    if (root.prefix.length == 0) return joined.length == 0 ? "." : joined;
+    if (root.prefix.length == 0) return joined.length == 0 ? "." : markRelative(joined);
     if (root.prefix == "/") return joined.length == 0 ? "/" : "/" + joined;
     if (StringTools.endsWith(root.prefix, "/")) return joined.length == 0 ? root.prefix : root.prefix + joined;
     return joined.length == 0 ? root.prefix : root.prefix + "/" + joined;
   }
 
   private static function validateTargetProfile(value: String, targetProfile: String): Void {
+    var root = splitRoot(value);
     if (targetProfile.length == 0 || targetProfile == "portable") return;
-    if (targetProfile == "posix") {
-      if (hasDriveRoot(value) || StringTools.startsWith(value, "//")) {
-        throw pathError("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots");
-      }
-      return;
-    }
-    if (targetProfile == "win32-drive") {
-      if (StringTools.startsWith(value, "/")) throw pathError("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots");
-      return;
-    }
-    throw pathError("ERR_INVALID_PATH", "unsupported targetProfile");
+    if (targetProfile == "posix" && !isWindowsRoot(root)) return;
+    if (targetProfile == "win32-drive" && (root.kind == "relative" || root.kind == "drive" || root.kind == "extended-drive")) return;
+    throw pathError("ERR_INVALID_PATH", "canonical root is incompatible with target profile");
   }
 
   private static function canonicalParts(value: String): CanonicalParts {
     if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
-    var root = splitRoot(value);
+    var root = requireCanonical(value);
     if (root.prefix.length == 0) throw pathError("ERR_INVALID_PATH", "path must be canonical absolute");
     var parts: Array<String> = [];
     for (part in root.rest.split("/")) {
@@ -393,22 +428,26 @@ class CanonicalPath {
     return new CanonicalParts(root.prefix, parts);
   }
 
-  private static function splitRoot(value: String): RootParts {
-    if (hasDriveRoot(value)) return new RootParts(value.substr(0, 3), value.substr(3));
-    if (StringTools.startsWith(value, "//")) {
-      var rest = value.substr(2);
-      var first = rest.indexOf("/");
-      if (first <= 0) throw pathError("ERR_INVALID_PATH", "UNC path requires server and share");
-      var server = rest.substr(0, first);
-      var afterFirst = rest.substr(first + 1);
-      var second = afterFirst.indexOf("/");
-      var share = second >= 0 ? afterFirst.substr(0, second) : afterFirst;
-      var tail = second >= 0 ? afterFirst.substr(second + 1) : "";
-      if (share.length == 0) throw pathError("ERR_INVALID_PATH", "UNC path requires server and share");
-      return new RootParts("//" + server + "/" + share, tail);
+  private static function splitRoot(value: String, nativePosix: Bool = false): RootParts {
+    if (value.length == 0) throw pathError("ERR_EMPTY_PATH", "path is empty");
+    if (hasNul(value)) throw pathError("ERR_NUL_BYTE", "path contains NUL");
+    if (nativePosix) {
+      if (StringTools.startsWith(value, "//") && !StringTools.startsWith(value, "///")) throw pathError("ERR_INVALID_PATH", "double-leading-slash POSIX path is unsupported");
+      return StringTools.startsWith(value, "/") ? new RootParts("/", value.substr(1)) : new RootParts("", value);
     }
-    if (StringTools.startsWith(value, "/")) return new RootParts("/", value.substr(1));
-    return new RootParts("", value);
+    var parsed: RootParts;
+    if (StringTools.startsWith(value, "//?/")) {
+      var tail = value.substr(4);
+      if (hasDriveRoot(tail)) parsed = new RootParts("//?/" + lowercaseASCII(tail.charAt(0)) + ":/", tail.substr(3));
+      else if (StringTools.startsWith(tail, "UNC/")) parsed = splitUNC(tail.substr(4), "//?/UNC/");
+      else throw pathError("ERR_INVALID_PATH", "unsupported or incomplete extended root");
+    } else if (hasDriveRoot(value)) parsed = new RootParts(lowercaseASCII(value.charAt(0)) + ":/", value.substr(3));
+    else if (isDriveRelative(value)) throw pathError("ERR_DRIVE_RELATIVE_PATH", "unmarked drive-relative path");
+    else if (StringTools.startsWith(value, "//")) parsed = splitUNC(value.substr(2), "//");
+    else if (StringTools.startsWith(value, "/")) parsed = new RootParts("/", value.substr(1));
+    else parsed = new RootParts("", value);
+    if (isWindowsRoot(parsed) && value.indexOf("\\") >= 0) throw pathError("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash");
+    return parsed;
   }
 
   private static function hasWindowsADS(value: String): Bool {

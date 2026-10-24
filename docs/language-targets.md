@@ -33,7 +33,7 @@ Read “supported” together with the security level. In this repository, `cano
 - Swift: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm swift:vectors`; no filesystem operations or daemon transport yet.
 - Kotlin: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm kotlin:vectors`; no filesystem operations or daemon transport yet.
 - C: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm c:vectors`; no filesystem operations or daemon transport yet.
-- Rust: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm rust:vectors`; no filesystem operations or daemon transport yet.
+- Rust: supported experimental lexical `canonicalpath` surface, verified by mandatory runner checks, unit/documentation tests, and shared vectors through `pnpm rust:verify`; no filesystem operations or daemon transport yet.
 - C++: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm cpp:vectors`; no filesystem operations or daemon transport yet.
 - Haxe: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm haxe:vectors`; no filesystem operations or daemon transport yet.
 - GDScript / Godot: supported experimental lexical `canonicalpath` surface, checked against shared vectors with `pnpm gdscript:vectors`; no filesystem operations or daemon transport yet.

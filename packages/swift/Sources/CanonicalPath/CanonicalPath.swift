@@ -92,67 +92,60 @@ public enum CanonicalPath {
         var value = options.trimOuterWhitespace ? raw.trimmingCharacters(in: .whitespacesAndNewlines) : raw
         if value.isEmpty { throw pathError("ERR_EMPTY_PATH", "path is empty") }
         if hasNul(value) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-
-        if hasUriScheme(value) || options.sourceHost == "vscode-file-uri" {
-            value = try parseFileUri(value, options: options)
-        }
-        if hasNul(value) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-        if !options.windows.preserveExtendedLength {
-            value = unwrapWindowsExtendedPrefix(value)
-        }
-        value = value.replacingOccurrences(of: "\\", with: "/")
-
-        if options.targetProfile != "posix" && hasUTF8Prefix(value, "/") && !hasUTF8Prefix(value, "//") {
-            if options.wsl.enabled && !isUriWindowsDrivePath(value) {
-                if options.windows.rejectADS && hasWindowsADS(value) { throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed") }
-                if options.windows.rejectDeviceNames && hasReservedDeviceName(value) { throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed") }
-                value = try cleanCanonical(value)
+        let mount = try normalizeMountRoot(options.wsl.mountRoot)
+        let cleaned: String
+        if options.sourceHost == "posix" {
+            if options.wsl.enabled { throw pathError("ERR_INVALID_PATH", "native POSIX input does not allow WSL mapping") }
+            try checkWindowsPolicy(value, options: options, nativePOSIX: true)
+            cleaned = try cleanPOSIX(value)
+        } else if options.sourceHost == "canonical" {
+            if isDriveRelative(value) { throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical") }
+            try checkWindowsPolicy(value, options: options)
+            cleaned = try cleanCanonical(value)
+        } else {
+            let parsedURI = hasUriScheme(value)
+            if parsedURI || options.sourceHost == "vscode-file-uri" { value = try parseFileUri(value, options: options) }
+            let uriDrive = parsedURI && isUriWindowsDrivePath(value)
+            let posixCandidate = hasUTF8Prefix(value, "/") && (!hasUTF8Prefix(value, "//") || hasUTF8Prefix(value, "///"))
+            if options.wsl.enabled && posixCandidate && !uriDrive {
+                try checkWindowsPolicy(value, options: options)
+                let posix = try cleanPOSIX(value)
+                cleaned = options.targetProfile == "posix" ? posix : try mapWSLDrive(posix, mountRoot: mount)
+            } else {
+                value = String(decoding: value.utf8.map { $0 == 0x5c ? 0x2f : $0 }, as: UTF8.self)
+                if hasUTF8Prefix(value, "//?/") {
+                    _ = try splitRoot(value)
+                    if !options.windows.preserveExtendedLength { value = unwrapWindowsExtendedPrefix(value) }
+                }
+                if isUriWindowsDrivePath(value) { value = dropUTF8(value, 1) }
+                if isDriveRelative(value) { throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical") }
+                try checkWindowsPolicy(value, options: options)
+                cleaned = try cleanCanonical(value)
             }
-            value = mapWSLDrive(value, options: options.wsl)
         }
-        if isUriWindowsDrivePath(value) {
-            value = dropUTF8(value, 1)
-        }
-        if isDriveRelative(value) {
-            throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
-        }
-        if hasDriveRoot(value) {
-            value = lowercaseDriveRoot(value)
-        }
-
-        if options.windows.rejectADS && hasWindowsADS(value) {
-            throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed")
-        }
-        if options.windows.rejectDeviceNames && hasReservedDeviceName(value) {
-            throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed")
-        }
-
-        let cleaned = try cleanCanonical(value)
         try validateTargetProfile(cleaned, options.targetProfile)
         return cleaned
     }
 
     public static func relative(_ root: String, _ target: String) throws -> String {
-        let rootParts = try canonicalParts(root)
-        let targetParts = try canonicalParts(target)
-        if !exactUTF8Equal(rootParts.prefix, targetParts.prefix) || targetParts.parts.count < rootParts.parts.count {
-            throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
+        let a = try canonicalParts(root)
+        let b = try canonicalParts(target)
+        if !exactUTF8Equal(a.prefix, b.prefix) || b.parts.count < a.parts.count { throw pathError("ERR_OUTSIDE_ROOT", "target is outside root") }
+        for index in a.parts.indices {
+            if !exactUTF8Equal(a.parts[index], b.parts[index]) { throw pathError("ERR_OUTSIDE_ROOT", "target is outside root") }
         }
-        for index in 0..<rootParts.parts.count {
-            if !exactUTF8Equal(rootParts.parts[index], targetParts.parts[index]) {
-                throw pathError("ERR_OUTSIDE_ROOT", "target is outside root")
-            }
-        }
-        if targetParts.parts.count == rootParts.parts.count { return "." }
-        return targetParts.parts[rootParts.parts.count...].joined(separator: "/")
+        return serialize("", Array(b.parts.dropFirst(a.parts.count)))
     }
 
     public static func join(_ root: String, _ relativePath: String) throws -> String {
-        let cleanRelative = try normalizeRelative(relativePath)
-        if hasNul(root) { throw pathError("ERR_NUL_BYTE", "root contains NUL") }
-        if cleanRelative == "." { return root }
-        if root == "/" || hasUTF8Suffix(root, "/") { return root + cleanRelative }
-        return root + "/" + cleanRelative
+        let parsed = try validatedCanonical(root)
+        if relativePath.isEmpty { throw pathError("ERR_EMPTY_PATH", "relative path is empty") }
+        if hasNul(relativePath) { throw pathError("ERR_NUL_BYTE", "relative path contains NUL") }
+        if hasUTF8Prefix(relativePath, "/") || hasDriveRoot(relativePath) { throw pathError("ERR_ABSOLUTE_PATH", "relative path must not be absolute") }
+        if isDriveRelative(relativePath) { throw pathError("ERR_DRIVE_RELATIVE_PATH", "drive-relative path is not allowed") }
+        if !parsed.prefix.isEmpty && parsed.prefix != "/" && relativePath.utf8.contains(0x5c) { throw pathError("ERR_INVALID_PATH", "relative data is not representable under a Windows root") }
+        let parts = try cleanParts("", relativePath, escapeCode: "ERR_OUTSIDE_ROOT")
+        return serialize(parsed.prefix, parsed.parts + parts)
     }
 
     public static func join(parts: String...) throws -> String {
@@ -195,34 +188,31 @@ public enum CanonicalPath {
     }
 
     public static func toWin32(_ canonical: String) throws -> String {
-        if hasNul(canonical) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-        if hasDriveRoot(canonical), let drive = asciiByte(canonical, at: 0) {
-            let upperDrive = String(UnicodeScalar(Int(toUpperASCII(drive)))!)
-            let rest = dropUTF8(canonical, 3).replacingOccurrences(of: "/", with: "\\")
-            return upperDrive + ":\\" + rest
+        let parsed = try validatedCanonical(canonical)
+        if parsed.prefix == "/" || (parsed.prefix.isEmpty && (canonical.utf8.contains(0x5c) || isMarkedRelative(canonical))) { throw pathError("ERR_INVALID_PATH", "canonical path has no lossless Windows representation") }
+        var value = serialize(parsed.prefix, parsed.parts)
+        if hasUTF8Prefix(parsed.prefix, "//?/") && hasDriveRoot(dropUTF8(parsed.prefix, 4)), let drive = asciiByte(value, at: 4) {
+            value = "//?/" + String(UnicodeScalar(Int(toUpperASCII(drive)))!) + dropUTF8(value, 5)
+        } else if hasDriveRoot(parsed.prefix), let drive = asciiByte(value, at: 0) {
+            value = String(UnicodeScalar(Int(toUpperASCII(drive)))!) + dropUTF8(value, 1)
         }
-        if hasUTF8Prefix(canonical, "//") {
-            return "\\\\" + dropUTF8(canonical, 2).replacingOccurrences(of: "/", with: "\\")
-        }
-        return canonical.replacingOccurrences(of: "/", with: "\\")
+        return String(decoding: value.utf8.map { $0 == 0x2f ? 0x5c : $0 }, as: UTF8.self)
     }
 
     public static func toWSL(_ canonical: String, options: CanonicalPathWSLOptions = CanonicalPathWSLOptions()) throws -> String {
-        if hasNul(canonical) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-        if !hasDriveRoot(canonical) { return canonical }
-        let mountRoot = trimRightSlashes(options.mountRoot.isEmpty ? "/mnt" : options.mountRoot)
-        let drive = String(canonical.prefix(1)).lowercased()
-        let rest = dropUTF8(canonical, 3)
-        if rest.isEmpty { return mountRoot + "/" + drive }
-        return mountRoot + "/" + drive + "/" + rest
+        let mount = try normalizeMountRoot(options.mountRoot)
+        let parsed = try validatedCanonical(canonical)
+        if hasUTF8Prefix(parsed.prefix, "//") { throw pathError("ERR_INVALID_PATH", "UNC and preserved extended roots require an explicit host mapping") }
+        if !hasDriveRoot(parsed.prefix) { return canonical }
+        let mountPrefix = mount == "/" ? "" : mount
+        let drive = String(decoding: parsed.prefix.utf8.prefix(1), as: UTF8.self)
+        let tail = parsed.parts.isEmpty ? "" : "/" + parsed.parts.joined(separator: "/")
+        return mountPrefix + "/" + drive + tail
     }
 
     public static func toPOSIX(_ canonical: String) throws -> String {
-        if hasNul(canonical) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-        if hasDriveRoot(canonical) {
-            throw pathError("ERR_INVALID_PATH", "win32 drive paths require an explicit host mapping such as to_wsl")
-        }
-        if canonical.contains("\\") { throw pathError("ERR_INVALID_PATH", "canonical paths must use slash separators") }
+        let parsed = try validatedCanonical(canonical)
+        if !parsed.prefix.isEmpty && parsed.prefix != "/" { throw pathError("ERR_INVALID_PATH", "Windows roots require an explicit host mapping") }
         return canonical
     }
 
@@ -325,8 +315,8 @@ public enum CanonicalPath {
     }
 
     private static func unwrapWindowsExtendedPrefix(_ value: String) -> String {
-        if hasUTF8Prefix(value, "\\\\?\\UNC\\") { return "\\\\" + dropUTF8(value, 8) }
-        if hasUTF8Prefix(value, "\\\\?\\") { return dropUTF8(value, 4) }
+        if hasUTF8Prefix(value, "//?/UNC/") { return "//" + dropUTF8(value, 8) }
+        if hasUTF8Prefix(value, "//?/") { return dropUTF8(value, 4) }
         return value
     }
 
@@ -347,99 +337,84 @@ public enum CanonicalPath {
         String(decoding: value.utf8.dropFirst(count), as: UTF8.self)
     }
 
-    private static func mapWSLDrive(_ value: String, options: CanonicalPathWSLOptions) -> String {
-        if !options.enabled { return value }
-        let mountRoot = trimRightSlashes(options.mountRoot.isEmpty ? "/mnt" : options.mountRoot)
-        let prefix = mountRoot.replacingOccurrences(of: "/+", with: "/", options: .regularExpression) + "/"
-        if !value.utf8.starts(with: prefix.utf8) { return value }
-        let rest = String(decoding: value.utf8.dropFirst(prefix.utf8.count), as: UTF8.self)
+    private static func mapWSLDrive(_ value: String, mountRoot: String) throws -> String {
+        let prefix = mountRoot == "/" ? "/" : mountRoot + "/"
+        if !hasUTF8Prefix(value, prefix) { return value }
+        let rest = dropUTF8(value, prefix.utf8.count)
         guard let first = rest.utf8.first, isASCIILetter(first) else { return value }
-        if rest.utf8.count > 1, asciiByte(rest, at: 1) != 0x2f { return value }
-        let drive = String(UnicodeScalar(Int(toLowerASCII(first)))!)
-        if rest.utf8.count == 1 { return drive + ":/" }
-        return drive + ":/" + dropUTF8(rest, 2)
+        if rest.utf8.count > 1 && asciiByte(rest, at: 1) != 0x2f { return value }
+        let tail = rest.utf8.count > 1 ? dropUTF8(rest, 2) : ""
+        if tail.utf8.contains(0x5c) { throw pathError("ERR_INVALID_PATH", "literal backslash cannot be mapped to a Windows component") }
+        return String(UnicodeScalar(Int(toLowerASCII(first)))!) + ":/" + tail
     }
 
     private static func cleanCanonical(_ value: String) throws -> String {
         if value.isEmpty { throw pathError("ERR_EMPTY_PATH", "path is empty") }
         let root = try splitRoot(value)
-        var parts: [String] = []
-        for part in splitKeepingEmpty(root.rest, separator: "/") {
-            if part.isEmpty || part == "." { continue }
-            if part == ".." {
-                if !parts.isEmpty {
-                    parts.removeLast()
-                    continue
-                }
-                if !root.prefix.isEmpty { continue }
-                throw pathError("ERR_INVALID_PATH", "relative path escapes above its root")
-            }
-            parts.append(part)
-        }
-
-        let joined = parts.joined(separator: "/")
-        if root.prefix.isEmpty { return joined.isEmpty ? "." : joined }
-        if root.prefix == "/" { return joined.isEmpty ? "/" : "/" + joined }
-        if hasUTF8Suffix(root.prefix, "/") { return joined.isEmpty ? root.prefix : root.prefix + joined }
-        return joined.isEmpty ? root.prefix : root.prefix + "/" + joined
+        return serialize(root.prefix, try cleanParts(root.prefix, root.rest))
     }
 
     private static func validateTargetProfile(_ value: String, _ targetProfile: String) throws {
+        let prefix = try splitRoot(value).prefix
         if targetProfile.isEmpty || targetProfile == "portable" { return }
-        if targetProfile == "posix" {
-            if hasDriveRoot(value) || hasUTF8Prefix(value, "//") {
-                throw pathError("ERR_INVALID_PATH", "targetProfile posix does not allow Windows drive or UNC roots")
-            }
-            return
-        }
-        if targetProfile == "win32-drive" {
-            if hasUTF8Prefix(value, "/") {
-                throw pathError("ERR_INVALID_PATH", "targetProfile win32-drive does not allow POSIX or UNC roots")
-            }
-            return
-        }
-        throw pathError("ERR_INVALID_PATH", "unsupported targetProfile")
+        let drive = hasDriveRoot(prefix) || (hasUTF8Prefix(prefix, "//?/") && hasDriveRoot(dropUTF8(prefix, 4)))
+        if targetProfile == "posix" && (prefix.isEmpty || prefix == "/") { return }
+        if targetProfile == "win32-drive" && (prefix.isEmpty || drive) { return }
+        throw pathError("ERR_INVALID_PATH", "path root is not allowed by targetProfile")
     }
 
     private static func canonicalParts(_ value: String) throws -> CanonicalParts {
-        if hasNul(value) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
-        let root = try splitRoot(value)
-        if root.prefix.isEmpty { throw pathError("ERR_INVALID_PATH", "path must be canonical absolute") }
-        let parts = splitKeepingEmpty(root.rest, separator: "/").filter { !$0.isEmpty }
-        if parts.contains(where: { $0 == "." || $0 == ".." }) {
-            throw pathError("ERR_INVALID_PATH", "path is not lexically cleaned")
-        }
-        return CanonicalParts(prefix: root.prefix, parts: parts)
+        let parsed = try validatedCanonical(value)
+        if parsed.prefix.isEmpty { throw pathError("ERR_INVALID_PATH", "path must be canonical absolute") }
+        return parsed
     }
 
     private static func splitRoot(_ value: String) throws -> RootParts {
-        if hasDriveRoot(value) {
-            return RootParts(prefix: String(decoding: value.utf8.prefix(3), as: UTF8.self), rest: dropUTF8(value, 3))
-        }
-        if hasUTF8Prefix(value, "//") {
-            let parts = splitKeepingEmpty(dropUTF8(value, 2), separator: "/")
-            if parts.count < 2 || parts[0].isEmpty || parts[1].isEmpty {
-                throw pathError("ERR_INVALID_PATH", "UNC path requires server and share")
+        if hasNul(value) { throw pathError("ERR_NUL_BYTE", "path contains NUL") }
+        let root: RootParts
+        if hasUTF8Prefix(value, "//?/") {
+            let inner = dropUTF8(value, 4)
+            if hasDriveRoot(inner) {
+                let drivePrefix = String(decoding: lowercaseDriveRoot(inner).utf8.prefix(3), as: UTF8.self)
+                root = RootParts(prefix: "//?/" + drivePrefix, rest: dropUTF8(inner, 3))
+            } else if hasUTF8Prefix(inner, "UNC/") {
+                let unc = try splitUNC(dropUTF8(inner, 4))
+                root = RootParts(prefix: "//?/UNC/" + unc.prefix, rest: unc.rest)
+            } else {
+                throw pathError("ERR_INVALID_PATH", "unsupported extended Windows root")
             }
-            return RootParts(prefix: "//" + parts[0] + "/" + parts[1], rest: parts.dropFirst(2).joined(separator: "/"))
+        } else if hasDriveRoot(value) {
+            root = RootParts(prefix: String(decoding: lowercaseDriveRoot(value).utf8.prefix(3), as: UTF8.self), rest: dropUTF8(value, 3))
+        } else if isDriveRelative(value) {
+            throw pathError("ERR_DRIVE_RELATIVE_PATH", "Windows drive-relative paths are not canonical")
+        } else if hasUTF8Prefix(value, "///") {
+            return RootParts(prefix: "/", rest: String(decoding: value.utf8.drop(while: { $0 == 0x2f }), as: UTF8.self))
+        } else if hasUTF8Prefix(value, "//") {
+            let unc = try splitUNC(dropUTF8(value, 2))
+            root = RootParts(prefix: "//" + unc.prefix, rest: unc.rest)
+        } else if hasUTF8Prefix(value, "/") {
+            return RootParts(prefix: "/", rest: dropUTF8(value, 1))
+        } else {
+            return RootParts(prefix: "", rest: value)
         }
-        if hasUTF8Prefix(value, "/") { return RootParts(prefix: "/", rest: dropUTF8(value, 1)) }
-        return RootParts(prefix: "", rest: value)
+        if value.utf8.contains(0x5c) { throw pathError("ERR_INVALID_PATH", "Windows canonical components cannot contain backslash") }
+        return root
     }
 
     private static func hasWindowsADS(_ value: String) -> Bool {
-        var rest = value
-        if hasDriveRoot(value) {
-            rest = dropUTF8(value, 3)
-        } else if hasUTF8Prefix(value, "//"), let root = try? splitRoot(value) {
-            rest = dropUTF8(value, root.prefix.utf8.count)
-        }
-        return rest.contains(":")
+        guard let root = try? splitRoot(value) else { return value.utf8.contains(0x3a) }
+        let rest = !root.prefix.isEmpty && root.prefix != "/" ? root.rest : value
+        return rest.utf8.contains(0x3a)
     }
 
-    private static func hasReservedDeviceName(_ value: String) -> Bool {
-        guard let root = try? splitRoot(value) else { return false }
-        for part in splitKeepingEmpty(root.rest, separator: "/") {
+    private static func hasReservedDeviceName(_ value: String, nativePOSIX: Bool = false) -> Bool {
+        let rest: String
+        if nativePOSIX { rest = value }
+        else {
+            guard let root = try? splitRoot(value) else { return false }
+            rest = root.rest
+        }
+        for part in splitKeepingEmpty(rest, separator: "/") {
             if part.isEmpty || part == "." || part == ".." { continue }
             let base = splitComponentBase(part).uppercased()
             if isReservedDeviceBase(base) { return true }
@@ -701,4 +676,75 @@ public enum CanonicalPath {
     private static func rotateRight(_ value: UInt32, by bits: UInt32) -> UInt32 {
         (value >> bits) | (value << (32 - bits))
     }
+
+    private static func hasASCIIPrefixIgnoringCase(_ value: String, _ prefix: String) -> Bool {
+        let bytes = value.utf8.prefix(prefix.utf8.count)
+        return bytes.map(toLowerASCII).elementsEqual(prefix.utf8.map(toLowerASCII))
+    }
+
+    private static func driveComponent(_ value: String) -> Bool {
+        guard let first = asciiByte(value, at: 0), let second = asciiByte(value, at: 1) else { return false }
+        return isASCIILetter(first) && second == 0x3a
+    }
+
+    private static func isMarkedRelative(_ value: String) -> Bool {
+        hasUTF8Prefix(value, "./") && driveComponent(dropUTF8(value, 2))
+    }
+
+    private static func splitUNC(_ value: String) throws -> RootParts {
+        let parts = splitKeepingEmpty(value, separator: "/")
+        if parts.count < 2 || parts.prefix(2).contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) { throw pathError("ERR_INVALID_PATH", "UNC path requires a valid server and share") }
+        return RootParts(prefix: parts[0] + "/" + parts[1], rest: parts.dropFirst(2).joined(separator: "/"))
+    }
+
+    private static func serialize(_ prefix: String, _ parts: [String]) -> String {
+        let joined = parts.joined(separator: "/")
+        if prefix.isEmpty {
+            if parts.isEmpty { return "." }
+            return (driveComponent(parts[0]) ? "./" : "") + joined
+        }
+        if joined.isEmpty { return prefix }
+        return prefix + (hasUTF8Suffix(prefix, "/") ? "" : "/") + joined
+    }
+
+    private static func cleanParts(_ prefix: String, _ rest: String, escapeCode: String = "ERR_INVALID_PATH") throws -> [String] {
+        var parts: [String] = []
+        for part in splitKeepingEmpty(rest, separator: "/") {
+            if part.isEmpty || part == "." { continue }
+            if part == ".." {
+                if !parts.isEmpty { parts.removeLast() }
+                else if prefix.isEmpty { throw pathError(escapeCode, "relative path escapes above its root") }
+            } else { parts.append(part) }
+        }
+        return parts
+    }
+
+    private static func cleanPOSIX(_ value: String) throws -> String {
+        if hasUTF8Prefix(value, "//") && !hasUTF8Prefix(value, "///") { throw pathError("ERR_INVALID_PATH", "double-leading-slash POSIX roots are unsupported") }
+        let prefix = hasUTF8Prefix(value, "/") ? "/" : ""
+        return serialize(prefix, try cleanParts(prefix, value))
+    }
+
+    private static func normalizeMountRoot(_ raw: String) throws -> String {
+        let value = raw.isEmpty ? "/mnt" : raw
+        if hasNul(value) { throw pathError("ERR_NUL_BYTE", "mount root contains NUL") }
+        if !hasUTF8Prefix(value, "/") { throw pathError("ERR_INVALID_PATH", "mount root must be absolute POSIX") }
+        return try cleanPOSIX(value)
+    }
+
+    private static func validatedCanonical(_ value: String) throws -> CanonicalParts {
+        if value.isEmpty { throw pathError("ERR_EMPTY_PATH", "path is empty") }
+        let root = try splitRoot(value)
+        if root.prefix.isEmpty && value == "." { return CanonicalParts(prefix: "", parts: []) }
+        let rest = root.prefix.isEmpty && isMarkedRelative(root.rest) ? dropUTF8(root.rest, 2) : root.rest
+        let parts = rest.isEmpty ? [] : splitKeepingEmpty(rest, separator: "/")
+        if parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) { throw pathError("ERR_INVALID_PATH", "path is not lexically cleaned") }
+        return CanonicalParts(prefix: root.prefix, parts: parts)
+    }
+
+    private static func checkWindowsPolicy(_ value: String, options: CanonicalPathNormalizeOptions, nativePOSIX: Bool = false) throws {
+        if options.windows.rejectADS && (nativePOSIX ? value.utf8.contains(0x3a) : hasWindowsADS(value)) { throw pathError("ERR_ALTERNATE_DATA_STREAM", "Windows alternate data stream is not allowed") }
+        if options.windows.rejectDeviceNames && hasReservedDeviceName(value, nativePOSIX: nativePOSIX) { throw pathError("ERR_RESERVED_DEVICE_NAME", "Windows reserved device name is not allowed") }
+    }
+
 }
