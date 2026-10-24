@@ -53,7 +53,7 @@ The `2026.6.14-1` Unity registry release is scoped to `packages/unity` and publi
 - CI, security baseline, and CodeQL workflows run on `pull_request`, `push` to `main`, and `workflow_dispatch` after the repository is public.
 - Run `pnpm verify`, `pnpm go:race`, `pnpm check:licenses`, `pnpm check:changelog`, and `git diff --check` before release commits.
 - Run `pnpm ts:pack:dry-run`, `pnpm js:standalone:pack:dry-run`, and `pnpm unity:pack:dry-run` before npm publication.
-- Optional local `unity:pack:signed` and `unity:npm:publish:signed` commands are disabled; a `.attestation.p7m` filename cannot authenticate a package.
+- Local token-based `unity:npm:*` commands are disabled, including ping, whoami and dry-runs. Publication uses the isolated GitHub OIDC workflow. Local `unity:pack:signed` and signed publication remain disabled; a `.attestation.p7m` filename cannot authenticate a package.
 - `pnpm verify` includes `packages/ts/test/package-smoke.mjs`, npm pack dry-runs, and `scripts/run-scoped-daemon-smoke.mjs`.
 - Each package dry-run ultimately uses `npm pack --dry-run` to inspect the publish tarball without uploading it.
 - Run `pnpm audit --audit-level moderate` and `govulncheck ./...` from `packages/go` before opening the repository.
@@ -128,35 +128,23 @@ Do not repack, recalculate an accepted historical baseline, overwrite assets, mo
 
 Local regression coverage includes full and Unity-only originals, lightweight/annotated tag resolution, tag movement, mutable/missing/changed assets, source/repository/release/producer mismatches, signature-command failure, failed or forked producer attempts, partial publication, registry conflicts and rollback prevention. These fixtures do not claim to test the external repository settings, GitHub signature infrastructure or live npm publication; those remain an authorized release-integration gate.
 
-## Local Publishing Secrets
+## Retired local publication commands
 
-Local fallback npm commands use a root `.env` file that is ignored by git. Disabled signed helpers never read this file. These credentials are not used by the GitHub Actions trusted-publishing workflow:
+Local token-based npm commands are disabled. The `run-npm-with-env-token.mjs` entrypoint and its existing `unity:npm:ping`, `unity:npm:whoami`, `unity:npm:publish`, unsigned, and dry-run aliases remain only to return an explicit nonzero refusal to older automation. They never read `NPM_TOKEN` or `.env`, create an npm userconfig, resolve `npm` through `PATH`, start a child publisher, or contact a registry. Supplying `--env-file`, `--cwd`, a prebuilt archive, or `--dry-run` does not re-enable them. Local Unity signing entrypoints remain disabled as well.
 
-```text
-NPM_TOKEN=npm_...
-UPM_CLI_PATH=/absolute/path/to/verified/upm
-UPM_ORGANIZATION_ID=...
-UPM_SERVICE_ACCOUNT_KEY_ID=...
-UPM_SERVICE_ACCOUNT_KEY_SECRET=...
-```
+A temporary private npm configuration and secret-variable scrubbing do not establish the identity of a publisher selected through inherited `PATH`. Build/dependency code running earlier under the same account can persist a replacement executable. Publication therefore uses the existing fresh, no-checkout OIDC job with verified immutable artifacts, as described above. A failed provenance or OIDC check must be resolved in that workflow; local token publication is not a fallback.
 
-Build and pack unsigned artifacts before invoking the local token wrapper: it disables all npm lifecycle scripts, removes publication/signing secrets from the npm child environment, and cleans its temporary userconfig on normal success and failure. Use `pnpm ts:build`, `pnpm js:standalone:build`, and `npm pack` in the selected package before publishing its tarball.
-
-Use the unsigned local helper only with prebuilt artifacts, or use the normal isolated GitHub release workflow. The signed commands below are retained as fail-closed compatibility entrypoints; they reject before credentials, UPM, archives or npm are accessed.
+Run local builds and package inspection without publishing credentials:
 
 ```sh
-pnpm unity:npm:ping
-pnpm unity:npm:whoami
-pnpm unity:npm:publish:dry-run
-pnpm unity:npm:publish
-pnpm unity:npm:publish:unsigned
-pnpm unity:npm:publish:unsigned:dry-run
-pnpm unity:pack:signed
-pnpm unity:npm:publish:signed:dry-run
-pnpm unity:npm:publish:signed
+pnpm ts:build
+pnpm js:standalone:build
+pnpm ts:pack:dry-run
+pnpm js:standalone:pack:dry-run
+pnpm unity:pack:dry-run
 ```
 
-Do not commit `.env`, `.npmrc`, npm automation tokens, Unity service account credentials, or command output that contains tokens.
+These commands do not upload packages. `.env.example` no longer requests npm or Unity publishing credentials. Existing private `.env` files are not opened or modified by the disabled commands; remove obsolete credentials through the normal secret-management process. Do not commit `.env`, `.npmrc`, tokens, service account credentials, or output containing them.
 
 ## Public Switch
 

@@ -52,7 +52,7 @@ Unity managed code is a validation and transport layer only. `PathGuard`, `Scope
 
 Generated filenames are sanitized with the Windows-safe component policy because Unity projects often move across Windows and non-Windows hosts.
 
-Knowledge and artifact tools use `ScopedPathGuard` semantics rather than raw `Assets/...` payload paths. They enforce bounded `max_chars` / `max_entries` caps in the gateway layer and return artifact references as `{ scope: "artifact", path }`, never host absolute paths. The fake bridge stores these files in memory only; a real bridge must delegate security-sensitive filesystem I/O to the Go daemon scoped endpoints.
+Knowledge and artifact tools use `ScopedPathGuard` semantics rather than raw `Assets/...` payload paths. They enforce bounded `max_chars` / `max_entries` caps in the gateway layer and return artifact references as `{ scope: "artifact", path }`, never host absolute paths. The fake bridge admits at most 10,000 scoped entries and 8,388,608 UTF-16 code units for the complete composite keys plus contents, shared across all projects and scopes. Each value is also capped at 1,048,576 code units. Constructor seeds use the same validation and quotas as writes; overwrites subtract the previous value, and rejected updates leave the store unchanged. These are retained-data limits rather than an exact Node heap-byte budget. The fake bridge stores these files in memory only; a real bridge must delegate security-sensitive filesystem I/O to the Go daemon scoped endpoints.
 
 ## Path Aliases
 
@@ -60,7 +60,15 @@ Project identity and filesystem I/O roots are separate. `canonicalProjectPath` i
 
 Aliases are keyed by project plus `clientType`, `clientId`, and `environmentId`, not by `clientType` alone. This allows two gateways or editor instances on the same host kind to resolve the same canonical project to different raw host paths without overwriting each other.
 
-Every alias `hostRoot` is normalized with its own `normalizeOptions` and must resolve back to the registered `canonicalProjectPath`. For example, a Windows Unity Editor alias can use `C:\Work\Game` while a WSL gateway alias for the same project uses `/mnt/c/Work/Game`; both map to `c:/Work/Game` identity, but daemon or editor I/O uses the selected alias host root.
+Project registration defaults an omitted `normalizeOptions.sourceHost` to explicit native `posix` grammar. It preserves literal backslashes and does not infer a Windows drive from native POSIX component data. Register a saved canonical Windows/UNC identity with `sourceHost: "canonical"`, or select `win32` explicitly for native Windows input.
+
+Each native alias selects exactly one of `posix`, `win32`, or `wsl`. An explicit `hostKind` and an explicit `normalizeOptions.sourceHost` must match. Either one can supply the kind when the other is omitted. If both are omitted, a native project grammar is inherited; a canonical/URI project grammar instead defaults the alias to `posix`. Explicit alias options replace project options. Project options are inherited only when the alias uses the same native grammar, so choosing a different `hostKind` cannot accidentally inherit unrelated normalization settings.
+
+Canonical and URI input modes describe identity/transport and are not native alias kinds. A project using either mode must supply native aliases explicitly instead of using the implicit `hostRoot` shortcut. WSL aliases require `wsl.enabled: true` and use the configured mount rules; use `posix` for an unmapped native WSL path. Alias normalization rejects `trimOuterWhitespace: true`, because trimming the compared identity while retaining the original native string could select a different path. Native absolute-path and dot-component checks use the chosen separator grammar; a literal POSIX backslash is not a separator.
+
+Every alias `hostRoot` is normalized with these effective `normalizeOptions` and must resolve back to the registered `canonicalProjectPath`. The stored `hostKind` and returned normalization metadata describe that same grammar. Input options are copied, and project/alias lookup APIs return detached snapshots; mutating an input or returned object does not update the registry. These lexical checks do not replace the daemon's real filesystem root registration.
+
+This changes registrations that relied on omitted cross-host parsing, contradictory metadata, or live mutable registry objects. Supply explicit identity and native alias grammars when updating those callers. For example, a Windows Unity Editor alias can use `C:\Work\Game` while a WSL gateway alias for the same project uses `/mnt/c/Work/Game`; both map to `c:/Work/Game` identity, but daemon or editor I/O uses the selected alias host root.
 
 ## Example
 

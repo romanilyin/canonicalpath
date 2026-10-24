@@ -24,6 +24,9 @@ import { pathError } from "../canonicalpath/errors.js";
 // These caps apply to work, independently of the caller's returned-entry cap.
 // Count the entire store so unrelated project/scope entries cannot hide a scan.
 const maxScopedEntriesExamined = 10_000;
+const maxScopedStoredEntries = 10_000;
+const maxScopedStoredUnits = 8_388_608;
+const maxScopedValueUnits = 1_048_576;
 const maxScopedQueryWork = 4_000_000;
 const scopedEntryOrder = new Intl.Collator(undefined, { numeric: true });
 
@@ -38,13 +41,26 @@ export interface FakeUnityBridgeOptions {
 export class FakeUnityBridge implements UnityBridgeClient {
   private readonly logs: UnityBridgeLogEntry[];
   private readonly scopedFiles = new Map<string, string>();
+  private scopedStoredUnits = 0;
+  private readonly options: Pick<FakeUnityBridgeOptions, "projectName" | "unityVersion" | "files">;
 
   constructor(
     readonly broker: CanonicalPathBroker,
-    private readonly options: FakeUnityBridgeOptions = {},
+    options: FakeUnityBridgeOptions = {},
   ) {
+    this.options = { projectName: options.projectName, unityVersion: options.unityVersion, files: options.files };
     this.logs = [...(options.logs ?? [])];
-    for (const [key, value] of Object.entries(options.scopedFiles ?? {})) this.scopedFiles.set(key, value);
+    // Do not retain the caller's seed object: it could grow after admission.
+    const seeds = options.scopedFiles ?? {};
+    for (const key in seeds) {
+      if (!Object.hasOwn(seeds, key)) continue;
+      if (key.length > maxScopedStoredUnits) throw pathError("ERR_INVALID_PATH", "scoped storage exceeds retained-unit limit");
+      const parts = key.split("\0");
+      if (parts.length !== 3 || (parts[1] !== "knowledge" && parts[1] !== "artifact")) throw pathError("ERR_INVALID_PATH", "invalid scoped seed key");
+      const [projectId, scope, path] = parts as [string, UnityMcpWorkflowScope, string];
+      const resolved = this.resolveWorkflowPath(projectId, scope, path);
+      this.storeScopedText(scopedFileKey(projectId, scope, resolved.path), seeds[key]);
+    }
   }
 
   async status(projectId?: string): Promise<UnityBridgeStatus> {
@@ -108,7 +124,7 @@ export class FakeUnityBridge implements UnityBridgeClient {
     const limit = boundedPositiveInteger(maxChars, 1_048_576, 1_048_576, "maxChars");
     if (text.length > limit) throw pathError("ERR_INVALID_PATH", "text exceeds bounded write limit");
     const resolved = this.resolveWorkflowPath(projectId, scope, path);
-    this.scopedFiles.set(scopedFileKey(projectId, scope, resolved.path), text);
+    this.storeScopedText(scopedFileKey(projectId, scope, resolved.path), text);
     return {
       ok: true,
       projectId,
@@ -175,6 +191,20 @@ export class FakeUnityBridge implements UnityBridgeClient {
 
   appendLog(level: UnityBridgeLogEntry["level"], message: string, timestamp = new Date(0).toISOString()): void {
     this.logs.push({ level, message, timestamp });
+  }
+
+  private storeScopedText(key: string, text: string): void {
+    if (typeof text !== "string") throw pathError("ERR_INVALID_PATH", "text must be a string");
+    if (text.length > maxScopedValueUnits) throw pathError("ERR_INVALID_PATH", "text exceeds bounded write limit");
+    const previous = this.scopedFiles.get(key);
+    const newEntry = previous === undefined;
+    if (newEntry && this.scopedFiles.size >= maxScopedStoredEntries) throw pathError("ERR_INVALID_PATH", "scoped storage exceeds entry limit");
+    // Charge both the exact composite key and content in UTF-16 code units.
+    // A failed replacement must neither change the value nor consume capacity.
+    const projected = this.scopedStoredUnits + (newEntry ? key.length : 0) + text.length - (previous?.length ?? 0);
+    if (projected > maxScopedStoredUnits) throw pathError("ERR_INVALID_PATH", "scoped storage exceeds retained-unit limit");
+    this.scopedFiles.set(key, text);
+    this.scopedStoredUnits = projected;
   }
 
   private resolveWorkflowPath(projectId: string, scope: UnityMcpWorkflowScope, path: string): { path: CanonicalRelativePath; projectRelativePath: CanonicalRelativePath } {

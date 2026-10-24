@@ -120,20 +120,25 @@ describe("bounded Unity scoped glob matching", () => {
     }
   });
 
-  it("caps all examined entries, including other projects, before matching or sorting", async () => {
+  it("bounds the whole store at admission, including entries from other projects", async () => {
     const broker = new CanonicalPathBroker();
     broker.registerProject({ projectId, projectRoot: "/repo/Game", normalizeOptions: { sourceHost: "posix", targetProfile: "posix" } });
+    broker.registerProject({ projectId: "other-project", projectRoot: "/other" });
     const seeds = Object.fromEntries(Array.from({ length: 10_000 }, (_, i) => [fakeUnityScopedFileKey("other-project", "knowledge", `item${i}.md`), ""]));
     const withinLimit = new FakeUnityBridge(broker, { scopedFiles: seeds });
     expect((await withinLimit.globScoped(projectId, "knowledge", "*.md", 1)).entries).toEqual([]);
 
     seeds[fakeUnityScopedFileKey(projectId, "knowledge", "visible.md")] = "";
-    const overLimit = createUnityMCPTools(new FakeUnityBridge(broker, { scopedFiles: seeds }));
+    expect(() => new FakeUnityBridge(broker, { scopedFiles: seeds })).toThrow("entry limit");
+    const overLimit = createUnityMCPTools(withinLimit);
+    const rejectedWrite = await overLimit.callTool("unity.knowledge.write", { project_id: projectId, path: "visible.md", text: "x" });
+    expect(rejectedWrite.isError).toBe(true);
+    expect(rejectedWrite.structuredContent).toMatchObject({ error: "ERR_INVALID_PATH", message: expect.stringContaining("entry limit") });
+    // A rejected write does not poison subsequent query access.
     for (const name of ["unity.knowledge.glob", "unity.knowledge.list"]) {
       const result = await overLimit.callTool(name, { project_id: projectId, glob: "*.md", max_entries: 1 });
-      expect(result.isError).toBe(true);
-      expect(result.structuredContent).toMatchObject({ error: "ERR_INVALID_PATH", message: expect.stringContaining("examined-entry limit") });
-      expect(result.structuredContent).not.toHaveProperty("entries");
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ entries: [], truncated: false });
     }
   });
 

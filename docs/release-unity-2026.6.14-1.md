@@ -1,6 +1,6 @@
 # Unity Registry Release Plan 2026.6.14-1
 
-This is the working plan for publishing the Unity package to npmjs as a Unity Package Manager scoped-registry package. This release uses the unsigned npm tarball path only; `upm` signing is intentionally not part of this release.
+Historical package plan. Its local token and signed publication procedures have been retired. Use the current [immutable GitHub OIDC release process](release-process.md) for future releases; the old local npm aliases now refuse without reading credentials or invoking npm.
 
 ## Scope
 
@@ -37,8 +37,8 @@ Consumers should resolve the package through npmjs with a Unity scoped registry:
 - `packages/unity/CHANGELOG.md` documents the Unity registry release.
 - `packages/unity/README.md` documents npmjs scoped-registry installation.
 - npm prepack verifies committed package-local `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and their Unity `.meta` files in the default unsigned npm tarball.
-- Optional signed tooling remains available but is not used for this release.
-- Root `.env` is ignored and reserved for local npm credentials.
+- The former optional local signed tooling is now disabled.
+- Root `.env` remains ignored; current tooling does not use it for publication.
 
 ## Pre-Publish Checks
 
@@ -60,38 +60,11 @@ Run when local Unity Editors are available:
 pnpm unity:editmode:matrix
 ```
 
-Confirm npm token access without publishing:
+## Publication procedure superseded
 
-```bash
-pnpm unity:npm:ping
-pnpm unity:npm:whoami
-```
+The former token setup and local publication commands in this plan no longer apply. All local token-based `unity:npm:*` aliases, including ping, whoami and dry-runs, refuse before credential access or publisher execution. Local signing helpers also remain disabled.
 
-If `com.romanilyin.canonicalpath@2026.6.14-1` already exists in npmjs, choose a new package version before publishing. npmjs does not allow replacing the tarball for an existing version.
-
-## Token Setup
-
-Put the npm automation token in the ignored root `.env` file:
-
-```text
-NPM_TOKEN=npm_...
-```
-
-The helper `scripts/run-npm-with-env-token.mjs` creates a temporary npm userconfig for each command and removes it after the command exits. Do not commit `.env`, `.npmrc`, npm tokens, or command output that contains tokens.
-
-## Publish
-
-Publish only after checks pass and the release commit is reviewed:
-
-```bash
-pnpm unity:npm:publish
-```
-
-For a no-upload unsigned smoke, use:
-
-```bash
-pnpm unity:npm:publish:dry-run
-```
+Use the current [release process](release-process.md), including its original-artifact verification and OIDC authorization. Credential-free `pnpm unity:pack:dry-run` remains available for local tarball inspection. Do not reuse historical release versions or move their tags.
 
 Verify after publication:
 

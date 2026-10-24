@@ -1,8 +1,8 @@
-import { hasUriScheme, isAbsolutePathLike } from "../canonicalpath/internal.js";
+import { hasDriveRoot } from "../canonicalpath/internal.js";
 import { pathError } from "../canonicalpath/errors.js";
 import type { CanonicalPath, HostKind, NormalizeOptions } from "../canonicalpath/types.js";
 import { CanonicalPathService } from "./path-service.js";
-import type { UnityBridgePathValidation, UnityPathValidationOptions, UnityProjectPathAlias, UnityProjectPathAliasRegistration, UnityProjectPathAliasSelector, UnityProjectRecord, UnityProjectRegistration } from "./types.js";
+import type { NativeHostKind, UnityBridgePathValidation, UnityPathValidationOptions, UnityProjectPathAlias, UnityProjectPathAliasRegistration, UnityProjectPathAliasSelector, UnityProjectRecord, UnityProjectRegistration } from "./types.js";
 
 export class CanonicalPathBroker {
   private readonly projects = new Map<string, UnityProjectRecord>();
@@ -13,10 +13,11 @@ export class CanonicalPathBroker {
     if (registration.projectId === "") throw pathError("ERR_INVALID_PATH", "projectId is required");
     if (registration.projectId.includes("\0")) throw pathError("ERR_NUL_BYTE", "projectId contains NUL");
 
+    const normalizeOptions = copyOptions({ ...registration.normalizeOptions, sourceHost: registration.normalizeOptions?.sourceHost ?? "posix" });
     const record: UnityProjectRecord = {
       projectId: registration.projectId,
-      canonicalProjectPath: this.paths.normalizeProjectRoot(registration.projectRoot, registration.normalizeOptions),
-      normalizeOptions: registration.normalizeOptions,
+      canonicalProjectPath: this.paths.normalizeProjectRoot(registration.projectRoot, normalizeOptions),
+      normalizeOptions,
       hostRoot: registration.hostRoot,
       pathAliases: [],
     };
@@ -25,29 +26,33 @@ export class CanonicalPathBroker {
         clientType: "gateway",
         clientId: "default",
         environmentId: "default",
-        hostKind: defaultHostKind(registration.normalizeOptions),
+        hostKind: requireNativeHostKind(normalizeOptions.sourceHost),
         hostRoot: registration.hostRoot,
-        normalizeOptions: registration.normalizeOptions,
+        normalizeOptions,
         label: "default host root",
       });
     }
     for (const alias of registration.aliases ?? []) this.addPathAlias(record, alias);
     this.projects.set(record.projectId, record);
-    return record;
+    return copyProject(record);
   }
 
   getProject(projectId: string): UnityProjectRecord {
+    return copyProject(this.requireProject(projectId));
+  }
+
+  private requireProject(projectId: string): UnityProjectRecord {
     const project = this.projects.get(projectId);
     if (!project) throw pathError("ERR_INVALID_PATH", `unknown Unity project ${projectId}`);
     return project;
   }
 
   listProjects(): UnityProjectRecord[] {
-    return [...this.projects.values()];
+    return [...this.projects.values()].map(copyProject);
   }
 
   registerPathAlias(projectId: string, registration: UnityProjectPathAliasRegistration): UnityProjectPathAlias {
-    return this.addPathAlias(this.getProject(projectId), registration);
+    return copyAlias(this.addPathAlias(this.requireProject(projectId), registration));
   }
 
   private addPathAlias(project: UnityProjectRecord, registration: UnityProjectPathAliasRegistration): UnityProjectPathAlias {
@@ -104,12 +109,16 @@ export class CanonicalPathBroker {
     assertAliasString(registration.clientId, "clientId");
     assertAliasString(registration.environmentId, "environmentId");
     assertAliasString(registration.hostRoot, "hostRoot");
-    // Preserve a usable native root only after rejecting ambiguous lexical aliases.
-    const nativeRoot = registration.hostRoot.replaceAll("\\", "/");
-    if (!isAbsolutePathLike(nativeRoot) || hasUriScheme(nativeRoot) || nativeRoot.split("/").some((part) => part === "." || part === "..")) {
+    const { hostKind, normalizeOptions } = nativeAliasOptions(registration, project.normalizeOptions);
+    // Native POSIX backslashes are component data, including a literal \..\.
+    // Only Windows grammar treats them as separators for absolute/dot checks.
+    const nativeRoot = hostKind === "win32" ? registration.hostRoot.replaceAll("\\", "/") : registration.hostRoot;
+    const absolute = hostKind === "win32"
+      ? hasDriveRoot(nativeRoot) || nativeRoot.startsWith("//")
+      : nativeRoot.startsWith("/") && (!nativeRoot.startsWith("//") || nativeRoot.startsWith("///"));
+    if (!absolute || nativeRoot.split("/").some((part) => part === "." || part === "..")) {
       throw pathError("ERR_INVALID_PATH", "path alias hostRoot must be an absolute native path without dot segments");
     }
-    const normalizeOptions = registration.normalizeOptions ?? project.normalizeOptions;
     const aliasCanonicalPath = this.paths.normalizeProjectRoot(registration.hostRoot, normalizeOptions);
     if (aliasCanonicalPath !== project.canonicalProjectPath) {
       throw pathError("ERR_INVALID_PATH", "path alias hostRoot does not match canonical project identity");
@@ -120,7 +129,7 @@ export class CanonicalPathBroker {
       clientType: registration.clientType,
       clientId: registration.clientId,
       environmentId: registration.environmentId,
-      hostKind: registration.hostKind ?? defaultHostKind(normalizeOptions),
+      hostKind,
       hostRoot: registration.hostRoot,
       normalizeOptions,
       label: registration.label,
@@ -133,8 +142,48 @@ function assertAliasString(value: string, label: string): void {
   if (value.includes("\0")) throw pathError("ERR_NUL_BYTE", `${label} contains NUL`);
 }
 
-function defaultHostKind(options: NormalizeOptions | undefined): HostKind {
-  return options?.sourceHost ?? "posix";
+function isNativeHostKind(value: HostKind | undefined): value is NativeHostKind {
+  return value === "posix" || value === "win32" || value === "wsl";
+}
+
+function requireNativeHostKind(value: HostKind | undefined): NativeHostKind {
+  if (!isNativeHostKind(value)) throw pathError("ERR_INVALID_PATH", "path alias requires a native host kind: posix, win32 or wsl");
+  return value;
+}
+
+function nativeAliasOptions(registration: UnityProjectPathAliasRegistration, projectOptions: NormalizeOptions | undefined): { hostKind: NativeHostKind; normalizeOptions: NormalizeOptions } {
+  const requestedSource = registration.normalizeOptions?.sourceHost;
+  const inheritedSource = projectOptions?.sourceHost;
+  const hostKind = requireNativeHostKind(registration.hostKind ?? requestedSource ?? (isNativeHostKind(inheritedSource) ? inheritedSource : "posix"));
+  if (requestedSource !== undefined && requestedSource !== hostKind) {
+    throw pathError("ERR_INVALID_PATH", "path alias hostKind and sourceHost must select the same native grammar");
+  }
+  // An alias's explicit options replace project options. Inherit only when the
+  // project selected this same native grammar; canonical/URI input is not I/O.
+  const base = registration.normalizeOptions ?? (inheritedSource === hostKind ? projectOptions : undefined);
+  const normalizeOptions = copyOptions({ ...base, sourceHost: hostKind });
+  if (normalizeOptions.trimOuterWhitespace) throw pathError("ERR_INVALID_PATH", "native alias normalization must not trim retained hostRoot data");
+  if (hostKind === "wsl" && !normalizeOptions.wsl?.enabled) {
+    throw pathError("ERR_INVALID_PATH", "native WSL aliases require explicit WSL mapping; use posix for unmapped native paths");
+  }
+  return { hostKind, normalizeOptions };
+}
+
+function copyOptions(options: NormalizeOptions): NormalizeOptions {
+  return {
+    ...options,
+    ...(options.wsl === undefined ? {} : { wsl: { ...options.wsl } }),
+    ...(options.uri === undefined ? {} : { uri: { ...options.uri } }),
+    ...(options.windows === undefined ? {} : { windows: { ...options.windows } }),
+  };
+}
+
+function copyAlias(alias: UnityProjectPathAlias): UnityProjectPathAlias {
+  return { ...alias, normalizeOptions: alias.normalizeOptions === undefined ? undefined : copyOptions(alias.normalizeOptions) };
+}
+
+function copyProject(project: UnityProjectRecord): UnityProjectRecord {
+  return { ...project, normalizeOptions: project.normalizeOptions === undefined ? undefined : copyOptions(project.normalizeOptions), pathAliases: project.pathAliases.map(copyAlias) };
 }
 
 function pathAliasKey(alias: Pick<UnityProjectPathAlias, "clientType" | "clientId" | "environmentId">): string {

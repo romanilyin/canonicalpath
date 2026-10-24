@@ -182,10 +182,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/scoped/remove", s.handleScopedRemove)
 	mux.HandleFunc("/", s.handleNotFound)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" && !s.isAuthorized(r) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="canonicalfs"`)
-			writeHTTPError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "missing or invalid bearer token")
-			return
+		if s.isAuthorized(r) {
+			if !authenticateConnection(r.Context()) {
+				r.Close = true
+				w.Header().Set("Connection", "close")
+				writeHTTPError(w, http.StatusServiceUnavailable, "ERR_DAEMON", "connection authentication deadline expired")
+				return
+			}
+		} else {
+			// A health probe does not establish identity either. The CLI serves
+			// HTTP/1.1 only, so these responses release the pending socket rather
+			// than leaving an unauthenticated keep-alive available indefinitely.
+			r.Close = true
+			w.Header().Set("Connection", "close")
+			if r.URL.Path != "/healthz" {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="canonicalfs"`)
+				writeHTTPError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "missing or invalid bearer token")
+				return
+			}
 		}
 		mux.ServeHTTP(w, r)
 	})

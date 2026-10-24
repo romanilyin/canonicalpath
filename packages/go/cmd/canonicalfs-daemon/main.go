@@ -39,6 +39,10 @@ func main() {
 	defaultReadBytes := flag.Int64("default-read-bytes", canonicalfsrpc.DefaultReadBytes, "default readFile max bytes when max_bytes is omitted")
 	maxReadBytes := flag.Int64("max-read-bytes", canonicalfsrpc.DefaultMaxReadBytes, "hard cap for readFile max_bytes")
 	maxResponseBytes := flag.Int64("max-response-bytes", canonicalfsrpc.DefaultMaxResponseBytes, "maximum encoded JSON response bytes")
+	maxConnections := flag.Int("max-connections", canonicalfsrpc.DefaultMaxConnections, "maximum admitted TCP connections, including TLS handshakes")
+	maxUnauthenticatedConnections := flag.Int("max-unauthenticated-connections", canonicalfsrpc.DefaultMaxUnauthenticatedConnections, "maximum connections awaiting a valid bearer; must be less than -max-connections")
+	authenticationTimeout := flag.Duration("authentication-timeout", canonicalfsrpc.DefaultAuthenticationTimeout, "absolute deadline from TCP acceptance to the first valid bearer")
+	maxHeaderBytes := flag.Int("max-header-bytes", canonicalfsrpc.DefaultMaxHeaderBytes, "maximum HTTP request header bytes")
 	readHeaderTimeout := flag.Duration("read-header-timeout", 5*time.Second, "HTTP server read header timeout")
 	readTimeout := flag.Duration("read-timeout", 30*time.Second, "HTTP server read timeout")
 	writeTimeout := flag.Duration("write-timeout", 30*time.Second, "HTTP server write timeout")
@@ -49,6 +53,19 @@ func main() {
 
 	if err := validateListener(*listen, *tlsCert, *tlsKey); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	connectionLimits := canonicalfsrpc.ConnectionLimits{
+		MaxConnections:                *maxConnections,
+		MaxUnauthenticatedConnections: *maxUnauthenticatedConnections,
+		AuthenticationTimeout:         *authenticationTimeout,
+	}
+	if err := connectionLimits.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if *maxHeaderBytes <= 0 {
+		fmt.Fprintln(os.Stderr, "-max-header-bytes must be positive")
 		os.Exit(2)
 	}
 	token, err := readToken(*tokenFile)
@@ -82,17 +99,34 @@ func main() {
 	}
 	defer daemon.Close()
 
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
 	server := &http.Server{
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+		Protocols:         protocols,
 		Addr:              *listen,
 		Handler:           daemon.Handler(),
 		ReadHeaderTimeout: *readHeaderTimeout,
 		ReadTimeout:       *readTimeout,
 		WriteTimeout:      *writeTimeout,
 		IdleTimeout:       *idleTimeout,
+		MaxHeaderBytes:    *maxHeaderBytes,
 	}
-	fmt.Fprintf(os.Stderr, "canonicalfs daemon listening on https://%s\n", *listen)
-	err = server.ListenAndServeTLS(*tlsCert, *tlsKey)
+	rawListener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	listener, err := canonicalfsrpc.NewBoundedListener(rawListener, connectionLimits)
+	if err != nil {
+		_ = rawListener.Close()
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	defer listener.Close()
+	server.ConnContext = listener.ConnContext
+	fmt.Fprintf(os.Stderr, "canonicalfs daemon listening on https://%s\n", listener.Addr())
+	err = server.ServeTLS(listener, *tlsCert, *tlsKey)
 	if err != nil && err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -1,6 +1,6 @@
 # Unity Registry Release Plan 2026.5.24-1
 
-This is the working plan for publishing the Unity package to npmjs as a Unity Package Manager scoped-registry package. The current default publish path is an unsigned npm tarball; Unity 6.3+ will show `Signature: Missing` for that artifact. Optional Unity-signed UPM CLI tooling is kept for a later signed package version. Do not publish or tag until the package checks and final review pass.
+Historical package plan. Its local token and signed publication procedures have been retired. Use the current [immutable GitHub OIDC release process](release-process.md) for future releases; the old local npm aliases now refuse without reading credentials or invoking npm.
 
 ## Scope
 
@@ -37,7 +37,7 @@ Consumers should resolve the package through npmjs with a Unity scoped registry:
 - `packages/unity/CHANGELOG.md` documents the Unity registry release.
 - `packages/unity/README.md` documents npmjs scoped-registry installation.
 - npm prepack verifies committed package-local `LICENSE.md`, `LICENSE.ru.md`, `NOTICE.md`, and their Unity `.meta` files in the default unsigned npm tarball.
-- Optional signed tooling remains available: `scripts/pack-unity-signed.mjs` uses the same package-aware license/notice check before running `upm pack`.
+- The former local signed tooling is now disabled; `scripts/pack-unity-signed.mjs` refuses without starting UPM.
 - Optional `pnpm unity:pack:signed` creates `tmp/unity-signed/com.romanilyin.canonicalpath-2026.5.24-1.tgz` and verifies that it contains `.attestation.p7m`.
 - Root `.env` is ignored and reserved for local npm and Unity signing credentials.
 
@@ -61,60 +61,11 @@ Run when local Unity Editors are available:
 pnpm unity:editmode:matrix
 ```
 
-Confirm npm token access without publishing:
+## Publication procedure superseded
 
-```bash
-pnpm unity:npm:ping
-pnpm unity:npm:whoami
-```
+The former token setup and local publication commands in this plan no longer apply. All local token-based `unity:npm:*` aliases, including ping, whoami and dry-runs, refuse before credential access or publisher execution. Local signing helpers also remain disabled.
 
-When UPM CLI and Unity service account credentials are available, create and verify the signed tarball without publishing:
-
-```bash
-pnpm unity:pack:signed
-```
-
-If `com.romanilyin.canonicalpath@2026.5.24-1` already exists in npmjs, choose a new package version before publishing a signed tarball. npmjs doesn't allow replacing the tarball for an existing version.
-
-## Token Setup
-
-Put the npm automation token in the ignored root `.env` file. The Unity signing credentials are only required for optional signed publication:
-
-```text
-NPM_TOKEN=npm_...
-UPM_ORGANIZATION_ID=...
-UPM_SERVICE_ACCOUNT_KEY_ID=...
-UPM_SERVICE_ACCOUNT_KEY_SECRET=...
-```
-
-For signed publication, the Unity service account must belong to the signing organization and have the `Package Manager Package Signer` role. The helper `scripts/run-npm-with-env-token.mjs` creates a temporary npm userconfig for each command and removes it after the command exits. Do not commit `.env`, `.npmrc`, npm tokens, or Unity service account credentials.
-
-## Publish
-
-Publish only after checks pass and the release commit is reviewed:
-
-```bash
-pnpm unity:npm:publish
-```
-
-`pnpm unity:npm:publish` is currently the unsigned npm publish path and only needs `NPM_TOKEN`. It is equivalent to:
-
-```bash
-pnpm unity:npm:publish:unsigned
-```
-
-For a no-upload unsigned smoke, use:
-
-```bash
-pnpm unity:npm:publish:dry-run
-```
-
-For the optional signed path, use these commands after filling the Unity signing credentials:
-
-```bash
-pnpm unity:npm:publish:signed:dry-run
-pnpm unity:npm:publish:signed
-```
+Use the current [release process](release-process.md), including its original-artifact verification and OIDC authorization. Credential-free `pnpm unity:pack:dry-run` remains available for local tarball inspection. Do not reuse historical release versions or move their tags.
 
 Verify after publication:
 
