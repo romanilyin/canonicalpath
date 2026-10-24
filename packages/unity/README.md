@@ -104,9 +104,9 @@ Release packaging:
 - The Unity package keeps committed Stinger license and notice files under
   `packages/unity`. npm `prepack` verifies that these files match the
   Stinger texts in `LICENSES/` and that their Unity `.meta` files are present.
-- Default npm publication is currently unsigned: `pnpm unity:npm:publish`. Unity 6.3+ will show `Signature: Missing` for that artifact.
+- npm publication uses the isolated GitHub OIDC workflow described in [the release process](https://github.com/romanilyin/canonicalpath/blob/main/docs/release-process.md). Its ordinary npm artifact is unsigned; Unity 6.3+ will show `Signature: Missing` for that artifact.
 - Optional local Unity signed packing/publication commands are disabled until authentic signature verification is available. Use the normal digest-verified GitHub/npm release workflow.
-- Token-based npm publication uses a local ignored root `.env` file with `NPM_TOKEN`. Disabled signing helpers never load Unity credentials. Do not commit real tokens, service account credentials, or local `.npmrc` files.
+- Local token-based `unity:npm:*` commands, including ping, whoami and publish dry-runs, are disabled compatibility entrypoints: they refuse before reading credentials or starting npm. Use `pnpm unity:pack:dry-run` for credential-free local package inspection. Do not commit tokens, service account credentials, or local `.npmrc` files.
 
 Implemented early bridge scope:
 

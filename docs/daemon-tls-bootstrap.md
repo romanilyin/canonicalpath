@@ -50,6 +50,25 @@ If an alias disappears, resolves to a different object, or cannot be verified, c
 
 The daemon requires a [supported Go filesystem platform](api-compatibility.md#go-filesystem-platform-compatibility). Unsupported targets, including `js/wasm`, `plan9` and `wasip1`, return `ErrUnsupportedOperation` before filesystem access. The module language floor is Go `1.25.0`; the workspace toolchain recommendation and current verification pins are Go `1.26.10`.
 
+## Connection admission and HTTP protocol
+
+The daemon CLI applies admission limits to the raw TCP listener **before TLS**. It serves HTTP/1.1 over TLS; HTTP/2 is disabled explicitly so an unauthorized response closes its connection instead of leaving additional streams available on the same transport. Existing HTTPS clients can negotiate HTTP/1.1. A client that requires HTTP/2 without fallback is not supported by this daemon configuration.
+
+| CLI option | Default | Meaning |
+|---|---|---|
+| `-max-connections` | `256` | Total admitted sockets, including TLS handshakes and authenticated keep-alive connections. |
+| `-max-unauthenticated-connections` | `32` | Admitted sockets that have not supplied a valid bearer. Must be smaller than the total limit. |
+| `-authentication-timeout` | `5s` | Absolute time from TCP acceptance to the first valid bearer; includes TLS and HTTP header processing. |
+| `-max-header-bytes` | `16384` | Go HTTP server request-header limit setting; body caps remain separate. |
+
+These settings must be positive. An excess accepted socket is closed immediately, without creating a TLS/HTTP handler goroutine or timer for it. Admission retains at most the configured total plus one transient socket being rejected by the accept loop; the operating system's listen backlog is separate. Every pending admitted connection has a deadline, including a client that sends no TLS bytes, completes TLS but sends no HTTP headers, or sends headers slowly. Successful bearer validation releases the pending slot and cancels that deadline; the normal HTTP read/write/idle timeouts then apply. Closing a connection releases its total slot only after the underlying socket is closed.
+
+Unauthorized requests return `401` with connection closure. Unauthenticated `/healthz` remains available, but its response also closes the connection and never promotes it into the authenticated pool. A valid bearer is still required on **every** protected request, even when a prior request authenticated the connection.
+
+The smaller pending pool keeps anonymous sockets from occupying all slots and does not evict existing authenticated keep-alive connections. Requests on those already authenticated connections remain serviceable while pending admission is saturated. A **new** client cannot prove its bearer before admission/TLS: it can be refused until a pending slot becomes free. These limits bound retained sockets, timers, and concurrent handshake work; they do not promise a global TLS handshakes-per-second limit or protection from network-bandwidth exhaustion. Use an independently configured network admission policy for hostile non-loopback exposure.
+
+`Server.Handler()` remains embeddable and does not create or own a network listener. Embedders that need this transport policy must wrap their raw TCP listener with `NewBoundedListener`, install the returned listener's `ConnContext` callback on their `http.Server`, and call `ServeTLS` on that bounded listener. They must also configure HTTP/1.1-only `Protocols`, `MaxHeaderBytes`, and positive HTTP timeouts themselves. Wrapping an already-TLS listener or omitting `ConnContext` does not provide authenticated-slot promotion; the daemon CLI wires these pieces together before serving.
+
 ## Client configuration
 
 | Client | Required trust | Optional private CA |
@@ -70,6 +89,6 @@ TypeScript uses its authenticated Node HTTPS implementation; the former arbitrar
 
 This is a breaking transport change: plaintext URLs and constructors without trusted pins now fail. Health checks also use TLS even though `/healthz` does not require a bearer. The daemon accepts `-tls-cert` and `-tls-key` for every listen address and retains the 32-character minimum bearer requirement. Existing response caps and whole-request deadlines remain enforced.
 
-Run `pnpm security:regressions`, the TypeScript transport tests and the live daemon smoke gates. The authentication fixtures check that plaintext, missing/wrong pins, wrong hostnames and untrusted CAs result in zero Authorization deliveries. Bootstrap tests check certificate/key/pin consistency, per-launch rotation, exclusive creation, private ownership/permissions and Windows ACL behavior. A platform-specific SKIP is not a passing runtime check.
+Run `pnpm security:regressions`, the TypeScript transport tests and the live daemon smoke gates. Go RPC connection-admission tests use real TCP/TLS sockets to verify both quotas, pending deadlines before/after TLS, unauthorized/health closure, oversized-header rejection, slot reuse, and authenticated requests during pending saturation. A delayed expiry callback is tested after authentication, and `pnpm go:race` checks concurrent accounting. The authentication fixtures check that plaintext, missing/wrong pins, wrong hostnames and untrusted CAs result in zero Authorization deliveries. Bootstrap tests check certificate/key/pin consistency, per-launch rotation, exclusive creation, private ownership/permissions and Windows ACL behavior. A platform-specific SKIP is not a passing runtime check.
 
 Allowed-root regressions deterministically replace a root, an ancestor or a symlink alias between the initial acquisition and alias binding. They also check that successful construction retains the exact original handle, failed construction closes handles, and existing registrations remain attached after pathname changes. Run the Go RPC tests on native Windows and a supported Unix target; the Linux cleanup regression checks open descriptors through `/proc/self/fd`. `pnpm go:unsupported-platforms` executes the `js/wasm` denial tests and is part of `pnpm verify`. See the [2026-10-24 verification record](security-review-2026-10-24.md#verification-status) for executed results and pending checks.

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { signingEnvironment, packUnitySigned, verifySignedTarball } from "./pack-unity-signed.mjs";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
@@ -73,32 +73,85 @@ test("UPM gets only OS configuration and Unity signing credentials", () => {
   for (const key of ["NPM_TOKEN", "GITHUB_TOKEN", "NODE_OPTIONS", "EVIL"]) assert.equal(env[key], undefined);
 });
 
-for (const status of [0, 7]) {
-  test(`npm secrets and temporary config are isolated on exit ${status}`, () => {
-    const temp = mkdtempSync(path.join(tmpdir(), "canonicalpath-security-test-"));
-    try {
-      const bin = path.join(temp, "bin"); mkdirSync(bin);
-      const fake = path.join(bin, "fake-npm.mjs");
-      writeFileSync(fake, `import { writeFileSync, existsSync } from 'node:fs';
-        const args=process.argv.slice(2); const config=args[args.indexOf('--userconfig')+1];
-        writeFileSync(process.env.CP_SECURITY_CAPTURE, JSON.stringify({config, exists:existsSync(config), token:process.env.NPM_TOKEN, upm:process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET, args}));
-        process.exit(${status});`);
-      if (process.platform === "win32") {
-        writeFileSync(path.join(bin, "npm.cmd"), `@"${process.execPath}" "${fake}" %*\r\n`);
-      } else {
-        writeFileSync(path.join(bin, "npm"), `#!${process.execPath}\n${readFileSync(fake, "utf8")}`, { mode: 0o755 });
-      }
-      const capture = path.join(temp, "capture.json");
-      const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, NPM_TOKEN: "synthetic_npm_credential", UPM_SERVICE_ACCOUNT_KEY_SECRET: "synthetic_upm_credential", CP_SECURITY_CAPTURE: capture, TMPDIR: temp, TEMP: temp, TMP: temp };
-      const result = spawnSync(process.execPath, ["--", path.join(repo, "scripts/run-npm-with-env-token.mjs"), "--env-file", path.join(temp,"absent.env"), "whoami"], { env, encoding: "utf8" });
-      assert.equal(result.status, status, result.stderr);
-      const observed = JSON.parse(readFileSync(capture, "utf8"));
-      assert.equal(observed.token, undefined);
-      assert.equal(observed.upm, undefined);
-      assert.equal(observed.exists, true);
-      assert.ok(observed.args.includes("--ignore-scripts=true"));
-      assert.equal(existsSync(observed.config), false);
-      assert.equal(existsSync(path.dirname(observed.config)), false);
-    } finally { rmSync(temp, { recursive: true, force: true }); }
-  });
+// These aliases remain callable so old automation gets an explicit refusal,
+// rather than a PATH-selected publisher receiving a live credential file.
+const localNpmCommands = Object.entries(JSON.parse(readFileSync(path.join(repo, "package.json"), "utf8")).scripts)
+  .filter(([, command]) => command.startsWith("node scripts/run-npm-with-env-token.mjs "))
+  .map(([name, command]) => [name, command.slice("node scripts/run-npm-with-env-token.mjs ".length).split(" ")]);
+
+function localNpmTestEnvironment(temp, bin, extra = {}) {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (["SYSTEMROOT", "WINDIR", "COMSPEC"].includes(key.toUpperCase())) env[key] = value;
+  }
+  return { ...env, PATH: bin, TMPDIR: temp, TEMP: temp, TMP: temp, ...extra };
 }
+
+function assertLocalNpmDisabled(result, secrets = []) {
+  assert.ifError(result.error);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Local npm token commands are disabled/);
+  assert.match(result.stderr, /OIDC trusted-publishing workflow/);
+  assert.equal(result.stdout, "");
+  for (const secret of secrets) assert.ok(!(result.stdout + result.stderr).includes(secret), "secret or caller argument was printed");
+}
+
+test("all retired npm aliases reject a PATH-prepended npm/npm.cmd without credential materialization", () => {
+  assert.ok(localNpmCommands.length > 0, "compatibility aliases must be exercised");
+  const temp = mkdtempSync(path.join(tmpdir(), "canonicalpath-security-test-"));
+  try {
+    const bin = path.join(temp, "bin"); mkdirSync(bin);
+    const capture = path.join(temp, "publisher-executed.json");
+    const fake = path.join(bin, "fake-npm.mjs");
+    writeFileSync(fake, `import { writeFileSync } from 'node:fs';
+      writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ args:process.argv.slice(2) }));`);
+    writeFileSync(path.join(bin, "npm.cmd"), `@"${process.execPath}" "${fake}" %*\r\n`);
+    writeFileSync(path.join(bin, "npm"), `#!${process.execPath}\n${readFileSync(fake, "utf8")}`, { mode: 0o755 });
+    const envFile = path.join(temp, "synthetic-credentials.env");
+    writeFileSync(envFile, "NPM_TOKEN=synthetic_env_file_credential\n");
+    const env = localNpmTestEnvironment(temp, bin, { NPM_TOKEN:"synthetic_process_credential", UPM_SERVICE_ACCOUNT_KEY_SECRET:"synthetic_upm_credential" });
+    const before = readdirSync(temp).sort();
+    for (const [name, args] of [...localNpmCommands, ["arbitrary invocation", ["exec", "synthetic_argument_credential"]]]) {
+      const result = spawnSync(process.execPath, ["--", path.join(repo, "scripts/run-npm-with-env-token.mjs"), "--env-file", envFile, ...args], { cwd:temp, env, encoding:"utf8" });
+      assertLocalNpmDisabled(result, ["synthetic_process_credential", "synthetic_env_file_credential", "synthetic_upm_credential", "synthetic_argument_credential"]);
+      assert.equal(existsSync(capture), false, name + ": publisher must never execute");
+      assert.deepEqual(readdirSync(temp).sort(), before, name + ": no credential file or directory may be created");
+    }
+    delete env.NPM_TOKEN;
+    assertLocalNpmDisabled(spawnSync(process.execPath, ["--", path.join(repo, "scripts/run-npm-with-env-token.mjs"), "--env-file", envFile, "publish"], { cwd:temp, env, encoding:"utf8" }), ["synthetic_env_file_credential"]);
+    assert.equal(existsSync(capture), false, "env-file-only credentials must not enable publication");
+    assert.deepEqual(readdirSync(temp).sort(), before);
+  } finally { rmSync(temp, { recursive:true, force:true }); }
+});
+
+test("retired npm entrypoint refuses before reading credentials or accessing env/config files", () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "canonicalpath-npm-denial-test-"));
+  try {
+    const envFile = path.join(temp, "synthetic-credentials.env");
+    writeFileSync(envFile, "NPM_TOKEN=synthetic_env_file_credential\n");
+    const guard = path.join(temp, "guard.mjs");
+    writeFileSync(guard, `import fs from 'node:fs';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+const refuse = () => { process.stderr.write('FORBIDDEN_LOCAL_PUBLISH_IO\\n'); process.exit(97); };
+const credentials = [${JSON.stringify(envFile)}, ${JSON.stringify(path.join(repo, ".env"))}];
+for (const name of ['existsSync', 'readFileSync', 'openSync']) {
+  const original = fs[name];
+  fs[name] = (...args) => { if (credentials.includes(String(args[0]))) refuse(); return original(...args); };
+}
+fs.mkdtempSync = refuse;
+fs.writeFileSync = refuse;
+childProcess.spawnSync = refuse;
+const originalEnv = process.env;
+process.env = new Proxy(originalEnv, { get(target, key) { if (/TOKEN|SECRET|PASSWORD/.test(String(key))) refuse(); return target[key]; } });
+syncBuiltinESMExports();
+`);
+    const env = localNpmTestEnvironment(temp, temp, { NPM_TOKEN:"synthetic_process_credential" });
+    for (const args of [["ping"], [], ["--env-file", envFile, "publish", "--dry-run"], ["--env-file"]]) {
+      const result = spawnSync(process.execPath, ["--import", pathToFileURL(guard).href, "--", path.join(repo, "scripts/run-npm-with-env-token.mjs"), ...args], { cwd:temp, env, encoding:"utf8" });
+      assertLocalNpmDisabled(result, ["synthetic_process_credential", "synthetic_env_file_credential"]);
+      assert.ok(!result.stderr.includes("FORBIDDEN_LOCAL_PUBLISH_IO"), "entrypoint accessed protected state before refusal");
+    }
+  } finally { rmSync(temp, { recursive:true, force:true }); }
+});

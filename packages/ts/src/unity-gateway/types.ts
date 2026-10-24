@@ -1,11 +1,14 @@
 import type { CanonicalPath, CanonicalRelativePath, HostKind, NormalizeOptions } from "../canonicalpath/types.js";
 import type { UnityMcpWorkflowScope } from "./path-service.js";
 
+/** A native filesystem grammar, distinct from canonical or URI transport input. */
+export type NativeHostKind = Extract<HostKind, "posix" | "win32" | "wsl">;
+
 export interface UnityProjectPathAliasRegistration {
   clientType: string;
   clientId: string;
   environmentId: string;
-  hostKind?: HostKind;
+  hostKind?: NativeHostKind;
   hostRoot: string;
   normalizeOptions?: NormalizeOptions;
   label?: string;
@@ -17,7 +20,7 @@ export interface UnityProjectPathAlias {
   clientType: string;
   clientId: string;
   environmentId: string;
-  hostKind: HostKind;
+  hostKind: NativeHostKind;
   hostRoot: string;
   normalizeOptions?: NormalizeOptions;
   label?: string;
@@ -27,7 +30,7 @@ export interface UnityProjectPathAliasSelector {
   clientType?: string;
   clientId?: string;
   environmentId?: string;
-  hostKind?: HostKind;
+  hostKind?: NativeHostKind;
 }
 
 export interface UnityProjectRegistration {

@@ -2,13 +2,19 @@
 
 ## Unreleased
 
+- Retired the local token-based npm wrapper and all compatibility aliases before credential reads, temporary configuration or publisher execution; use the existing isolated OIDC publication workflow.
+- Bound Unity project and native alias normalization to the same declared grammar, defaulted omitted project input to POSIX, rejected contradictory/identity-changing alias options, and detached stored registrations from caller mutation.
+- Enforced fake scoped-store quotas during construction and every write: 10,000 entries and 8,388,608 UTF-16 key/value units, with atomic replacement accounting.
+- Added pre-TLS daemon connection admission, separate pending/total limits, an absolute authentication deadline, unauthorized-connection closure and explicit HTTP/1.1/header limits.
+- Recorded source remediation for the four findings in scan `wfr_4da72bce40868cc1fa3c3fc43ea21916e66026b13a324ef22ca7c1ac8c292966` in [the follow-up security review](docs/security-review-2026-10-24-4da72bce.md).
+
 - Defined explicit native POSIX and canonical-input grammars, preserving literal backslashes, POSIX drive-like components, and collision-free relative `./` markers across normalization, equality, relative/join, and host serialization. See [path identity contract](docs/path-identity-contract.md) and [migration guidance](docs/path-identity-migration.md) before changing stored keys.
 - Parsed preserved extended drive and UNC roots atomically, retained complete root boundaries during lexical dot cleanup, and accepted preserved drive roots under the `win32-drive` target profile.
 - Unified WSL mount-root defaults, validation, and normalization across lexical ports, including `/`, dot segments, literal backslash, and rejection of NUL/relative/UNC configuration. Retained configured Windows policy checks before cleanup and strict raw filesystem validators.
 - Added the length-aware C `mount_root_len` field, requiring callers and FFI bindings to rebuild against the updated structure layout, and Godot `from_utf8` plus byte-oriented mount validation before String conversion.
 - Made Rust runner checks, unit/documentation tests, and shared vectors mandatory in `pnpm verify`; missing or failed Rust toolchains no longer produce a successful skip.
 
-- Implemented source remediation for the three Low findings in scan `wfr_0fe15518666fc0239ead62d4e2006982029f84e709ee3998ae7d944a3f7c2636`; local verification passed as recorded in `docs/security-review-2026-10-24.md`; a new cloud assessment is pending.
+- Implemented source remediation for the three Low findings in scan `wfr_0fe15518666fc0239ead62d4e2006982029f84e709ee3998ae7d944a3f7c2636`; local verification passed as recorded in `docs/security-review-2026-10-24.md`; the subsequent assessment is covered by `docs/security-review-2026-10-24-4da72bce.md`.
 - Made all Go `canonicalfs` entrypoints fail closed on unsupported targets, including `js/wasm`, `plan9` and `wasip1`; added a Node-backed `js/wasm` denial gate to `pnpm verify`.
 - Retained the first daemon allowed-root handle and checked configured/resolved aliases against handle-backed identities, with deterministic startup replacement and failure-cleanup regressions.
 - Replaced fake Unity scoped-glob regex backtracking with iterative matching and capped list/glob queries at a 10,000-entry scoped store and a shared 4,000,000-unit work budget, independently of response limits.

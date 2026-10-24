@@ -17,9 +17,9 @@ describe("WSL identity and native aliases", () => {
       const broker = new CanonicalPathBroker();
       expect(() => broker.registerProject({ projectId: "p", projectRoot: "d:/repo", hostRoot, normalizeOptions })).toThrow("without dot segments");
       expect(broker.listProjects()).toHaveLength(0);
-      expect(() => broker.registerProject({ projectId: "p", projectRoot: "d:/repo", aliases: [alias(hostRoot)] })).toThrow("without dot segments");
+      expect(() => broker.registerProject({ projectId: "p", projectRoot: "d:/repo", normalizeOptions: { sourceHost: "canonical" }, aliases: [alias(hostRoot)] })).toThrow("without dot segments");
       expect(broker.listProjects()).toHaveLength(0);
-      broker.registerProject({ projectId: "p", projectRoot: "d:/repo" });
+      broker.registerProject({ projectId: "p", projectRoot: "d:/repo", normalizeOptions: { sourceHost: "canonical" } });
       expect(() => broker.registerPathAlias("p", alias(hostRoot))).toThrow("without dot segments");
       expect(broker.listPathAliases("p")).toHaveLength(0);
       expect(broker.resolveHostRoot("p")).toBeUndefined();
@@ -28,7 +28,7 @@ describe("WSL identity and native aliases", () => {
 
   it("rejects the old colliding identity and preserves verified native roots", () => {
     const broker = new CanonicalPathBroker();
-    broker.registerProject({ projectId: "old", projectRoot: "c:/d/repo" });
+    broker.registerProject({ projectId: "old", projectRoot: "c:/d/repo", normalizeOptions: { sourceHost: "canonical" } });
     expect(() => broker.registerPathAlias("old", alias("/mnt/d/repo"))).toThrow("does not match");
     broker.registerProject({ projectId: "p", projectRoot: "d:/repo", hostRoot: "/mnt/d/repo", normalizeOptions });
     broker.registerPathAlias("p", { ...alias("D:\\repo"), clientId: "win", normalizeOptions: { sourceHost: "win32" } });

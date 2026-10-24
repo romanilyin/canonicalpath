@@ -41,6 +41,14 @@ Knowledge and artifact workflow tools must be bounded:
 - Glob patterns are scope-relative selector strings only. They may select already-scoped candidates, but they must not become host filesystem globs or bypass `CanonicalFS` for security-sensitive I/O.
 - Returned list/glob entries and artifact refs must not include arbitrary absolute host paths.
 
+### Fake-bridge scoped storage limits
+
+The in-memory fake store applies a shared capacity limit across every project and both workflow scopes. Admission is limited to 10,000 distinct entries and 8,388,608 UTF-16 code units counting each complete `projectId + NUL + scope + NUL + path` key plus its text. Each value is limited to 1,048,576 code units. Counting UTF-16 units bounds retained string data; it is not a claim about exact physical Node heap usage.
+
+Both writes and constructor seeds pass through path/scope/project validation and the same quota accounting. A replacement subtracts the previous value before checking the projected total; it does not add another copy of the key or consume a new entry. On rejection, neither the Map nor its accounting changes, and existing reads/queries remain available. There is no implicit eviction. The constructor copies admitted seed contents and does not retain the caller's mutable seed object.
+
+Over-budget admission returns `ERR_INVALID_PATH` (or throws it during construction). Query limits below remain independent of write admission and response-size caps.
+
 ### Fake-bridge list and glob limits
 
 The TypeScript `FakeUnityBridge` implements these contracts for an in-memory local/test backend. Its list/glob work limits apply in addition to scope validation and the returned-entry cap. They do not establish a filesystem boundary or define a host filesystem glob API.
@@ -48,7 +56,7 @@ The TypeScript `FakeUnityBridge` implements these contracts for an in-memory loc
 | Limit | Current behavior |
 | --- | --- |
 | Returned entries | Default `max_entries` is 100; hard cap is 1000. Matching entries are sorted using the existing numeric collation before slicing. `truncated` indicates that more matching entries exist than the response cap. |
-| Examined store | A query accepts at most 10,000 entries in the complete scoped store, including other projects and scopes. A larger store is rejected before iteration, matching or sorting. This is a query limit, not a write/storage capacity limit. |
+| Examined store | A query accepts at most 10,000 entries in the complete scoped store, including other projects and scopes. A larger store is rejected before iteration, matching or sorting. The same entry cap is also enforced before retaining constructor seeds or writes. |
 | Aggregate work | Each list/glob query has a 4,000,000-unit budget shared by key-prefix checks, stored-path validation, list-prefix or glob matching, and sorting comparisons. A low `max_entries` does not bypass this budget. |
 | Glob pattern | At most 512 UTF-16 code units in the current TypeScript implementation, with components no longer than 255 code units. A pattern must contain `*` or `?` and pass existing scope-relative validation. |
 | Limit failure | Entry-limit or work-budget exhaustion returns `ERR_INVALID_PATH`; the query does not return partial entries or a success response with an incomplete `truncated` value. |

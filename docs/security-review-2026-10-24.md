@@ -2,6 +2,8 @@
 
 Source remediation is implemented for the three findings in the [follow-up Codex Security scan](https://chatgpt.com/mcp-app/connector_openai_defense_factory/open_defense_factory#/runs/wfr_0fe15518666fc0239ead62d4e2006982029f84e709ee3998ae7d944a3f7c2636). All three findings have **Low severity and High confidence**. Local verification is complete on the source changes described below. A new cloud scan remains **pending**; this document does not claim that the findings have been closed by the scanning service.
 
+The subsequent scan of `124aced` is recorded in the [next remediation review](security-review-2026-10-24-4da72bce.md), including retirement of the local token-publishing fallback and additional connection/storage limits. The results below retain the original source-and-test record.
+
 ## Source and scope
 
 | Field | Value |
