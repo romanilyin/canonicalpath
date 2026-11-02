@@ -99,7 +99,7 @@
     "rust:test": "node scripts/run-rust-tests.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
